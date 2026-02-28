@@ -1,0 +1,26 @@
+{
+  "name": "modelrouter",
+  "version": "0.1.0",
+  "description": "AI model routing proxy — tier-based intelligent routing across providers",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "keygen": "tsx src/cli/keygen.ts"
+  },
+  "dependencies": {
+    "hono": "^4.7.0",
+    "@hono/node-server": "^1.13.0",
+    "better-sqlite3": "^11.8.0",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^4.80.0",
+    "nanoid": "^5.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0"
+  }
+}
