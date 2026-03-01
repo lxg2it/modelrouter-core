@@ -9,7 +9,7 @@ import { Hono } from 'hono';
 import { stream as honoStream } from 'hono/streaming';
 import type { AuthEnv } from '../auth/middleware.js';
 import type { RoutingEngine, RouteDecision } from '../routing/engine.js';
-import type { ProviderAdapter } from '../providers/types.js';
+import type { ProviderAdapter, StreamingCompletion } from '../providers/types.js';
 import type { UsageLogger } from '../tracking/logger.js';
 import { UsageLogger as UsageLoggerClass } from '../tracking/logger.js';
 import { TIERS } from '../config.js';
@@ -184,34 +184,91 @@ async function handleStreaming(
   keyId: string,
   startTime: number,
 ) {
-  const adapter = deps.providers.get(decision.provider);
-  if (!adapter) {
-    return c.json({
-      error: { message: `Provider ${decision.provider} not configured`, type: 'server_error' },
-    }, 500);
+  // --- Pre-stream failover ---
+  //
+  // The key insight: `adapter.stream()` initiates the HTTP connection to the provider
+  // and can fail before any response data is sent (auth errors, 4xx/5xx, timeouts).
+  // If we fail at this point, we haven't committed to an SSE response yet — we can
+  // transparently try a fallback provider and return a clean JSON error if all fail.
+  //
+  // Once inside honoStream and after we start writing chunks, failover is impossible:
+  // the client is already receiving SSE data. A mid-stream failure becomes an SSE
+  // error event instead.
+
+  let completion: StreamingCompletion | null = null;
+  let activeDecision: RouteDecision = decision;
+
+  // Try primary provider
+  const primaryAdapter = deps.providers.get(decision.provider);
+  if (primaryAdapter) {
+    try {
+      completion = await primaryAdapter.stream(decision.model, request);
+    } catch {
+      deps.router.recordFailure(decision.provider, decision.model);
+    }
   }
 
+  // If primary failed, try one fallback (matches non-streaming behaviour)
+  if (!completion) {
+    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier);
+    if (fallback) {
+      const fallbackAdapter = deps.providers.get(fallback.provider);
+      if (fallbackAdapter) {
+        try {
+          completion = await fallbackAdapter.stream(fallback.model, request);
+          activeDecision = fallback;
+        } catch {
+          deps.router.recordFailure(fallback.provider, fallback.model);
+        }
+      }
+    }
+  }
+
+  // All providers failed before sending any data — return a clean JSON error.
+  if (!completion) {
+    deps.logger.log({
+      keyId,
+      provider: decision.provider,
+      model: decision.model,
+      tier: decision.tier,
+      promptTokens: 0,
+      completionTokens: 0,
+      costCents: 0,
+      latencyMs: Date.now() - startTime,
+      streaming: true,
+      statusCode: 502,
+    });
+    return c.json({
+      error: {
+        message: 'All providers failed for this streaming request.',
+        type: 'server_error',
+        code: 'provider_error',
+      },
+    }, 502);
+  }
+
+  // We have a valid stream — commit to the SSE response.
   c.header('Content-Type', 'text/event-stream');
   c.header('Cache-Control', 'no-cache');
   c.header('Connection', 'keep-alive');
-  c.header('X-Router-Provider', decision.provider);
-  c.header('X-Router-Model', decision.model);
-  c.header('X-Router-Tier', decision.tier);
+  c.header('X-Router-Provider', activeDecision.provider);
+  c.header('X-Router-Model', activeDecision.model);
+  c.header('X-Router-Tier', activeDecision.tier);
+
+  const streamCompletion = completion;
 
   return honoStream(c, async (stream) => {
     try {
-      const completion = await adapter.stream(decision.model, request);
-
-      for await (const chunk of completion.stream) {
+      for await (const chunk of streamCompletion.stream) {
         await stream.write(chunk);
       }
 
-      deps.router.recordSuccess(decision.provider, decision.model);
+      deps.router.recordSuccess(activeDecision.provider, activeDecision.model);
 
       // Get final usage from the stream
       try {
-        const { usage } = await completion.finalize();
-        const modelConfig = findModelConfig(decision.provider, decision.model, decision.tier);
+        const { usage } = await streamCompletion.finalize();
+        const modelConfig = findModelConfig(activeDecision.provider, activeDecision.model, activeDecision.tier);
         const costCents = modelConfig
           ? UsageLoggerClass.calculateCost(
               usage.prompt_tokens,
@@ -223,9 +280,9 @@ async function handleStreaming(
 
         deps.logger.log({
           keyId,
-          provider: decision.provider,
-          model: decision.model,
-          tier: decision.tier,
+          provider: activeDecision.provider,
+          model: activeDecision.model,
+          tier: activeDecision.tier,
           promptTokens: usage.prompt_tokens,
           completionTokens: usage.completion_tokens,
           costCents,
@@ -234,12 +291,12 @@ async function handleStreaming(
           statusCode: 200,
         });
       } catch {
-        // Finalize failed, log without usage
+        // finalize() failed — log without usage data
         deps.logger.log({
           keyId,
-          provider: decision.provider,
-          model: decision.model,
-          tier: decision.tier,
+          provider: activeDecision.provider,
+          model: activeDecision.model,
+          tier: activeDecision.tier,
           promptTokens: 0,
           completionTokens: 0,
           costCents: 0,
@@ -249,16 +306,15 @@ async function handleStreaming(
         });
       }
     } catch (err) {
-      deps.router.recordFailure(decision.provider, decision.model);
+      // Mid-stream failure: the client is already receiving SSE data — cannot failover.
+      // Write a final error event so the client knows the stream was interrupted.
+      deps.router.recordFailure(activeDecision.provider, activeDecision.model);
 
-      // For streaming, we can't failover mid-stream.
-      // But if we haven't sent any data yet, we could retry with a fallback.
-      // For V1, we just report the error.
       const errorChunk = {
         error: {
           message: err instanceof Error ? err.message : 'Provider error',
           type: 'server_error',
-          code: 'provider_error',
+          code: 'stream_interrupted',
         },
       };
       await stream.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
@@ -266,9 +322,9 @@ async function handleStreaming(
 
       deps.logger.log({
         keyId,
-        provider: decision.provider,
-        model: decision.model,
-        tier: decision.tier,
+        provider: activeDecision.provider,
+        model: activeDecision.model,
+        tier: activeDecision.tier,
         promptTokens: 0,
         completionTokens: 0,
         costCents: 0,
