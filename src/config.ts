@@ -104,6 +104,8 @@ export const MODEL_ALIASES: Record<string, string> = {
   'claude-haiku': 'economy',
   'claude-3-haiku': 'economy',
   'claude-3.5-haiku': 'economy',
+  'claude-3-5-haiku': 'economy',              // dash variant (API format)
+  'claude-3-5-haiku-20241022': 'economy',
   'gemini-flash': 'economy',
   'gemini-2.0-flash': 'economy',
 
@@ -115,6 +117,7 @@ export const MODEL_ALIASES: Record<string, string> = {
   'claude-sonnet': 'standard',
   'claude-3-sonnet': 'standard',
   'claude-3.5-sonnet': 'standard',
+  'claude-3-5-sonnet': 'standard',            // dash variant (API format)
   'claude-3-5-sonnet-20241022': 'standard',
   'gemini-pro': 'standard',
   'gemini-1.5-pro': 'standard',

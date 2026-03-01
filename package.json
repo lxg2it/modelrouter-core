@@ -7,20 +7,23 @@
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "keygen": "tsx src/cli/keygen.ts"
+    "keygen": "tsx src/cli/keygen.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "hono": "^4.7.0",
+    "@anthropic-ai/sdk": "^0.39.0",
     "@hono/node-server": "^1.13.0",
     "better-sqlite3": "^11.8.0",
-    "@anthropic-ai/sdk": "^0.39.0",
-    "openai": "^4.80.0",
-    "nanoid": "^5.1.0"
+    "hono": "^4.7.0",
+    "nanoid": "^5.1.0",
+    "openai": "^4.80.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "tsx": "^4.19.0",
     "@types/better-sqlite3": "^7.6.12",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.4"
   }
 }
