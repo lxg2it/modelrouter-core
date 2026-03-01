@@ -13,7 +13,7 @@
 - [x] Hono server scaffold with OpenAI-compatible endpoints
 - [x] Provider adapter interface + Anthropic adapter (streaming)
 - [x] Provider adapter: OpenAI (streaming)
-- [ ] Provider adapter: Google
+- [x] Provider adapter: Google
 - [x] Tier-based routing engine with cost optimization
 - [x] Circuit breaker for provider health tracking
 - [x] Model alias system (gpt-4o → standard, etc.)
@@ -30,7 +30,7 @@
 - [ ] **[SCOTT]** Sign up for provider API accounts (Anthropic, OpenAI, Google)
 - [ ] **[SCOTT]** Set up Stripe + bank account
 - [ ] Terms of service / privacy policy
-- [ ] Dockerfile
+- [x] Dockerfile
 - [ ] nginx config for api.lxg2it.com
 - [ ] DNS setup
 - [ ] Deploy to production infrastructure (13.54.219.192)
