@@ -65,101 +65,79 @@ Satbill already has accounts, balances, and deduction logic. We just need to exp
 
 ---
 
-## The Integration API (what satbill needs to expose)
+## Satbill API Endpoints (already implemented!)
 
-These are the three endpoints the model router calls. Satbill should implement them.
+Good news: satbill already has all the endpoints we need. No new Rust code required.
 
 ### 1. Check account access
 
 ```
-GET /api/accounts/{account_id}/access
+GET /access/{account_id}/{feature}
 ```
+
+Call with feature = `"api_access"` (or whatever feature name we define in satbill).
 
 **Response (200 OK):**
 ```json
 {
   "account_id": "acc_abc123",
-  "can_access": true,
-  "balance_sats": 45231,
-  "balance_usd_cents": 312
+  "feature": "api_access",
+  "has_access": true,
+  "balance_sats": 45231
 }
 ```
 
-**Response when account has no balance (200 OK, `can_access: false`):**
-```json
-{
-  "account_id": "acc_abc123",
-  "can_access": false,
-  "balance_sats": 0,
-  "balance_usd_cents": 0
-}
-```
-
-**Why not just `GET /balance`?** The access endpoint is the single check the router cares about. Satbill owns the definition of "has access" — in V1 it's `balance_sats > 0`, but later it might include grace periods, locked balances, or other rules.
+Satbill owns the definition of "has access" (currently: `balance_sats > 0`). The model router doesn't need to interpret the balance — just the bool.
 
 ### 2. Deduct credits
 
 ```
-POST /api/accounts/{account_id}/deduct
+POST /accounts/{account_id}/withdraw
 ```
 
-**Request body:**
+**Request body (satoshis):**
 ```json
 {
-  "amount_usd_cents": 47,
-  "reason": "model_router_request",
-  "request_id": "chatcmpl-abc123",
-  "model": "gemini-2.5-pro",
-  "provider": "google",
-  "prompt_tokens": 1000,
-  "completion_tokens": 250
+  "amount_sats": 47,
+  "reference": "chatcmpl-abc123"
 }
 ```
 
-**Why USD cents, not satoshis?** The model router calculates costs in USD (provider pricing is USD). Satbill should own the USD→satoshi conversion using its live BTC price oracle. This way there's one source of truth for the exchange rate.
+**Why satoshis, not USD cents?** The model router does the USD→sats conversion using a cached BTC price (see SatbillClient below). This keeps satbill pure — it stores and operates in satoshis only.
 
-**Response (200 OK):**
+**Response (201 Created):**
 ```json
 {
-  "success": true,
-  "deducted_sats": 47,
-  "deducted_usd_cents": 47,
-  "remaining_sats": 44184,
-  "btc_price_usd": 89241
-}
-```
-
-**Response on insufficient balance (402 Payment Required):**
-```json
-{
-  "success": false,
-  "error": "insufficient_balance",
-  "balance_sats": 10,
-  "balance_usd_cents": 0
+  "id": "tx_abc123",
+  "amount_sats": -47,
+  "balance_after_sats": 44184,
+  "reference": "chatcmpl-abc123"
 }
 ```
 
 ### 3. Create account (called once on signup)
 
 ```
-POST /api/accounts
+POST /accounts
 ```
 
 **Request body:**
 ```json
 {
-  "name": "model-router-user-abc",
-  "external_id": "mr_key_abc123"
+  "name": "model-router-user-abc"
 }
 ```
 
 **Response (201 Created):**
 ```json
 {
-  "account_id": "acc_abc123",
-  "deposit_address": "bc1q..."
+  "id": "acc_abc123",
+  "name": "model-router-user-abc",
+  "balance_sats": 0
 }
 ```
+
+Then call `POST /accounts/{id}/deposit-address` to get a Bitcoin deposit address for the new account.
 
 ---
 
@@ -218,51 +196,95 @@ if (satbillAccountId && costCents > 0) {
 
 ## Satbill Client (model router side)
 
-A thin HTTP client in the model router:
+The model router needs two things satbill doesn't provide:
+1. **BTC price caching** — to convert USD cents → satoshis before calling `withdraw`
+2. **Service-to-service auth** — to authenticate to satbill's API
 
 ```typescript
 // src/billing/satbill-client.ts
 
+const BTC_PRICE_CACHE_TTL_MS = 60_000; // Refresh price every minute
+
 export class SatbillClient {
+  private btcPriceUsd: number = 0;
+  private btcPriceLastFetched: number = 0;
+
   constructor(private baseUrl: string, private secret: string) {}
 
-  async checkAccess(accountId: string): Promise<AccessResult> {
-    const res = await fetch(`${this.baseUrl}/api/accounts/${accountId}/access`, {
+  /**
+   * Check if an account can make requests.
+   */
+  async checkAccess(accountId: string): Promise<{ canAccess: boolean }> {
+    const res = await fetch(`${this.baseUrl}/access/${accountId}/api_access`, {
       headers: { Authorization: `Bearer ${this.secret}` },
     });
     if (!res.ok) throw new Error(`Satbill access check failed: ${res.status}`);
-    return res.json();
+    const data = await res.json();
+    return { canAccess: data.has_access };
   }
 
-  async deduct(accountId: string, params: DeductParams): Promise<DeductResult> {
-    const res = await fetch(`${this.baseUrl}/api/accounts/${accountId}/deduct`, {
+  /**
+   * Deduct cost for a request. Converts USD cents → satoshis using live BTC price.
+   * Returns false if balance is insufficient.
+   */
+  async deductUsd(accountId: string, params: {
+    amountUsdCents: number;
+    reference: string;
+  }): Promise<boolean> {
+    const btcPrice = await this.getBtcPrice();
+    if (btcPrice === 0) {
+      console.error('[SatbillClient] BTC price unavailable, skipping deduction');
+      return true; // Don't block the request if we can't price it
+    }
+
+    const amountSats = Math.ceil(
+      (params.amountUsdCents / 100) / btcPrice * 100_000_000
+    );
+    if (amountSats === 0) return true; // Too small to charge
+
+    const res = await fetch(`${this.baseUrl}/accounts/${accountId}/withdraw`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.secret}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(params),
+      body: JSON.stringify({ amount_sats: amountSats, reference: params.reference }),
     });
+
+    if (res.status === 402) return false; // Insufficient balance
     if (!res.ok) throw new Error(`Satbill deduction failed: ${res.status}`);
-    return res.json();
+    return true;
   }
 
-  async createAccount(params: CreateAccountParams): Promise<CreateAccountResult> {
-    const res = await fetch(`${this.baseUrl}/api/accounts`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.secret}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(params),
-    });
-    if (!res.ok) throw new Error(`Satbill account creation failed: ${res.status}`);
-    return res.json();
+  /**
+   * Get current BTC/USD price with caching.
+   * Uses CoinGecko's free public API — no API key required.
+   */
+  private async getBtcPrice(): Promise<number> {
+    const now = Date.now();
+    if (now - this.btcPriceLastFetched < BTC_PRICE_CACHE_TTL_MS) {
+      return this.btcPriceUsd;
+    }
+
+    try {
+      const res = await fetch(
+        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
+        { signal: AbortSignal.timeout(5000) }
+      );
+      const data = await res.json();
+      this.btcPriceUsd = data.bitcoin.usd;
+      this.btcPriceLastFetched = now;
+    } catch (err) {
+      console.error('[SatbillClient] Failed to fetch BTC price:', err);
+      // Keep stale price if available
+    }
+
+    return this.btcPriceUsd;
   }
 }
 ```
 
-Service-to-service auth is a shared secret in `SATBILL_API_SECRET` env var. This is fine for V1 when both services run on the same server.
+Service-to-service auth is a shared secret in `SATBILL_API_SECRET` env var. Fine for V1 when both services run on the same server. V2 could use mTLS or OAuth 2.0 client credentials.
 
 ---
 
@@ -317,15 +339,18 @@ For now: 30% margin, applied in `calculateCost()` in `logger.ts` before passing 
 
 ## What Satbill Needs to Add
 
-Based on this design, satbill needs to expose these endpoints (all three are fairly simple additions to its existing infrastructure):
+Almost nothing! Satbill's existing API covers the integration:
 
-1. `GET /api/accounts/{id}/access` — reads balance, returns `can_access` bool
-2. `POST /api/accounts/{id}/deduct` — deducts `amount_usd_cents` (converts to sats internally)
-3. `POST /api/accounts` — creates account, returns deposit address
+| Need | Satbill endpoint | Status |
+|------|-----------------|--------|
+| Check access | `GET /access/{id}/api_access` | ✅ Exists |
+| Create account | `POST /accounts` | ✅ Exists |
+| Get deposit address | `POST /accounts/{id}/deposit-address` | ✅ Exists |
+| Deduct balance | `POST /accounts/{id}/withdraw` | ✅ Exists |
 
-The USD→satoshi conversion in `/deduct` requires:
-- A live BTC/USD price (satbill should already have this from the wallet sync logic)
-- Formula: `amount_sats = (amount_usd_cents / 100) / btc_price_usd × 100_000_000`
+The USD→sats conversion is handled by the model router's `SatbillClient` (above), not satbill. This keeps satbill pure.
+
+**One potential addition:** satbill may need service-to-service auth (Bearer token validation) if it doesn't already have it. Check whether the existing routes require auth or are open.
 
 ---
 
