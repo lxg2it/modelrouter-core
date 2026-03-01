@@ -16,6 +16,7 @@ import { UsageStore } from './tracking/store.js';
 import { UsageLogger } from './tracking/logger.js';
 import { AnthropicAdapter } from './providers/anthropic.js';
 import { OpenAIAdapter } from './providers/openai.js';
+import { GoogleAdapter } from './providers/google.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ProviderName, Tier } from './types.js';
 
@@ -53,10 +54,9 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   if (config.providers.openai) {
     providers.set('openai', new OpenAIAdapter(config.providers.openai.apiKey));
   }
-  // Google adapter not yet implemented
-  // if (config.providers.google) {
-  //   providers.set('google', new GoogleAdapter(config.providers.google.apiKey));
-  // }
+  if (config.providers.google) {
+    providers.set('google', new GoogleAdapter(config.providers.google.apiKey));
+  }
 
   // Routing engine
   const availableProviders = new Set<ProviderName>(providers.keys());
