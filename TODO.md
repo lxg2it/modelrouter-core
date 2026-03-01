@@ -21,7 +21,7 @@
 - [x] Usage tracking (tokens, cost, latency per request)
 - [x] CLI for key generation
 - [ ] **[BLOCKED: API KEYS]** End-to-end test with real providers
-- [ ] Pre-stream failover for streaming requests
+- [x] Pre-stream failover for streaming requests
 - [ ] Basic dashboard — usage, spend, model distribution
 - [ ] Landing page / marketing site
 
