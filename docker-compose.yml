@@ -1,0 +1,28 @@
+services:
+  modelrouter:
+    build: .
+    container_name: modelrouter
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - LOG_LEVEL=info
+      - DEFAULT_TIER=standard
+      - DEFAULT_OUTPUT_RATIO=0.33
+      # Provider API keys — set in .env or environment
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+    volumes:
+      - modelrouter-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  modelrouter-data:
