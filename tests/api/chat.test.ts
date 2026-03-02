@@ -24,6 +24,7 @@ const fakeApiKey: ApiKey = {
   name: 'test',
   active: true,
   createdAt: new Date().toISOString(),
+  creditBalanceCents: 0,
 };
 
 const minimalRequest: ChatCompletionRequest = {
@@ -131,16 +132,23 @@ function makeTestApp(
   providers: Map<ProviderName, ProviderAdapter>,
   engine: RoutingEngine,
   logger: UsageLogger,
+  opts: { apiKey?: ApiKey; keyStore?: { deductCredits: (id: string, cents: number) => number } } = {},
 ) {
   const app = new Hono<AuthEnv>();
+  const key = opts.apiKey ?? fakeApiKey;
 
   // Bypass auth: inject a fake API key into every request context
   app.use('*', async (c, next) => {
-    c.set('apiKey', fakeApiKey);
+    c.set('apiKey', key);
     await next();
   });
 
-  app.route('/', createChatRouter({ router: engine, providers, logger }));
+  app.route('/', createChatRouter({
+    router: engine,
+    providers,
+    logger,
+    keyStore: opts.keyStore as any,
+  }));
   return app;
 }
 
@@ -389,5 +397,116 @@ describe('POST /v1/chat/completions — streaming', () => {
     expect(res.status).toBe(503);
     const body = await res.json() as any;
     expect(body.error.code).toBe('no_available_models');
+  });
+});
+
+// ─── Stripe Credit Deduction ───────────────────────────────────────────────
+
+describe('Stripe credit deduction', () => {
+  const engine = new RoutingEngine({
+    availableProviders: new Set<ProviderName>(['google']),
+    defaultTier: 'standard',
+    defaultOutputRatio: 0.33,
+  });
+
+  /** A Stripe-billed API key with a positive balance. */
+  const stripeApiKey: ApiKey = {
+    ...fakeApiKey,
+    stripeCustomerId: 'cus_test123',
+    creditBalanceCents: 5000, // $50.00
+  };
+
+  it('deducts credits after a successful non-streaming request', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Hello!');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const mockKeyStore = { deductCredits: vi.fn().mockReturnValue(4999) };
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: stripeApiKey,
+      keyStore: mockKeyStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(200);
+    // deductCredits was called with the key ID and some cost amount
+    expect(mockKeyStore.deductCredits).toHaveBeenCalledOnce();
+    const [calledKeyId, calledCents] = mockKeyStore.deductCredits.mock.calls[0] as [string, number];
+    expect(calledKeyId).toBe(stripeApiKey.id);
+    expect(typeof calledCents).toBe('number');
+    expect(calledCents).toBeGreaterThanOrEqual(0);
+  });
+
+  it('does not call deductCredits when key has no stripeCustomerId', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Hello!');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const mockKeyStore = { deductCredits: vi.fn().mockReturnValue(0) };
+
+    // fakeApiKey has no stripeCustomerId
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: fakeApiKey,
+      keyStore: mockKeyStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(200);
+    expect(mockKeyStore.deductCredits).not.toHaveBeenCalled();
+  });
+
+  it('deducts credits after a successful streaming request', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Hello streaming!');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const mockKeyStore = { deductCredits: vi.fn().mockReturnValue(4999) };
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: stripeApiKey,
+      keyStore: mockKeyStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...minimalRequest, stream: true }),
+    }));
+
+    expect(res.status).toBe(200);
+    // Consume the stream so finalize() runs
+    await res.text();
+    expect(mockKeyStore.deductCredits).toHaveBeenCalledOnce();
+    const [calledKeyId] = mockKeyStore.deductCredits.mock.calls[0] as [string, number];
+    expect(calledKeyId).toBe(stripeApiKey.id);
+  });
+
+  it('still returns 200 if deductCredits throws', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Hello!');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const mockKeyStore = {
+      deductCredits: vi.fn().mockImplementation(() => {
+        throw new Error('DB connection lost');
+      }),
+    };
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: stripeApiKey,
+      keyStore: mockKeyStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    // Deduction failure must NOT fail the user's request
+    expect(res.status).toBe(200);
   });
 });

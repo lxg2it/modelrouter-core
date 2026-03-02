@@ -20,6 +20,7 @@ import { GoogleAdapter } from './providers/google.js';
 import { SatbillClient } from './billing/satbill-client.js';
 import { StripeService } from './billing/stripe.js';
 import { createBillingRouter } from './api/billing.js';
+import { createRegisterRouter } from './api/register.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ProviderName, Tier } from './types.js';
 
@@ -118,7 +119,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   api.use('*', authMiddleware(keyStore, billing));
 
   // Mount API endpoints
-  api.route('/chat/completions', createChatRouter({ router, providers, logger: usageLogger, billing }));
+  api.route('/chat/completions', createChatRouter({ router, providers, logger: usageLogger, billing, keyStore }));
   api.route('/models', createModelsRouter({ usageStore }));
   api.route('/usage', createUsageRouter({ usageStore }));
 
@@ -132,6 +133,10 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   }
 
   app.route('/v1', api);
+
+  // Registration endpoint — unauthenticated, mounted on the main app
+  // so it is reachable before the auth middleware runs.
+  app.route('/v1/auth/register', createRegisterRouter({ keyStore }));
 
   // Global error handler
   app.onError((err, c) => {
@@ -149,7 +154,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   app.notFound((c) => {
     return c.json({
       error: {
-        message: `Not found: ${c.req.path}. Available endpoints: POST /v1/chat/completions, GET /v1/models, GET /v1/usage`,
+        message: `Not found: ${c.req.path}. Available endpoints: POST /v1/auth/register, POST /v1/chat/completions, GET /v1/models, GET /v1/usage, GET /v1/billing/status`,
         type: 'invalid_request_error',
         code: 'not_found',
       },

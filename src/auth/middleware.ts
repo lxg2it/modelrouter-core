@@ -1,8 +1,15 @@
 /**
  * Authentication middleware for Hono.
  *
- * Validates Bearer tokens against the key store, then (if billing is enabled)
- * checks the account has sufficient balance via satbill before routing.
+ * Validates Bearer tokens against the key store, then enforces billing
+ * access checks before routing:
+ *
+ *   1. Satbill: if the key is linked to a satbill account, check balance
+ *      via the satbill API (returns 402 if canAccess is false).
+ *
+ *   2. Stripe credits: if the key has a stripeCustomerId and a zero or
+ *      negative creditBalanceCents, reject with 402. Billing routes are
+ *      exempt — users must be able to top up even when balance is zero.
  *
  * Attaches the API key record (including tier) to the request context.
  * If billing is configured, also attaches the satbill account ID so the
@@ -69,7 +76,7 @@ export function authMiddleware(keyStore: KeyStore, satbill?: SatbillClient) {
       }, 401);
     }
 
-    // Billing access check (if this key is linked to a satbill account)
+    // Satbill access check (if this key is linked to a Bitcoin billing account)
     if (satbill && apiKey.satbillAccountId) {
       const access = await satbill.checkAccess(apiKey.satbillAccountId);
       if (!access.canAccess) {
@@ -80,6 +87,28 @@ export function authMiddleware(keyStore: KeyStore, satbill?: SatbillClient) {
             code: 'insufficient_balance',
             // Include the account ID so clients can construct a deposit link
             account_id: apiKey.satbillAccountId,
+          },
+        }, 402);
+      }
+    }
+
+    // Stripe credit check — if this key is on card billing, enforce balance.
+    //
+    // Billing routes (/billing/*) are exempt: users must be able to reach
+    // top-up and setup-intent even when their balance has hit zero.
+    //
+    // We use the local creditBalanceCents value loaded during validate() —
+    // it is always fresh (SQLite read) and avoids a Stripe API call here.
+    if (apiKey.stripeCustomerId && apiKey.creditBalanceCents <= 0) {
+      const isBillingPath = c.req.path.includes('/billing');
+      if (!isBillingPath) {
+        return c.json({
+          error: {
+            message:
+              'Insufficient credits. Add more at POST /v1/billing/top-up or visit your billing dashboard.',
+            type: 'insufficient_quota',
+            code: 'insufficient_credits',
+            creditBalanceCents: apiKey.creditBalanceCents,
           },
         }, 402);
       }
