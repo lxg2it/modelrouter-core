@@ -20,7 +20,9 @@
 - [x] API key management (generate, validate, revoke)
 - [x] Usage tracking (tokens, cost, latency per request)
 - [x] CLI for key generation
-- [ ] **[BLOCKED: API KEYS]** End-to-end test with real providers
+- [x] SatbillClient — HTTP client for satbill billing integration
+- [x] Billing wired into request pipeline (pre-request access check + post-request deduction)
+- [ ] **[BLOCKED: API BILLING CREDITS]** End-to-end test with real providers
 - [x] Pre-stream failover for streaming requests
 - [ ] Basic dashboard — usage, spend, model distribution
 - [ ] Landing page / marketing site
