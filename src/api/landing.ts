@@ -230,7 +230,7 @@ curl -X POST https://api.lxg2it.com/v1/auth/register \\
       <div class="qs-num">3</div>
       <div class="qs-content">
         <div class="qs-label">Add credits to continue</div>
-        <div class="qs-sub">Pay-as-you-go via card. Buy credits at a low flat fee — transparent pricing, cheaper than the alternatives.</div>
+        <div class="qs-sub">Pay-as-you-go via card. Buy credits with a 4% platform fee — transparent pricing, cheaper than the alternatives.</div>
         <div><a href="/dashboard">Open billing dashboard →</a></div>
       </div>
     </div>

@@ -340,7 +340,7 @@ async function doTopup() {
 
   if (status === 200) {
     if (body.status === 'succeeded') {
-      setMsg('topupMsg', '✓ Added ' + fmt(body.amountCents) + '. New balance: ' + fmt(body.creditBalanceCents), 'success');
+      setMsg('topupMsg', '✓ Added ' + fmt(body.creditsAddedCents ?? body.amountCents) + ' in credits. New balance: ' + fmt(body.creditBalanceCents), 'success');
       loadStatus();
     } else if (body.status === 'requires_action' && body.clientSecret) {
       // 3DS required
@@ -349,7 +349,7 @@ async function doTopup() {
       if (error) {
         setMsg('topupMsg', 'Authentication failed: ' + error.message);
       } else if (paymentIntent.status === 'succeeded') {
-        setMsg('topupMsg', '✓ Added ' + fmt(body.amountCents) + ' (authentication complete).', 'success');
+        setMsg('topupMsg', '✓ Added ' + fmt(body.creditsAddedCents ?? body.amountCents) + ' in credits (authentication complete).', 'success');
         loadStatus();
       }
     }

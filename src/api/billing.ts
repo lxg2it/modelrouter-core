@@ -25,6 +25,11 @@ const MIN_TOP_UP_CENTS = 500;
 // Maximum top-up per request: $500.00 (prevents runaway charges)
 const MAX_TOP_UP_CENTS = 50_000;
 
+// Platform fee: 4% of each top-up.
+// A $10.00 charge gives the user $9.60 in credits.
+// Provider costs are passed through at exact rates — no per-request markup.
+const PLATFORM_FEE_RATE = 0.04;
+
 export interface BillingRouterDeps {
   keyStore: KeyStore;
   stripe: StripeService;
@@ -215,10 +220,13 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
     const description = `Model Router credits — ${formatUsd(amountCents)} for key ${apiKey.keyPrefix}`;
     const result = await stripe.charge(apiKey.stripeCustomerId, amountCents, description);
 
-    // Only add credits if the charge succeeded immediately
+    // Only add credits if the charge succeeded immediately.
+    // Apply the 4% platform fee: user is credited 96% of the charge amount.
+    // Provider costs are passed through at exact rates — we only take our cut here.
+    const creditsToAdd = Math.floor(amountCents * (1 - PLATFORM_FEE_RATE));
     let newBalance = apiKey.creditBalanceCents;
     if (result.status === 'succeeded') {
-      newBalance = keyStore.addCredits(apiKey.id, amountCents);
+      newBalance = keyStore.addCredits(apiKey.id, creditsToAdd);
     }
 
     return c.json({
@@ -226,6 +234,8 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
       status: result.status,
       amountCents: result.amountCents,
       amountUsd: formatUsd(result.amountCents),
+      creditsAddedCents: result.status === 'succeeded' ? creditsToAdd : 0,
+      creditsAddedUsd: result.status === 'succeeded' ? formatUsd(creditsToAdd) : '$0.00',
       // Returned for 3DS — client uses this to complete authentication
       ...(result.clientSecret ? { clientSecret: result.clientSecret } : {}),
       creditBalanceCents: newBalance,
