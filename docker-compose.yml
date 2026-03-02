@@ -14,6 +14,12 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      # Stripe billing (optional — card payments)
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY:-}
+      # Satbill billing (optional — Bitcoin payments)
+      - SATBILL_BASE_URL=${SATBILL_BASE_URL:-}
+      - SATBILL_API_SECRET=${SATBILL_API_SECRET:-}
     volumes:
       - modelrouter-data:/data
     restart: unless-stopped
