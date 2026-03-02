@@ -32,14 +32,22 @@ export class KeyStore {
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         last_used_at TEXT,
         active INTEGER NOT NULL DEFAULT 1,
-        satbill_account_id TEXT
+        satbill_account_id TEXT,
+        stripe_customer_id TEXT,
+        credit_balance_cents INTEGER NOT NULL DEFAULT 0
       )
     `);
 
-    // Migration: add satbill_account_id to existing tables that predate it
+    // Migrations: add new columns to existing tables created before they existed
     const cols = this.db.pragma('table_info(api_keys)') as { name: string }[];
     if (!cols.some((c) => c.name === 'satbill_account_id')) {
       this.db.exec(`ALTER TABLE api_keys ADD COLUMN satbill_account_id TEXT`);
+    }
+    if (!cols.some((c) => c.name === 'stripe_customer_id')) {
+      this.db.exec(`ALTER TABLE api_keys ADD COLUMN stripe_customer_id TEXT`);
+    }
+    if (!cols.some((c) => c.name === 'credit_balance_cents')) {
+      this.db.exec(`ALTER TABLE api_keys ADD COLUMN credit_balance_cents INTEGER NOT NULL DEFAULT 0`);
     }
   }
 
@@ -74,6 +82,7 @@ export class KeyStore {
         satbillAccountId,
         createdAt: new Date().toISOString(),
         active: true,
+        creditBalanceCents: 0,
       },
     };
   }
@@ -86,6 +95,70 @@ export class KeyStore {
       UPDATE api_keys SET satbill_account_id = ? WHERE id = ?
     `).run(satbillAccountId, keyId);
     return result.changes > 0;
+  }
+
+  /**
+   * Link an existing API key to a Stripe customer.
+   * Called once when the user first sets up card billing.
+   */
+  setStripeCustomerId(keyId: string, stripeCustomerId: string): boolean {
+    const result = this.db.prepare(`
+      UPDATE api_keys SET stripe_customer_id = ? WHERE id = ?
+    `).run(stripeCustomerId, keyId);
+    return result.changes > 0;
+  }
+
+  /**
+   * Find an API key record by its internal ID.
+   * Used in billing routes after auth middleware has already validated the key.
+   */
+  findById(keyId: string): ApiKey | null {
+    const row = this.db.prepare(`
+      SELECT * FROM api_keys WHERE id = ? AND active = 1
+    `).get(keyId) as DbApiKeyRow | undefined;
+    return row ? this.toApiKey(row) : null;
+  }
+
+  /**
+   * Add credits to an API key's balance (after a successful Stripe charge).
+   * Returns the new balance in cents.
+   */
+  addCredits(keyId: string, amountCents: number): number {
+    const result = this.db.prepare(`
+      UPDATE api_keys
+      SET credit_balance_cents = credit_balance_cents + ?
+      WHERE id = ? AND active = 1
+      RETURNING credit_balance_cents
+    `).get(amountCents, keyId) as { credit_balance_cents: number } | undefined;
+
+    if (!result) throw new Error(`Key not found or inactive: ${keyId}`);
+    return result.credit_balance_cents;
+  }
+
+  /**
+   * Deduct credits from an API key's balance (after a request is served).
+   * Returns the new balance. Allows balance to go negative — callers decide
+   * whether to block based on balance rather than having the DB enforce it.
+   *
+   * No-op (returns current balance) if amountCents <= 0 or key has no Stripe billing.
+   */
+  deductCredits(keyId: string, amountCents: number): number {
+    if (amountCents <= 0) {
+      const row = this.db.prepare(
+        `SELECT credit_balance_cents FROM api_keys WHERE id = ?`,
+      ).get(keyId) as { credit_balance_cents: number } | undefined;
+      return row?.credit_balance_cents ?? 0;
+    }
+
+    const result = this.db.prepare(`
+      UPDATE api_keys
+      SET credit_balance_cents = credit_balance_cents - ?
+      WHERE id = ? AND active = 1
+      RETURNING credit_balance_cents
+    `).get(amountCents, keyId) as { credit_balance_cents: number } | undefined;
+
+    if (!result) throw new Error(`Key not found or inactive: ${keyId}`);
+    return result.credit_balance_cents;
   }
 
   /**
@@ -155,6 +228,8 @@ export class KeyStore {
       lastUsedAt: row.last_used_at ?? undefined,
       active: row.active === 1,
       satbillAccountId: row.satbill_account_id ?? undefined,
+      stripeCustomerId: row.stripe_customer_id ?? undefined,
+      creditBalanceCents: row.credit_balance_cents ?? 0,
     };
   }
 }
@@ -171,4 +246,6 @@ interface DbApiKeyRow {
   last_used_at: string | null;
   active: number;
   satbill_account_id: string | null;
+  stripe_customer_id: string | null;
+  credit_balance_cents: number;
 }

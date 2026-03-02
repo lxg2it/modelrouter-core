@@ -147,8 +147,12 @@ export interface ApiKey {
   createdAt: string;
   lastUsedAt?: string;
   active: boolean;
-  /** Satbill account ID for billing. When set, requests are checked against balance. */
+  /** Satbill account ID for Bitcoin billing. When set, requests are checked against BTC balance. */
   satbillAccountId?: string;
+  /** Stripe customer ID for card billing. Created on first billing setup. */
+  stripeCustomerId?: string;
+  /** Credit balance in cents (USD). Loaded from top-ups, deducted per request. */
+  creditBalanceCents: number;
 }
 
 // ─── Usage Types ───────────────────────────────────────

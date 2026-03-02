@@ -18,6 +18,8 @@ import { AnthropicAdapter } from './providers/anthropic.js';
 import { OpenAIAdapter } from './providers/openai.js';
 import { GoogleAdapter } from './providers/google.js';
 import { SatbillClient } from './billing/satbill-client.js';
+import { StripeService } from './billing/stripe.js';
+import { createBillingRouter } from './api/billing.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ProviderName, Tier } from './types.js';
 
@@ -29,6 +31,7 @@ export interface AppContext {
   router: RoutingEngine;
   providers: Map<ProviderName, ProviderAdapter>;
   billing?: SatbillClient;
+  stripe?: StripeService;
 }
 
 /**
@@ -68,13 +71,22 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     defaultOutputRatio: config.defaultOutputRatio,
   });
 
-  // Billing client (optional — only instantiated when satbill is configured)
+  // Satbill client (optional — Bitcoin billing)
   const billing = config.satbill
     ? new SatbillClient(config.satbill.baseUrl, config.satbill.apiSecret)
     : undefined;
 
   if (billing) {
     console.log(`[Billing] Satbill enabled: ${config.satbill!.baseUrl}`);
+  }
+
+  // Stripe client (optional — card billing)
+  const stripeService = config.stripe
+    ? new StripeService(config.stripe.secretKey)
+    : undefined;
+
+  if (stripeService) {
+    console.log(`[Billing] Stripe enabled (publishable key: ${config.stripe!.publishableKey.slice(0, 14)}...)`);
   }
 
   // Hono app
@@ -94,7 +106,10 @@ export function createApp(): { app: Hono; ctx: AppContext } {
       version: '0.1.0',
       providers: health.availableProviders,
       openCircuits: health.openCircuits.length,
-      billing: billing ? 'enabled' : 'disabled',
+      billing: {
+        satbill: billing ? 'enabled' : 'disabled',
+        stripe: stripeService ? 'enabled' : 'disabled',
+      },
     });
   });
 
@@ -106,6 +121,15 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   api.route('/chat/completions', createChatRouter({ router, providers, logger: usageLogger, billing }));
   api.route('/models', createModelsRouter({ usageStore }));
   api.route('/usage', createUsageRouter({ usageStore }));
+
+  // Stripe billing routes (mounted only when Stripe is configured)
+  if (stripeService && config.stripe) {
+    api.route('/billing', createBillingRouter({
+      keyStore,
+      stripe: stripeService,
+      publishableKey: config.stripe.publishableKey,
+    }));
+  }
 
   app.route('/v1', api);
 
@@ -132,6 +156,6 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     }, 404);
   });
 
-  const ctx: AppContext = { config, db, keyStore, usageStore, router, providers, billing };
+  const ctx: AppContext = { config, db, keyStore, usageStore, router, providers, billing, stripe: stripeService };
   return { app, ctx };
 }

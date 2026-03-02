@@ -30,6 +30,12 @@ export interface Config {
     baseUrl: string;
     apiSecret: string;
   };
+
+  // Stripe billing integration (optional)
+  stripe?: {
+    secretKey: string;
+    publishableKey: string;
+  };
 }
 
 export function loadConfig(): Config {
@@ -62,6 +68,13 @@ export function loadConfig(): Config {
 
     satbill: process.env.SATBILL_BASE_URL && process.env.SATBILL_API_SECRET
       ? { baseUrl: process.env.SATBILL_BASE_URL, apiSecret: process.env.SATBILL_API_SECRET }
+      : undefined,
+
+    stripe: process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PUBLISHABLE_KEY
+      ? {
+          secretKey: process.env.STRIPE_SECRET_KEY,
+          publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+        }
       : undefined,
   };
 }
