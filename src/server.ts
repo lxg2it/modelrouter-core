@@ -133,11 +133,12 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     }));
   }
 
-  app.route('/v1', api);
-
-  // Registration endpoint — unauthenticated, mounted on the main app
-  // so it is reachable before the auth middleware runs.
+  // Registration endpoint — must be mounted BEFORE the authenticated api
+  // sub-router so that Hono matches it first. app.route('/v1', api) would
+  // otherwise capture all /v1/* paths and run auth middleware on them.
   app.route('/v1/auth/register', createRegisterRouter({ keyStore }));
+
+  app.route('/v1', api);
 
   // Dashboard — self-service billing UI, served only when Stripe is configured.
   if (stripeService) {
