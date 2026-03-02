@@ -124,7 +124,7 @@ console.log('Approximate cost: <$0.001 total across all providers.\n');
 await testProvider(
   'Anthropic',
   new AnthropicAdapter(process.env.ANTHROPIC_API_KEY),
-  'claude-3-5-haiku-20241022',   // Cheapest, fast haiku — confirmed current
+  'claude-haiku-4-5-20251001',   // Cheapest current Haiku (4.x generation)
 );
 
 await testProvider(
@@ -136,7 +136,7 @@ await testProvider(
 await testProvider(
   'Google',
   new GoogleAdapter(process.env.GOOGLE_API_KEY),
-  'gemini-2.0-flash',            // Current stable Gemini Flash
+  'gemini-2.5-flash',            // Current stable Gemini Flash (2.0 deprecated for new users)
 );
 
 // ─── Summary ──────────────────────────────────────────
