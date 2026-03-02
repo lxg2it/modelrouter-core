@@ -22,6 +22,7 @@ import { StripeService } from './billing/stripe.js';
 import { createBillingRouter } from './api/billing.js';
 import { createRegisterRouter } from './api/register.js';
 import { createDashboardRouter } from './api/dashboard.js';
+import { createLandingRouter } from './api/landing.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ProviderName, Tier } from './types.js';
 
@@ -99,6 +100,10 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   if (config.logLevel === 'debug') {
     app.use('*', honoLogger());
   }
+
+  // Landing page (unauthenticated)
+  app.route('/', createLandingRouter());
+
 
   // Health check (unauthenticated)
   app.get('/health', (c) => {
