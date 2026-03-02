@@ -111,6 +111,32 @@ export class UsageStore {
   }
 
   /**
+   * Get daily usage aggregates for a key, for charting.
+   * Returns one row per day for the last `days` days (including days with zero requests).
+   */
+  getDailyUsage(keyId: string, days: number = 30): DailyUsage[] {
+    const rows = this.db.prepare(`
+      SELECT
+        date(created_at) as day,
+        COUNT(*) as request_count,
+        SUM(total_tokens) as total_tokens,
+        SUM(cost_cents) as cost_cents
+      FROM usage_log
+      WHERE key_id = ? AND created_at > datetime('now', ?)
+      GROUP BY date(created_at)
+      ORDER BY day ASC
+    `).all(keyId, `-${days} days`) as DbDailyRow[];
+
+    return rows.map((r) => ({
+      day: r.day,
+      requestCount: r.request_count,
+      totalTokens: r.total_tokens ?? 0,
+      costCents: r.cost_cents ?? 0,
+    }));
+  }
+
+
+  /**
    * Get the average output ratio for a key (for routing optimization).
    */
   getOutputRatio(keyId: string, sinceDays: number = 30): number | null {
@@ -144,6 +170,22 @@ export interface UsageSummary {
     totalTokens: number;
   }>;
 }
+
+
+export interface DailyUsage {
+  day: string;          // 'YYYY-MM-DD'
+  requestCount: number;
+  totalTokens: number;
+  costCents: number;
+}
+
+interface DbDailyRow {
+  day: string;
+  request_count: number;
+  total_tokens: number | null;
+  cost_cents: number | null;
+}
+
 
 interface DbSummaryRow {
   total_requests: number | null;

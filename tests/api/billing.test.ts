@@ -15,6 +15,7 @@ import type { AuthEnv } from '../../src/auth/middleware.js';
 import { createBillingRouter } from '../../src/api/billing.js';
 import type { KeyStore } from '../../src/auth/keys.js';
 import type { StripeService } from '../../src/billing/stripe.js';
+import type { BillingTransactionStore } from '../../src/billing/transactions.js';
 import type { ApiKey } from '../../src/types.js';
 
 // ─── Helpers ─────────────────────────────────────────────
@@ -51,6 +52,14 @@ function mockKeyStore(overrides: Partial<KeyStore> = {}): KeyStore {
   } as unknown as KeyStore;
 }
 
+function mockBillingTxStore(): BillingTransactionStore {
+  return {
+    record: vi.fn().mockReturnValue({ id: 'tx-1', createdAt: new Date().toISOString() }),
+    list: vi.fn().mockReturnValue([]),
+  } as unknown as BillingTransactionStore;
+}
+
+
 function mockStripe(overrides: Partial<StripeService> = {}): StripeService {
   return {
     createCustomer: vi.fn(),
@@ -68,8 +77,8 @@ function mockStripe(overrides: Partial<StripeService> = {}): StripeService {
 }
 
 /** Build the billing router wrapped in a minimal app that injects an API key into context. */
-function buildApp(apiKey: ApiKey, keyStore: KeyStore, stripe: StripeService): Hono {
-  const billing = createBillingRouter({ keyStore, stripe, publishableKey: PUBLISHABLE_KEY });
+function buildApp(apiKey: ApiKey, keyStore: KeyStore, stripe: StripeService, billingTxStore?: BillingTransactionStore): Hono {
+  const billing = createBillingRouter({ keyStore, stripe, billingTxStore: billingTxStore ?? mockBillingTxStore(), publishableKey: PUBLISHABLE_KEY });
   const app = new Hono<AuthEnv>();
   // Inject apiKey into context (simulating auth middleware)
   app.use('*', async (c, next) => {

@@ -19,6 +19,7 @@ import type { Context } from 'hono';
 import type { AuthEnv } from '../auth/middleware.js';
 import type { KeyStore } from '../auth/keys.js';
 import type { StripeService } from '../billing/stripe.js';
+import type { BillingTransactionStore } from '../billing/transactions.js';
 
 // Minimum top-up: $5.00
 const MIN_TOP_UP_CENTS = 500;
@@ -33,12 +34,13 @@ const PLATFORM_FEE_RATE = 0.04;
 export interface BillingRouterDeps {
   keyStore: KeyStore;
   stripe: StripeService;
+  billingTxStore: BillingTransactionStore;
   /** Stripe publishable key to include in responses (for client-side Stripe.js). */
   publishableKey: string;
 }
 
 export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
-  const { keyStore, stripe, publishableKey } = deps;
+  const { keyStore, stripe, billingTxStore, publishableKey } = deps;
   const router = new Hono<AuthEnv>();
 
   // ─── GET /v1/billing/status ────────────────────────────
@@ -229,6 +231,15 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
       newBalance = keyStore.addCredits(apiKey.id, creditsToAdd);
     }
 
+    // Record transaction for billing history
+    billingTxStore.record({
+      keyId: apiKey.id,
+      paymentIntentId: result.paymentIntentId,
+      amountChargedCents: result.amountCents,
+      creditsAddedCents: result.status === 'succeeded' ? creditsToAdd : 0,
+      status: result.status as 'succeeded' | 'requires_action' | 'failed',
+    });
+
     return c.json({
       paymentIntentId: result.paymentIntentId,
       status: result.status,
@@ -240,6 +251,31 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
       ...(result.clientSecret ? { clientSecret: result.clientSecret } : {}),
       creditBalanceCents: newBalance,
       creditBalanceUsd: formatUsd(newBalance),
+    });
+  });
+
+  // ─── GET /v1/billing/history ──────────────────────────
+  //
+  // Returns a list of past billing transactions (top-ups) for the authenticated key.
+  // Sorted newest-first. Optional `?limit=N` (default 20, max 100).
+  //
+  router.get('/history', (c: Context<AuthEnv>) => {
+    const apiKey = c.get('apiKey');
+    const limitParam = c.req.query('limit');
+    const limit = Math.min(100, Math.max(1, parseInt(limitParam ?? '20', 10) || 20));
+
+    const transactions = billingTxStore.list(apiKey.id, limit);
+    return c.json({
+      transactions: transactions.map((t) => ({
+        id: t.id,
+        paymentIntentId: t.paymentIntentId,
+        amountChargedCents: t.amountChargedCents,
+        amountChargedUsd: formatUsd(t.amountChargedCents),
+        creditsAddedCents: t.creditsAddedCents,
+        creditsAddedUsd: formatUsd(t.creditsAddedCents),
+        status: t.status,
+        createdAt: t.createdAt,
+      })),
     });
   });
 

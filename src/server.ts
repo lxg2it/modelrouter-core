@@ -19,10 +19,13 @@ import { OpenAIAdapter } from './providers/openai.js';
 import { GoogleAdapter } from './providers/google.js';
 import { SatbillClient } from './billing/satbill-client.js';
 import { StripeService } from './billing/stripe.js';
+import { BillingTransactionStore } from './billing/transactions.js';
 import { createBillingRouter } from './api/billing.js';
 import { createRegisterRouter } from './api/register.js';
 import { createDashboardRouter } from './api/dashboard.js';
 import { createLandingRouter } from './api/landing.js';
+import { createAccountRouter } from './api/account.js';
+import { createProfileRouter } from './api/profile.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ProviderName, Tier } from './types.js';
 
@@ -92,6 +95,9 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     console.log(`[Billing] Stripe enabled (publishable key: ${config.stripe!.publishableKey.slice(0, 14)}...)`);
   }
 
+  // Billing transaction store — always initialised (records top-up history)
+  const billingTxStore = new BillingTransactionStore(db);
+
   // Hono app
   const app = new Hono();
 
@@ -128,12 +134,14 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   api.route('/chat/completions', createChatRouter({ router, providers, logger: usageLogger, billing, keyStore }));
   api.route('/models', createModelsRouter({ usageStore }));
   api.route('/usage', createUsageRouter({ usageStore }));
+  api.route('/account', createAccountRouter({ keyStore, usageStore, db }));
 
   // Stripe billing routes (mounted only when Stripe is configured)
   if (stripeService && config.stripe) {
     api.route('/billing', createBillingRouter({
       keyStore,
       stripe: stripeService,
+      billingTxStore,
       publishableKey: config.stripe.publishableKey,
     }));
   }
@@ -150,6 +158,9 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     app.route('/dashboard', createDashboardRouter());
     console.log('[Dashboard] Billing dashboard enabled at /dashboard');
   }
+
+  // Profile page — always available (shows account + usage; billing section shown only if Stripe is configured)
+  app.route('/profile', createProfileRouter());
 
   // Global error handler
   app.onError((err, c) => {
