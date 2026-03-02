@@ -21,6 +21,7 @@ import { SatbillClient } from './billing/satbill-client.js';
 import { StripeService } from './billing/stripe.js';
 import { createBillingRouter } from './api/billing.js';
 import { createRegisterRouter } from './api/register.js';
+import { createDashboardRouter } from './api/dashboard.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ProviderName, Tier } from './types.js';
 
@@ -137,6 +138,12 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   // Registration endpoint — unauthenticated, mounted on the main app
   // so it is reachable before the auth middleware runs.
   app.route('/v1/auth/register', createRegisterRouter({ keyStore }));
+
+  // Dashboard — self-service billing UI, served only when Stripe is configured.
+  if (stripeService) {
+    app.route('/dashboard', createDashboardRouter());
+    console.log('[Dashboard] Billing dashboard enabled at /dashboard');
+  }
 
   // Global error handler
   app.onError((err, c) => {
