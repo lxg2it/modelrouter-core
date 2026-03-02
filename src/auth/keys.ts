@@ -31,15 +31,26 @@ export class KeyStore {
         rate_limit_per_minute INTEGER,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         last_used_at TEXT,
-        active INTEGER NOT NULL DEFAULT 1
+        active INTEGER NOT NULL DEFAULT 1,
+        satbill_account_id TEXT
       )
     `);
+
+    // Migration: add satbill_account_id to existing tables that predate it
+    const cols = this.db.pragma('table_info(api_keys)') as { name: string }[];
+    if (!cols.some((c) => c.name === 'satbill_account_id')) {
+      this.db.exec(`ALTER TABLE api_keys ADD COLUMN satbill_account_id TEXT`);
+    }
   }
 
   /**
    * Generate a new API key. Returns the full key (only shown once) and the stored record.
    */
-  generate(tier: Tier, name?: string): { fullKey: string; record: ApiKey } {
+  generate(
+    tier: Tier,
+    name?: string,
+    satbillAccountId?: string,
+  ): { fullKey: string; record: ApiKey } {
     const rawKey = randomBytes(32).toString('base64url');
     const fullKey = `${KEY_PREFIX}${rawKey}`;
     const keyHash = this.hashKey(fullKey);
@@ -47,10 +58,10 @@ export class KeyStore {
     const id = randomBytes(8).toString('hex');
 
     const stmt = this.db.prepare(`
-      INSERT INTO api_keys (id, key_hash, key_prefix, tier, name)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO api_keys (id, key_hash, key_prefix, tier, name, satbill_account_id)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(id, keyHash, keyPrefix, tier, name ?? null);
+    stmt.run(id, keyHash, keyPrefix, tier, name ?? null, satbillAccountId ?? null);
 
     return {
       fullKey,
@@ -60,10 +71,21 @@ export class KeyStore {
         keyPrefix,
         tier,
         name,
+        satbillAccountId,
         createdAt: new Date().toISOString(),
         active: true,
       },
     };
+  }
+
+  /**
+   * Link an existing API key to a satbill account.
+   */
+  setSatbillAccountId(keyId: string, satbillAccountId: string): boolean {
+    const result = this.db.prepare(`
+      UPDATE api_keys SET satbill_account_id = ? WHERE id = ?
+    `).run(satbillAccountId, keyId);
+    return result.changes > 0;
   }
 
   /**
@@ -132,6 +154,7 @@ export class KeyStore {
       createdAt: row.created_at,
       lastUsedAt: row.last_used_at ?? undefined,
       active: row.active === 1,
+      satbillAccountId: row.satbill_account_id ?? undefined,
     };
   }
 }
@@ -147,4 +170,5 @@ interface DbApiKeyRow {
   created_at: string;
   last_used_at: string | null;
   active: number;
+  satbill_account_id: string | null;
 }

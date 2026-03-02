@@ -17,6 +17,7 @@ import { UsageLogger } from './tracking/logger.js';
 import { AnthropicAdapter } from './providers/anthropic.js';
 import { OpenAIAdapter } from './providers/openai.js';
 import { GoogleAdapter } from './providers/google.js';
+import { SatbillClient } from './billing/satbill-client.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ProviderName, Tier } from './types.js';
 
@@ -27,6 +28,7 @@ export interface AppContext {
   usageStore: UsageStore;
   router: RoutingEngine;
   providers: Map<ProviderName, ProviderAdapter>;
+  billing?: SatbillClient;
 }
 
 /**
@@ -66,6 +68,15 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     defaultOutputRatio: config.defaultOutputRatio,
   });
 
+  // Billing client (optional — only instantiated when satbill is configured)
+  const billing = config.satbill
+    ? new SatbillClient(config.satbill.baseUrl, config.satbill.apiSecret)
+    : undefined;
+
+  if (billing) {
+    console.log(`[Billing] Satbill enabled: ${config.satbill!.baseUrl}`);
+  }
+
   // Hono app
   const app = new Hono();
 
@@ -83,15 +94,16 @@ export function createApp(): { app: Hono; ctx: AppContext } {
       version: '0.1.0',
       providers: health.availableProviders,
       openCircuits: health.openCircuits.length,
+      billing: billing ? 'enabled' : 'disabled',
     });
   });
 
   // Authenticated API routes
   const api = new Hono<AuthEnv>();
-  api.use('*', authMiddleware(keyStore));
+  api.use('*', authMiddleware(keyStore, billing));
 
   // Mount API endpoints
-  api.route('/chat/completions', createChatRouter({ router, providers, logger: usageLogger }));
+  api.route('/chat/completions', createChatRouter({ router, providers, logger: usageLogger, billing }));
   api.route('/models', createModelsRouter({ usageStore }));
   api.route('/usage', createUsageRouter({ usageStore }));
 
@@ -120,6 +132,6 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     }, 404);
   });
 
-  const ctx: AppContext = { config, db, keyStore, usageStore, router, providers };
+  const ctx: AppContext = { config, db, keyStore, usageStore, router, providers, billing };
   return { app, ctx };
 }

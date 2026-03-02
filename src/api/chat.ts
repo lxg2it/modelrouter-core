@@ -12,6 +12,7 @@ import type { RoutingEngine, RouteDecision } from '../routing/engine.js';
 import type { ProviderAdapter, StreamingCompletion } from '../providers/types.js';
 import type { UsageLogger } from '../tracking/logger.js';
 import { UsageLogger as UsageLoggerClass } from '../tracking/logger.js';
+import type { SatbillClient } from '../billing/satbill-client.js';
 import { TIERS } from '../config.js';
 import type { ChatCompletionRequest, ProviderName } from '../types.js';
 
@@ -19,6 +20,8 @@ interface ChatDeps {
   router: RoutingEngine;
   providers: Map<ProviderName, ProviderAdapter>;
   logger: UsageLogger;
+  /** Optional billing client. When present, costs are deducted from the satbill account. */
+  billing?: SatbillClient;
 }
 
 export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
@@ -26,6 +29,7 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
 
   app.post('/', async (c) => {
     const apiKey = c.get('apiKey');
+    const satbillAccountId = c.get('satbillAccountId');
     const body = await c.req.json<ChatCompletionRequest>();
 
     // Route the request
@@ -43,9 +47,9 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
     const startTime = Date.now();
 
     if (body.stream) {
-      return handleStreaming(c, body, decision, deps, apiKey.id, startTime);
+      return handleStreaming(c, body, decision, deps, apiKey.id, startTime, satbillAccountId);
     } else {
-      return handleNonStreaming(c, body, decision, deps, apiKey.id, startTime);
+      return handleNonStreaming(c, body, decision, deps, apiKey.id, startTime, satbillAccountId);
     }
   });
 
@@ -59,6 +63,7 @@ async function handleNonStreaming(
   deps: ChatDeps,
   keyId: string,
   startTime: number,
+  satbillAccountId: string | undefined,
 ) {
   const adapter = deps.providers.get(decision.provider);
   if (!adapter) {
@@ -95,6 +100,16 @@ async function handleNonStreaming(
       streaming: false,
       statusCode: 200,
     });
+
+    // Billing deduction — fire-and-forget. A billing failure must not fail the user's request.
+    if (deps.billing && satbillAccountId && costCents > 0) {
+      deps.billing.deductUsd(satbillAccountId, {
+        amountUsdCents: costCents,
+        reference: result.response.id,
+      }).catch((err) => {
+        console.error('[Billing] Deduction failed (non-fatal):', err);
+      });
+    }
 
     // Add router metadata
     result.response._router = {
@@ -138,6 +153,16 @@ async function handleNonStreaming(
             streaming: false,
             statusCode: 200,
           });
+
+          // Billing deduction for fallback path
+          if (deps.billing && satbillAccountId && costCents > 0) {
+            deps.billing.deductUsd(satbillAccountId, {
+              amountUsdCents: costCents,
+              reference: result.response.id,
+            }).catch((err) => {
+              console.error('[Billing] Deduction failed (non-fatal):', err);
+            });
+          }
 
           result.response._router = {
             provider: fallback.provider,
@@ -183,6 +208,7 @@ async function handleStreaming(
   deps: ChatDeps,
   keyId: string,
   startTime: number,
+  satbillAccountId: string | undefined,
 ) {
   // --- Pre-stream failover ---
   //
@@ -290,6 +316,16 @@ async function handleStreaming(
           streaming: true,
           statusCode: 200,
         });
+
+        // Billing deduction for streaming path
+        if (deps.billing && satbillAccountId && costCents > 0) {
+          deps.billing.deductUsd(satbillAccountId, {
+            amountUsdCents: costCents,
+            reference: `stream-${keyId}-${Date.now()}`,
+          }).catch((err) => {
+            console.error('[Billing] Streaming deduction failed (non-fatal):', err);
+          });
+        }
       } catch {
         // finalize() failed — log without usage data
         deps.logger.log({

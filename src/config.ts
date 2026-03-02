@@ -24,6 +24,12 @@ export interface Config {
   // Router defaults
   defaultTier: 'economy' | 'standard' | 'premium';
   defaultOutputRatio: number; // Assumed output:input ratio for cost estimation
+
+  // Satbill billing integration (optional)
+  satbill?: {
+    baseUrl: string;
+    apiSecret: string;
+  };
 }
 
 export function loadConfig(): Config {
@@ -53,6 +59,10 @@ export function loadConfig(): Config {
 
     defaultTier: (env('DEFAULT_TIER', 'standard')) as Config['defaultTier'],
     defaultOutputRatio: parseFloat(env('DEFAULT_OUTPUT_RATIO', '0.33')),
+
+    satbill: process.env.SATBILL_BASE_URL && process.env.SATBILL_API_SECRET
+      ? { baseUrl: process.env.SATBILL_BASE_URL, apiSecret: process.env.SATBILL_API_SECRET }
+      : undefined,
   };
 }
 

@@ -147,6 +147,8 @@ export interface ApiKey {
   createdAt: string;
   lastUsedAt?: string;
   active: boolean;
+  /** Satbill account ID for billing. When set, requests are checked against balance. */
+  satbillAccountId?: string;
 }
 
 // ─── Usage Types ───────────────────────────────────────
