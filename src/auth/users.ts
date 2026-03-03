@@ -42,7 +42,8 @@ export class UserStore {
         account_name TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         stripe_customer_id TEXT,
-        credit_balance_cents INTEGER NOT NULL DEFAULT 0
+        credit_balance_cents INTEGER NOT NULL DEFAULT 0,
+        blocked_providers TEXT NOT NULL DEFAULT '[]'
       )
     `);
 
@@ -98,6 +99,14 @@ export class UserStore {
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS login_codes_email_idx ON login_codes (email)
     `);
+
+    // Migration: add blocked_providers column if not present (added in v0.2)
+    const userCols = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>;
+    if (!userCols.some((c) => c.name === 'blocked_providers')) {
+      this.db.exec(`
+        ALTER TABLE users ADD COLUMN blocked_providers TEXT NOT NULL DEFAULT '[]'
+      `);
+    }
   }
 
   // ─── Passwordless auth ────────────────────────────────
@@ -259,6 +268,17 @@ export class UserStore {
     return result.changes > 0;
   }
 
+  /**
+   * Update the user's list of blocked provider names.
+   * Pass an empty array to remove all blocks.
+   */
+  setBlockedProviders(userId: string, blockedProviders: string[]): boolean {
+    const result = this.db.prepare(
+      `UPDATE users SET blocked_providers = ? WHERE id = ?`,
+    ).run(JSON.stringify(blockedProviders), userId);
+    return result.changes > 0;
+  }
+
   // ─── Billing ──────────────────────────────────────────
 
   /**
@@ -361,6 +381,13 @@ export class UserStore {
   }
 
   private toUser(row: DbUserRow): User {
+    let blockedProviders: string[] = [];
+    try {
+      const parsed = JSON.parse(row.blocked_providers || '[]');
+      if (Array.isArray(parsed)) blockedProviders = parsed.filter((x) => typeof x === 'string');
+    } catch {
+      // Corrupt data — treat as empty
+    }
     return {
       id: row.id,
       email: row.email,
@@ -368,6 +395,7 @@ export class UserStore {
       createdAt: row.created_at,
       stripeCustomerId: row.stripe_customer_id ?? undefined,
       creditBalanceCents: row.credit_balance_cents,
+      blockedProviders,
     };
   }
 }
@@ -399,4 +427,5 @@ interface DbUserRow {
   created_at: string;
   stripe_customer_id: string | null;
   credit_balance_cents: number;
+  blocked_providers: string;
 }

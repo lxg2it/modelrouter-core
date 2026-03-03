@@ -19,6 +19,7 @@ export interface Config {
     anthropic?: { apiKey: string };
     openai?: { apiKey: string };
     google?: { apiKey: string };
+    grok?: { apiKey: string };
   };
 
   // Router defaults
@@ -67,6 +68,9 @@ export function loadConfig(): Config {
       google: process.env.GOOGLE_API_KEY
         ? { apiKey: process.env.GOOGLE_API_KEY }
         : undefined,
+      grok: process.env.GROK_API_KEY
+        ? { apiKey: process.env.GROK_API_KEY }
+        : undefined,
     },
 
     defaultTier: (env('DEFAULT_TIER', 'standard')) as Config['defaultTier'],
@@ -107,6 +111,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'openai',    model: 'gpt-4.1-mini',              quality: 0.72, inputPer1M: 0.40,  outputPer1M: 1.60,  latencyMs: 380,  maxContextTokens: 1_047_576 },
       { provider: 'openai',    model: 'o4-mini',                   quality: 0.75, inputPer1M: 1.10,  outputPer1M: 4.40,  latencyMs: 2500, maxContextTokens: 200_000   },
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', quality: 0.68, inputPer1M: 1.00,  outputPer1M: 5.00,  latencyMs: 320,  maxContextTokens: 200_000   },
+      { provider: 'grok',      model: 'grok-3-mini-beta',          quality: 0.71, inputPer1M: 0.30,  outputPer1M: 0.50,  latencyMs: 250,  maxContextTokens: 131_072   },
     ],
     description: 'Fast and cheap. Good for classification, extraction, simple generation.',
   },
@@ -116,6 +121,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'openai',    model: 'gpt-4.1',          quality: 0.87, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 750,  maxContextTokens: 1_047_576 },
       { provider: 'openai',    model: 'o3',               quality: 0.90, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 3500, maxContextTokens: 200_000   },
       { provider: 'anthropic', model: 'claude-sonnet-4-6', quality: 0.92, inputPer1M: 3.00, outputPer1M: 15.00, latencyMs: 650,  maxContextTokens: 200_000   },
+      { provider: 'grok',      model: 'grok-3-beta',       quality: 0.89, inputPer1M: 3.00, outputPer1M: 15.00, latencyMs: 580,  maxContextTokens: 131_072   },
     ],
     description: 'Balanced quality and cost. The default for most applications.',
   },
@@ -188,6 +194,13 @@ export const MODEL_ALIASES: Record<string, string> = {
   'o3': 'standard', // o3 is actually standard-priced
   'o4-mini': 'economy',
 
+  // Grok aliases
+  'grok': 'standard',
+  'grok-3': 'standard',
+  'grok-3-beta': 'standard',
+  'grok-3-mini': 'economy',
+  'grok-3-mini-beta': 'economy',
+
   // Tier keywords (direct tier request)
   'economy': 'economy',
   'standard': 'standard',
@@ -200,4 +213,8 @@ export const PROVIDER_URLS: Record<ProviderName, string> = {
   anthropic: 'https://api.anthropic.com',
   openai: 'https://api.openai.com',
   google: 'https://generativelanguage.googleapis.com',
+  grok: 'https://api.x.ai/v1',
 };
+
+// ─── Grok aliases ──────────────────────────────────────
+// These are also added to MODEL_ALIASES above but noted here for clarity.

@@ -301,6 +301,16 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- Provider Preferences -->
+    <div class="card">
+      <h2 class="text-base font-semibold text-gray-800 mb-1">Provider Preferences</h2>
+      <p class="text-sm text-gray-500 mb-4">Block specific AI providers from being used for your requests. Unblocked providers are routed automatically based on your tier and preference settings.</p>
+      <div id="providerToggles" class="space-y-3 mb-4">
+        <!-- Populated by JS -->
+      </div>
+      <p id="providerMsg" class="text-sm hidden"></p>
+    </div>
+
     <!-- Settings -->
     <div class="card">
       <h2 class="text-base font-semibold text-gray-800 mb-4">Settings</h2>
@@ -395,6 +405,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
     document.getElementById('creditBalance').textContent = p.creditBalanceUsd;
     document.getElementById('nameInput').value = p.name || '';
 
+    renderProviderToggles(p.blockedProviders || []);
     renderUsage(currentUsageTab);
   }
 
@@ -649,6 +660,64 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
     btn.disabled = false;
     btn.textContent = 'Save Card';
+  }
+
+  // ─── Provider preferences ─────────────────────────────────
+
+  const KNOWN_PROVIDERS = [
+    { id: 'anthropic', label: 'Anthropic', models: 'Claude family' },
+    { id: 'openai',    label: 'OpenAI',    models: 'GPT, o-series' },
+    { id: 'google',    label: 'Google',    models: 'Gemini family' },
+    { id: 'grok',      label: 'xAI / Grok', models: 'Grok family' },
+  ];
+
+  function renderProviderToggles(blockedProviders) {
+    const container = document.getElementById('providerToggles');
+    const blocked = new Set(blockedProviders || []);
+    container.innerHTML = KNOWN_PROVIDERS.map(p => {
+      const isBlocked = blocked.has(p.id);
+      return '<div class="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">' +
+        '<div>' +
+        '<p class="text-sm font-medium text-gray-900">' + esc(p.label) + '</p>' +
+        '<p class="text-xs text-gray-400">' + esc(p.models) + '</p>' +
+        '</div>' +
+        '<label class="flex items-center gap-2 cursor-pointer">' +
+        '<span class="text-xs ' + (isBlocked ? 'text-red-500' : 'text-green-600') + '">' + (isBlocked ? 'Blocked' : 'Allowed') + '</span>' +
+        '<div class="relative">' +
+        '<input type="checkbox" class="sr-only" id="prov-' + p.id + '" ' + (isBlocked ? '' : 'checked') + ' onchange="toggleProvider(\\'' + p.id + '\\', this.checked)">' +
+        '<div class="w-10 h-5 rounded-full ' + (isBlocked ? 'bg-red-200' : 'bg-green-400') + ' transition-colors">' +
+        '<div class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ' + (isBlocked ? '' : 'translate-x-5') + '"></div>' +
+        '</div>' +
+        '</div>' +
+        '</label>' +
+        '</div>';
+    }).join('');
+  }
+
+  async function toggleProvider(providerId, allowed) {
+    // Get current blocked list from checkboxes
+    const blocked = KNOWN_PROVIDERS
+      .filter(p => {
+        const el = document.getElementById('prov-' + p.id);
+        return el && !(el as HTMLInputElement).checked;
+      })
+      .map(p => p.id);
+
+    const res = await apiFetch('PATCH', '/v1/account/providers', { blockedProviders: blocked });
+    const data = await res.json();
+    const msgEl = document.getElementById('providerMsg');
+
+    if (res.ok) {
+      renderProviderToggles(data.blockedProviders);
+      msgEl.textContent = data.message;
+      msgEl.className = 'text-sm success-msg';
+      msgEl.classList.remove('hidden');
+      setTimeout(() => msgEl.classList.add('hidden'), 2500);
+    } else {
+      msgEl.textContent = data.error?.message || 'Failed to update preferences.';
+      msgEl.className = 'text-sm error-msg';
+      msgEl.classList.remove('hidden');
+    }
   }
 
   // ─── Auth ─────────────────────────────────────────────────

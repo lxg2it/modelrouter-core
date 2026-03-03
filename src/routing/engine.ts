@@ -55,18 +55,19 @@ export class RoutingEngine {
   selectModel(
     request: ChatCompletionRequest,
     keyTier?: Tier,
+    blockedProviders?: Set<string>,
   ): RouteDecision | null {
     const prefer = request.prefer ?? 'balanced';
     const estimatedTokens = this.estimateInputTokens(request.messages);
 
     // ── quality mode: force premium tier regardless ──────────────
     if (prefer === 'quality') {
-      return this.selectByQuality(estimatedTokens);
+      return this.selectByQuality(estimatedTokens, blockedProviders);
     }
 
     // ── cheap mode: cross-tier cost minimisation ─────────────────
     if (prefer === 'cheap') {
-      return this.selectCheapestAcrossAllTiers(estimatedTokens);
+      return this.selectCheapestAcrossAllTiers(estimatedTokens, blockedProviders);
     }
 
     // ── balanced / fast: operate within the resolved tier ─────────
@@ -76,7 +77,7 @@ export class RoutingEngine {
       ?? this.config.defaultTier;
 
     const candidates = this.filterByContext(
-      getModelsForTier(tier, this.config.availableProviders),
+      this.filterBlocked(getModelsForTier(tier, this.config.availableProviders), blockedProviders),
       estimatedTokens,
     );
     if (candidates.length === 0) return null;
@@ -121,10 +122,11 @@ export class RoutingEngine {
     failedModel: string,
     tier: Tier,
     messages: ChatMessage[] = [],
+    blockedProviders?: Set<string>,
   ): RouteDecision | null {
     const estimatedTokens = this.estimateInputTokens(messages);
     const candidates = this.filterByContext(
-      getModelsForTier(tier, this.config.availableProviders),
+      this.filterBlocked(getModelsForTier(tier, this.config.availableProviders), blockedProviders),
       estimatedTokens,
     )
       .filter((m) => !(m.provider === failedProvider && m.model === failedModel))
@@ -175,13 +177,13 @@ export class RoutingEngine {
    * prefer: 'cheap' — find cheapest model across ALL tiers.
    * Ignores tier entirely; useful for batch workloads that don't need quality guarantees.
    */
-  private selectCheapestAcrossAllTiers(estimatedTokens: number): RouteDecision | null {
+  private selectCheapestAcrossAllTiers(estimatedTokens: number, blockedProviders?: Set<string>): RouteDecision | null {
     const ratio = this.config.defaultOutputRatio;
     let best: { config: ModelConfig; tier: Tier; cost: number } | null = null;
 
     for (const tier of getAllTiers()) {
       const available = this.filterByContext(
-        getModelsForTier(tier, this.config.availableProviders),
+        this.filterBlocked(getModelsForTier(tier, this.config.availableProviders), blockedProviders),
         estimatedTokens,
       ).filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model));
 
@@ -200,16 +202,16 @@ export class RoutingEngine {
   /**
    * prefer: 'quality' — force premium tier, pick highest quality model.
    */
-  private selectByQuality(estimatedTokens: number): RouteDecision | null {
+  private selectByQuality(estimatedTokens: number, blockedProviders?: Set<string>): RouteDecision | null {
     const available = this.filterByContext(
-      getModelsForTier('premium', this.config.availableProviders),
+      this.filterBlocked(getModelsForTier('premium', this.config.availableProviders), blockedProviders),
       estimatedTokens,
     ).filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model));
 
     if (available.length === 0) {
       // Premium tier fully unavailable or no model fits context — fall back to best in standard
       const fallback = this.filterByContext(
-        getModelsForTier('standard', this.config.availableProviders),
+        this.filterBlocked(getModelsForTier('standard', this.config.availableProviders), blockedProviders),
         estimatedTokens,
       )
         .filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model))
@@ -220,6 +222,15 @@ export class RoutingEngine {
 
     const sorted = [...available].sort((a, b) => b.quality - a.quality);
     return this.toDecision(sorted[0], 'premium', undefined, 'quality');
+  }
+
+  /**
+   * Filter models whose provider is in the user's blocked list.
+   * If blockedProviders is undefined or empty, no filtering is applied.
+   */
+  private filterBlocked(models: ModelConfig[], blockedProviders?: Set<string>): ModelConfig[] {
+    if (!blockedProviders || blockedProviders.size === 0) return models;
+    return models.filter((m) => !blockedProviders.has(m.provider));
   }
 
   /**

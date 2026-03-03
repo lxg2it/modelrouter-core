@@ -18,6 +18,7 @@ import { UsageLogger } from './tracking/logger.js';
 import { AnthropicAdapter } from './providers/anthropic.js';
 import { OpenAIAdapter } from './providers/openai.js';
 import { GoogleAdapter } from './providers/google.js';
+import { GrokAdapter } from './providers/grok.js';
 import { SatbillClient } from './billing/satbill-client.js';
 import { StripeService } from './billing/stripe.js';
 import { BillingTransactionStore } from './billing/transactions.js';
@@ -75,6 +76,9 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   }
   if (config.providers.google) {
     providers.set('google', new GoogleAdapter(config.providers.google.apiKey));
+  }
+  if (config.providers.grok) {
+    providers.set('grok', new GrokAdapter(config.providers.grok.apiKey));
   }
 
   // Routing engine

@@ -65,6 +65,7 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
       creditBalanceCents: user.creditBalanceCents,
       creditBalanceUsd: formatUsd(user.creditBalanceCents),
       stripeEnabled: !!user.stripeCustomerId,
+      blockedProviders: user.blockedProviders,
       keyCount: keys.length,
       activeKeyCount: keys.filter((k) => k.active).length,
       usage: {
@@ -116,6 +117,46 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
     userStore.updateAccountName(user.id, name);
 
     return c.json({ id: user.id, email: user.email, name });
+  });
+
+  // ─── PATCH /v1/account/providers ─────────────────────────────
+  //
+  // Update the user's provider blocking preferences.
+  //
+  // Body: { blockedProviders: string[] }
+  //   - Pass an empty array to unblock all providers.
+  //   - Unknown provider names are silently ignored.
+  //   - The updated list is returned in the response.
+  //
+  router.patch('/providers', async (c: Context<SessionEnv>) => {
+    const user = c.get('user');
+
+    let body: { blockedProviders?: unknown };
+    try {
+      body = await c.req.json() as { blockedProviders?: unknown };
+    } catch {
+      return c.json({ error: { message: 'Invalid JSON body', code: 'invalid_request' } }, 400);
+    }
+
+    if (!Array.isArray(body.blockedProviders)) {
+      return c.json({
+        error: { message: 'blockedProviders must be an array of provider names', code: 'invalid_request' },
+      }, 400);
+    }
+
+    // Validate provider names — only known providers are accepted
+    const knownProviders = new Set(['anthropic', 'openai', 'google', 'grok']);
+    const validated = (body.blockedProviders as unknown[])
+      .filter((p): p is string => typeof p === 'string' && knownProviders.has(p));
+
+    userStore.setBlockedProviders(user.id, validated);
+
+    return c.json({
+      blockedProviders: validated,
+      message: validated.length === 0
+        ? 'All providers unblocked.'
+        : `Blocked providers: ${validated.join(', ')}.`,
+    });
   });
 
   return router;

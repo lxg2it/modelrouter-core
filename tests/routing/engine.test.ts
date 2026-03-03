@@ -610,4 +610,108 @@ describe('RoutingEngine', () => {
       expect(['gemini-2.5-flash', 'gpt-4.1-mini'].includes(decision!.model)).toBe(true);
     });
   });
+
+  describe('provider blocking', () => {
+    it('excludes blocked providers from routing', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['anthropic', 'openai', 'google']),
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+
+      // Block google (cheapest economy model) — should route to openai or anthropic
+      const blocked = new Set(['google']);
+      const decision = engine.selectModel(req(), 'economy', blocked);
+      expect(decision).not.toBeNull();
+      expect(decision!.provider).not.toBe('google');
+    });
+
+    it('returns null when all providers in tier are blocked', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['anthropic', 'openai', 'google']),
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+
+      const blocked = new Set(['anthropic', 'openai', 'google', 'grok']);
+      const decision = engine.selectModel(req(), 'economy', blocked);
+      expect(decision).toBeNull();
+    });
+
+    it('selectFallback respects provider blocking', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['anthropic', 'openai', 'google']),
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+
+      // Block google and anthropic — only openai models remain for fallback.
+      // gpt-4.1-mini failed, but o4-mini (different openai model) is available.
+      const blocked = new Set(['anthropic', 'google']);
+      const messages = [{ role: 'user' as const, content: 'hello' }];
+      const fallback = engine.selectFallback('openai', 'gpt-4.1-mini', 'economy', messages, blocked);
+      expect(fallback).not.toBeNull();
+      expect(fallback!.provider).toBe('openai');
+      expect(fallback!.model).not.toBe('gpt-4.1-mini'); // Different model from failed one
+
+      // Block all providers: no fallback should be available
+      const blockedAll = new Set(['anthropic', 'openai', 'google', 'grok']);
+      const fallbackNone = engine.selectFallback('openai', 'gpt-4.1-mini', 'economy', messages, blockedAll);
+      expect(fallbackNone).toBeNull();
+    });
+
+    it('cheap mode respects provider blocking across all tiers', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['anthropic', 'openai', 'google']),
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+
+      // Block google — cheap mode shouldn't pick google models
+      const blocked = new Set(['google']);
+      const decision = engine.selectModel(req({ prefer: 'cheap' }), undefined, blocked);
+      expect(decision).not.toBeNull();
+      expect(decision!.provider).not.toBe('google');
+    });
+
+    it('quality mode respects provider blocking', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['anthropic', 'openai', 'google']),
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+      });
+
+      // Block anthropic (claude-opus, quality leader) — should fall to next best
+      const blocked = new Set(['anthropic']);
+      const decision = engine.selectModel(req({ prefer: 'quality' }), undefined, blocked);
+      expect(decision).not.toBeNull();
+      expect(decision!.provider).not.toBe('anthropic');
+    });
+
+    it('passing undefined blockedProviders has no effect', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['anthropic', 'openai', 'google']),
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+
+      const d1 = engine.selectModel(req(), 'economy', undefined);
+      const d2 = engine.selectModel(req(), 'economy');
+      expect(d1?.provider).toBe(d2?.provider);
+      expect(d1?.model).toBe(d2?.model);
+    });
+
+    it('routes to grok when available and not blocked', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['grok']),
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+
+      const decision = engine.selectModel(req());
+      expect(decision).not.toBeNull();
+      expect(decision!.provider).toBe('grok');
+      expect(decision!.model).toBe('grok-3-mini-beta');
+    });
+  });
 });

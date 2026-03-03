@@ -18,9 +18,9 @@ export class OpenAIAdapter implements ProviderAdapter {
   readonly name: ProviderName = 'openai';
   private client: OpenAI | null = null;
 
-  constructor(apiKey?: string) {
+  constructor(apiKey?: string, baseURL?: string) {
     if (apiKey) {
-      this.client = new OpenAI({ apiKey });
+      this.client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
     }
   }
 

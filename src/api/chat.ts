@@ -45,8 +45,11 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
     const user = c.get('user');
     const body = await c.req.json<ChatCompletionRequest>();
 
-    // Route the request
-    const decision = deps.router.selectModel(body, apiKey.tier);
+    // Route the request, respecting any provider blocks the user has set
+    const userBlockedProviders = user?.blockedProviders?.length
+      ? new Set(user.blockedProviders)
+      : undefined;
+    const decision = deps.router.selectModel(body, apiKey.tier, userBlockedProviders);
     if (!decision) {
       return c.json({
         error: {
@@ -60,9 +63,9 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
     const startTime = Date.now();
 
     if (body.stream) {
-      return handleStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user);
+      return handleStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user, userBlockedProviders);
     } else {
-      return handleNonStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user);
+      return handleNonStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user, userBlockedProviders);
     }
   });
 
@@ -78,6 +81,7 @@ async function handleNonStreaming(
   startTime: number,
   satbillAccountId: string | undefined,
   user?: User,
+  blockedProviders?: Set<string>,
 ) {
   const keyId = apiKey.id;
   const adapter = deps.providers.get(decision.provider);
@@ -153,7 +157,7 @@ async function handleNonStreaming(
     deps.router.recordFailure(decision.provider, decision.model);
 
     // Try failover
-    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages);
+    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages, blockedProviders);
     if (fallback) {
       const fallbackAdapter = deps.providers.get(fallback.provider);
       if (fallbackAdapter) {
@@ -248,6 +252,7 @@ async function handleStreaming(
   startTime: number,
   satbillAccountId: string | undefined,
   user?: User,
+  blockedProviders?: Set<string>,
 ) {
   const keyId = apiKey.id;
 
@@ -285,7 +290,7 @@ async function handleStreaming(
 
   // If primary failed, try one fallback (matches non-streaming behaviour)
   if (!completion) {
-    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages);
+    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages, blockedProviders);
     if (fallback) {
       const fallbackAdapter = deps.providers.get(fallback.provider);
       if (fallbackAdapter) {

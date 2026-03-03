@@ -118,7 +118,7 @@ export interface ModelsListResponse {
 
 export type Tier = 'economy' | 'standard' | 'premium';
 
-export type ProviderName = 'anthropic' | 'openai' | 'google';
+export type ProviderName = 'anthropic' | 'openai' | 'google' | 'grok';
 
 export interface ModelConfig {
   provider: ProviderName;
@@ -147,6 +147,12 @@ export interface User {
   stripeCustomerId?: string;
   /** Credit balance in cents (USD). Shared across all keys for this user. */
   creditBalanceCents: number;
+  /**
+   * Providers the user has chosen to block. Requests will not be routed to
+   * these providers. Stored as a JSON array in the DB.
+   * e.g. ['openai', 'grok'] to exclude those providers from routing.
+   */
+  blockedProviders: string[];
 }
 
 export interface ApiKey {
