@@ -86,7 +86,7 @@ export function loadConfig(): Config {
     email: process.env.RESEND_API_KEY
       ? {
           resendApiKey: process.env.RESEND_API_KEY,
-          fromEmail: process.env.FROM_EMAIL ?? 'auth@lxg2it.com',
+          fromEmail: process.env.FROM_EMAIL ?? 'auth@api.lxg2it.com',
         }
       : undefined,
   };

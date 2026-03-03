@@ -5,7 +5,7 @@
  * directly. If the API key is not configured, sending is a no-op (dev mode).
  *
  * In production, set RESEND_API_KEY to a valid Resend key and ensure
- * FROM_EMAIL matches a verified domain (e.g. auth@lxg2it.com).
+ * FROM_EMAIL matches a verified domain (e.g. auth@api.lxg2it.com).
  */
 
 import { Resend } from 'resend';
