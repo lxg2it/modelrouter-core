@@ -137,10 +137,10 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   // Landing page (unauthenticated)
   app.route('/', createLandingRouter());
 
-  // Health check (unauthenticated)
+  // Health check (unauthenticated, content-negotiated)
   app.get('/health', (c) => {
     const health = router.getHealthStatus();
-    return c.json({
+    const data = {
       status: 'ok',
       version: '0.1.0',
       providers: health.availableProviders,
@@ -149,7 +149,19 @@ export function createApp(): { app: Hono; ctx: AppContext } {
         satbill: billing ? 'enabled' : 'disabled',
         stripe: stripeService ? 'enabled' : 'disabled',
       },
-    });
+    };
+
+    const accept = c.req.header('Accept') ?? '';
+    const htmlIdx = accept.indexOf('text/html');
+    const jsonIdx = accept.indexOf('application/json');
+    const preferHtml = htmlIdx !== -1 && (jsonIdx === -1 || htmlIdx < jsonIdx);
+
+    if (preferHtml) {
+      c.header('Content-Type', 'text/html; charset=utf-8');
+      return c.body(renderHealthHtml(data));
+    }
+
+    return c.json(data);
   });
 
   // ─── Auth routes (unauthenticated) ───────────────────────
@@ -177,8 +189,8 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   app.use('/v1/chat/*', apiAuth);
   app.route('/v1/chat', chatRouter);
 
+  // Models catalog — intentionally public (no auth): it's discovery + marketing info.
   const modelsRouter = createModelsRouter({ usageStore });
-  app.use('/v1/models/*', apiAuth);
   app.route('/v1/models', modelsRouter);
 
   const usageRouter = createUsageRouter({ usageStore });
@@ -247,3 +259,144 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   const ctx: AppContext = { config, db, keyStore, userStore, usageStore, router, providers, billing, stripe: stripeService, email: emailSender };
   return { app, ctx };
 }
+
+
+// ─── Health HTML renderer ─────────────────────────────────
+//
+// Produces a human-readable status page that matches the landing page's visual
+// style. Returned when the client sends Accept: text/html (e.g. clicking the
+// /health footer link in a browser).
+
+interface HealthData {
+  status: string;
+  version: string;
+  providers: string[];
+  openCircuits: number;
+  billing: { satbill: string; stripe: string };
+}
+
+function renderHealthHtml(data: HealthData): string {
+  const providerRows = data.providers.map((p) => `
+    <tr>
+      <td><code>${p}</code></td>
+      <td><span class="badge badge-ok">active</span></td>
+    </tr>`).join('');
+
+  const circuitBadge = data.openCircuits === 0
+    ? `<span class="badge badge-ok">0 open</span>`
+    : `<span class="badge badge-warn">${data.openCircuits} open</span>`;
+
+  const stripeBadge = data.billing.stripe === 'enabled'
+    ? `<span class="badge badge-ok">enabled</span>`
+    : `<span class="badge" style="background:#1e2a1e;color:var(--muted)">disabled</span>`;
+
+  const satbillBadge = data.billing.satbill === 'enabled'
+    ? `<span class="badge badge-ok">enabled</span>`
+    : `<span class="badge" style="background:#1e2a1e;color:var(--muted)">disabled</span>`;
+
+  return /* html */`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Health — Model Router</title>
+  <style>
+    :root {
+      --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+      --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+      --accent: #58a6ff; --accent2: #3fb950; --warn: #f0883e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      font-size: 15px; line-height: 1.6; min-height: 100vh;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .container { max-width: 700px; margin: 0 auto; padding: 48px 24px; }
+    .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, #58a6ff, #3fb950);
+      border-radius: 8px; display: flex; align-items: center;
+      justify-content: center; font-size: 16px; font-weight: 700; color: #0d1117;
+    }
+    .logo-name { font-size: 18px; font-weight: 700; }
+    .page-title { font-size: 24px; font-weight: 700; margin: 28px 0 6px; }
+    .page-sub { color: var(--muted); margin-bottom: 28px; font-size: 13px; }
+    .card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 20px; margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 12px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 500; }
+    td { padding: 7px 10px; border-bottom: 1px solid var(--bg3); }
+    tr:last-child td { border-bottom: none; }
+    code { font-family: 'SFMono-Regular', Consolas, Menlo, monospace; font-size: 12px; background: var(--bg3); padding: 2px 5px; border-radius: 4px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    .badge-ok   { background: #1a3a2a; color: var(--accent2); }
+    .badge-warn { background: #3a2a10; color: var(--warn); }
+    .kv { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--bg3); font-size: 13px; }
+    .kv:last-child { border-bottom: none; }
+    .kv-key { color: var(--muted); }
+    .back { margin-top: 32px; font-size: 13px; color: var(--muted); }
+    .status-ok { color: var(--accent2); font-weight: 600; font-size: 28px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <div class="logo-icon">M</div>
+      <a href="/" class="logo-name">Model Router</a>
+    </div>
+
+    <h1 class="page-title">System Health</h1>
+    <p class="page-sub">Live status — refreshed on each page load.</p>
+
+    <div class="card">
+      <div class="card-title">Overall Status</div>
+      <div class="kv">
+        <span class="kv-key">Status</span>
+        <span class="status-ok">● ${data.status.toUpperCase()}</span>
+      </div>
+      <div class="kv">
+        <span class="kv-key">Version</span>
+        <code>${data.version}</code>
+      </div>
+      <div class="kv">
+        <span class="kv-key">Circuit breakers</span>
+        ${circuitBadge}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Active Providers (${data.providers.length})</div>
+      <table>
+        <thead><tr><th>Provider</th><th>Status</th></tr></thead>
+        <tbody>${providerRows}</tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Billing</div>
+      <div class="kv">
+        <span class="kv-key">Stripe (card payments)</span>
+        ${stripeBadge}
+      </div>
+      <div class="kv">
+        <span class="kv-key">Satbill (Bitcoin)</span>
+        ${satbillBadge}
+      </div>
+    </div>
+
+    <div class="back"><a href="/">← Back to home</a></div>
+  </div>
+</body>
+</html>`;
+}
+
