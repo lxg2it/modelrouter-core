@@ -283,6 +283,15 @@ curl -X POST https://api.lxg2it.com/v1/auth/verify-code \\
     <div class="qs-step">
       <div class="qs-num">2</div>
       <div class="qs-content">
+        <div class="qs-label">Add credits</div>
+        <div class="qs-sub">Top up your balance and optionally block providers you don't want to use.</div>
+        <div><a href="/profile">Open your profile →</a></div>
+      </div>
+    </div>
+
+    <div class="qs-step">
+      <div class="qs-num">3</div>
+      <div class="qs-content">
         <div class="qs-label">Make a request</div>
         <div class="qs-sub">Drop-in replacement for the OpenAI API. Point your existing clients here.</div>
         <pre class="code-block"><code><span class="comment"># Automatic routing — let the router pick for you</span>
@@ -303,15 +312,6 @@ curl -X POST https://api.lxg2it.com/v1/chat/completions \\
     "prefer": "cheap",
     "messages": [{"role": "user", "content": "Summarise this text"}]
   }'</code></pre>
-      </div>
-    </div>
-
-    <div class="qs-step">
-      <div class="qs-num">3</div>
-      <div class="qs-content">
-        <div class="qs-label">Add credits and configure</div>
-        <div class="qs-sub">Top up your balance and optionally block providers you don't want to use.</div>
-        <div><a href="/profile">Open your profile →</a></div>
       </div>
     </div>
   </div>
