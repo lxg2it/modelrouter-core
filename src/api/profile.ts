@@ -1144,7 +1144,7 @@ async function loadAutoRecharge() {
 
       if (res.ok) {
         msgEl.textContent = autoRechargeSettings.enabled
-          ? 'Auto-recharge enabled. We\'ll top up $' + (data.amountCents / 100).toFixed(2) + ' when you run out.'
+          ? "Auto-recharge enabled. We'll top up $" + (data.amountCents / 100).toFixed(2) + ' when you run out.'
           : 'Auto-recharge disabled.';
         msgEl.className = 'text-sm mt-2 success-msg';
         msgEl.classList.remove('hidden');
