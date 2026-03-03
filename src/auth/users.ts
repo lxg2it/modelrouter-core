@@ -107,6 +107,16 @@ export class UserStore {
         ALTER TABLE users ADD COLUMN blocked_providers TEXT NOT NULL DEFAULT '[]'
       `);
     }
+
+    // Migration: add auto-recharge columns if not present (added in v0.3)
+    const userColsV2 = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>;
+    if (!userColsV2.some((c) => c.name === 'auto_recharge_enabled')) {
+      this.db.exec(`
+        ALTER TABLE users ADD COLUMN auto_recharge_enabled INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE users ADD COLUMN auto_recharge_amount_cents INTEGER NOT NULL DEFAULT 1000;
+        ALTER TABLE users ADD COLUMN auto_recharge_last_at TEXT;
+      `);
+    }
   }
 
   // ─── Passwordless auth ────────────────────────────────
@@ -269,6 +279,44 @@ export class UserStore {
   }
 
   /**
+   * Update auto-recharge settings for a user.
+   */
+  setAutoRecharge(
+    userId: string,
+    settings: { enabled: boolean; amountCents: number },
+  ): boolean {
+    const result = this.db.prepare(`
+      UPDATE users
+      SET auto_recharge_enabled = ?, auto_recharge_amount_cents = ?
+      WHERE id = ?
+    `).run(settings.enabled ? 1 : 0, settings.amountCents, userId);
+    return result.changes > 0;
+  }
+
+  /**
+   * Atomically claim the auto-recharge slot for a user (debounce: 30 seconds).
+   *
+   * Returns true if the claim succeeded — the caller should proceed with the Stripe charge.
+   * Returns false if another auto-recharge happened within the last 30 seconds.
+   *
+   * Uses a single UPDATE that only matches if:
+   *   - auto_recharge_last_at is NULL, or
+   *   - auto_recharge_last_at is older than 30 seconds ago
+   * This is safe under concurrent requests because SQLite serialises writes.
+   */
+  tryClaimAutoRecharge(userId: string): boolean {
+    const result = this.db.prepare(`
+      UPDATE users
+      SET auto_recharge_last_at = datetime('now')
+      WHERE id = ?
+        AND (auto_recharge_last_at IS NULL
+          OR auto_recharge_last_at < datetime('now', '-30 seconds'))
+    `).run(userId);
+    return result.changes > 0;
+  }
+
+
+  /**
    * Update the user's list of blocked provider names.
    * Pass an empty array to remove all blocks.
    */
@@ -396,6 +444,9 @@ export class UserStore {
       stripeCustomerId: row.stripe_customer_id ?? undefined,
       creditBalanceCents: row.credit_balance_cents,
       blockedProviders,
+      autoRechargeEnabled: row.auto_recharge_enabled === 1,
+      autoRechargeAmountCents: row.auto_recharge_amount_cents ?? 1000,
+      autoRechargeLastAt: row.auto_recharge_last_at ?? undefined,
     };
   }
 }
@@ -428,4 +479,7 @@ interface DbUserRow {
   stripe_customer_id: string | null;
   credit_balance_cents: number;
   blocked_providers: string;
+  auto_recharge_enabled: number;
+  auto_recharge_amount_cents: number;
+  auto_recharge_last_at: string | null;
 }

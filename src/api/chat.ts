@@ -17,6 +17,8 @@ import type { KeyStore } from '../auth/keys.js';
 import type { UserStore } from '../auth/users.js';
 import { TIERS, TIER_MAX_RESERVE_CENTS } from '../config.js';
 import type { ApiKey, User, ChatCompletionRequest, ProviderName } from '../types.js';
+import type { StripeService } from '../billing/stripe.js';
+import type { BillingTransactionStore } from '../billing/transactions.js';
 
 interface ChatDeps {
   router: RoutingEngine;
@@ -34,6 +36,16 @@ interface ChatDeps {
    * Used when a key has no associated user (old keys).
    */
   keyStore?: KeyStore;
+  /**
+   * Stripe service for auto-recharge.
+   * When set, a failed credit reservation will attempt an automatic top-up
+   * if the user has auto-recharge enabled.
+   */
+  stripe?: StripeService;
+  /**
+   * Billing transaction store for recording auto-recharge events.
+   */
+  billingTxStore?: BillingTransactionStore;
 }
 
 export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
@@ -441,6 +453,10 @@ async function handleStreaming(
  * Returns `0` for legacy keys (no reservation needed — they use post-hoc deduction).
  * Returns the reserved amount (>= 0) on success.
  *
+ * If the user has auto-recharge enabled, a failed reservation triggers an immediate
+ * Stripe charge before returning a 402. If the charge succeeds, the reservation is
+ * retried and the request proceeds without error.
+ *
  * Every non-null return MUST be followed by either settleStripeCredits()
  * (on success) or fullRefundReservation() (on failure).
  */
@@ -457,20 +473,72 @@ async function reserveCreditsForRequest(
 
   const reserveCents = TIER_MAX_RESERVE_CENTS[tier] ?? 200;
   const reserved = deps.userStore.tryReserveCredits(user.id, reserveCents);
-  if (!reserved) {
-    c.res = c.json({
-      error: {
-        message: `Insufficient credits. Please top up your account. Estimated cost for ${tier} tier: up to $${(reserveCents / 100).toFixed(2)}.`,
-        type: 'insufficient_quota',
-        code: 'insufficient_credits',
-        creditBalanceCents: user.creditBalanceCents,
-        tierMaxReserveCents: reserveCents,
-      },
-    }, 402);
-    return null;
+
+  if (reserved) {
+    return reserveCents;
   }
 
-  return reserveCents;
+  // ── Auto-recharge ─────────────────────────────────────────
+  // If the user has auto-recharge enabled and a Stripe customer, attempt an
+  // immediate charge before giving up with a 402.
+  if (deps.stripe && deps.billingTxStore && deps.userStore) {
+    // Re-read user from DB to get the latest auto-recharge settings
+    const freshUser = deps.userStore.findById(user.id);
+    if (freshUser?.autoRechargeEnabled && freshUser.stripeCustomerId) {
+      // Atomically claim the auto-recharge slot (30-second debounce)
+      const claimed = deps.userStore.tryClaimAutoRecharge(user.id);
+      if (claimed) {
+        try {
+          const rechargeAmount = freshUser.autoRechargeAmountCents;
+          const description = `Auto-recharge for ${freshUser.email}`;
+          const result = await deps.stripe.charge(freshUser.stripeCustomerId, rechargeAmount, description);
+
+          if (result.status === 'succeeded') {
+            // Apply 4% fee and credit the account
+            const creditsToAdd = Math.floor(rechargeAmount * 0.96);
+            deps.userStore.addCredits(user.id, creditsToAdd);
+            deps.billingTxStore.record({
+              userId: user.id,
+              keyId: null,
+              paymentIntentId: result.paymentIntentId,
+              amountChargedCents: rechargeAmount,
+              creditsAddedCents: creditsToAdd,
+              status: 'succeeded',
+              source: 'auto_recharge',
+            });
+
+            console.log(`[AutoRecharge] Recharged $${(rechargeAmount / 100).toFixed(2)} for user ${user.id}`);
+
+            // Retry the reservation with the freshly added credits
+            const retried = deps.userStore.tryReserveCredits(user.id, reserveCents);
+            if (retried) {
+              return reserveCents;
+            }
+            // Charge succeeded but still not enough (e.g., recharge amount < tier ceiling)
+            // Fall through to 402 — the credits were added so next request will work.
+          } else if (result.status === 'requires_action') {
+            // 3DS required — can't complete unattended, fall through to 402
+            console.log(`[AutoRecharge] Requires 3DS for user ${user.id} — falling back to 402`);
+          }
+        } catch (err) {
+          // Stripe charge failed — log and fall through to 402
+          console.error('[AutoRecharge] Stripe charge failed (non-fatal):', err);
+        }
+      }
+    }
+  }
+
+  // Insufficient credits and auto-recharge did not (or could not) top up in time
+  c.res = c.json({
+    error: {
+      message: `Insufficient credits. Please top up your account. Estimated cost for ${tier} tier: up to $${(reserveCents / 100).toFixed(2)}.`,
+      type: 'insufficient_quota',
+      code: 'insufficient_credits',
+      creditBalanceCents: user.creditBalanceCents,
+      tierMaxReserveCents: reserveCents,
+    },
+  }, 402);
+  return null;
 }
 
 /**

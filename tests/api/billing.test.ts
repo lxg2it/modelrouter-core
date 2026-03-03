@@ -33,6 +33,9 @@ function fakeUser(overrides: Partial<User> = {}): User {
     createdAt: new Date().toISOString(),
     creditBalanceCents: 5000,
     stripeCustomerId: 'cus_test123',
+    blockedProviders: [],
+    autoRechargeEnabled: false,
+    autoRechargeAmountCents: 1000,
     ...overrides,
   };
 }
@@ -48,6 +51,8 @@ function mockUserStore(overrides: Partial<UserStore> = {}): UserStore {
     findByStripeCustomerId: vi.fn(),
     updateAccountName: vi.fn(),
     setStripeCustomerId: vi.fn(),
+    setAutoRecharge: vi.fn().mockReturnValue(true),
+    tryClaimAutoRecharge: vi.fn().mockReturnValue(true),
     addCredits: vi.fn().mockImplementation((_id: string, amount: number) => 5000 + amount),
     deductCredits: vi.fn(),
     ...overrides,
@@ -227,5 +232,111 @@ describe('POST /top-up — platform fee', () => {
       body: JSON.stringify({ amountCents: 9.99 }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it('records source=manual on successful top-up', async () => {
+    const txStore = mockBillingTxStore();
+    const app = buildApp(fakeUser(), mockUserStore(), mockStripe(), txStore);
+
+    const res = await app.request('/top-up', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amountCents: 1000 }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(txStore.record).toHaveBeenCalledWith(
+      expect.objectContaining({ source: 'manual' }),
+    );
+  });
+});
+
+// ─── Auto-recharge endpoint tests ────────────────────────
+
+describe('GET /auto-recharge', () => {
+  it('returns current auto-recharge settings', async () => {
+    const user = fakeUser({ autoRechargeEnabled: true, autoRechargeAmountCents: 2500 });
+    const app = buildApp(user, mockUserStore(), mockStripe());
+
+    const res = await app.request('/auto-recharge');
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.enabled).toBe(true);
+    expect(body.amountCents).toBe(2500);
+    expect(body.amountUsd).toBe('$25.00');
+  });
+
+  it('returns disabled state for new user defaults', async () => {
+    const app = buildApp(fakeUser(), mockUserStore(), mockStripe());
+    const res = await app.request('/auto-recharge');
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.enabled).toBe(false);
+    expect(body.amountCents).toBe(1000);
+  });
+});
+
+describe('PATCH /auto-recharge', () => {
+  it('enables auto-recharge with a valid amount', async () => {
+    const userStore = mockUserStore();
+    const app = buildApp(fakeUser(), userStore, mockStripe());
+
+    const res = await app.request('/auto-recharge', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true, amountCents: 2500 }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.enabled).toBe(true);
+    expect(body.amountCents).toBe(2500);
+    expect(userStore.setAutoRecharge).toHaveBeenCalledWith('user-id-1', { enabled: true, amountCents: 2500 });
+  });
+
+  it('returns 402 if enabling without a saved payment method', async () => {
+    const user = fakeUser({ stripeCustomerId: undefined });
+    const app = buildApp(user, mockUserStore(), mockStripe());
+
+    const res = await app.request('/auto-recharge', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true, amountCents: 1000 }),
+    });
+
+    expect(res.status).toBe(402);
+    const body = await res.json() as { error: { code: string } };
+    expect(body.error.code).toBe('no_payment_method');
+  });
+
+  it('returns 400 if amountCents is below minimum', async () => {
+    const app = buildApp(fakeUser(), mockUserStore(), mockStripe());
+
+    const res = await app.request('/auto-recharge', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true, amountCents: 100 }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: { code: string } };
+    expect(body.error.code).toBe('amount_too_small');
+  });
+
+  it('disabling auto-recharge does not require a payment method', async () => {
+    const user = fakeUser({ stripeCustomerId: undefined, autoRechargeEnabled: true });
+    const userStore = mockUserStore();
+    const app = buildApp(user, userStore, mockStripe());
+
+    const res = await app.request('/auto-recharge', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(userStore.setAutoRecharge).toHaveBeenCalledWith('user-id-1', { enabled: false, amountCents: 1000 });
   });
 });

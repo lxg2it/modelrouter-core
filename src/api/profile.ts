@@ -297,14 +297,40 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
               <th>Date</th>
               <th>Charged</th>
               <th>Credits added</th>
+              <th>Type</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody id="billingHistoryBody">
-            <tr><td colspan="4" class="text-gray-400 text-center py-4">Loading…</td></tr>
+            <tr><td colspan="5" class="text-gray-400 text-center py-4">Loading…</td></tr>
           </tbody>
         </table>
       </div>
+    </div>
+
+    <!-- Auto-recharge -->
+    <div class="card" id="autoRechargeCard">
+      <div class="flex items-start justify-between mb-3">
+        <div>
+          <h2 class="text-base font-semibold text-gray-800">Auto-recharge</h2>
+          <p class="text-sm text-gray-500 mt-1">When you run out of credits mid-request, we'll automatically top up your account using your saved card — so requests proceed without interruption.</p>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer ml-4" style="flex-shrink:0">
+          <input type="checkbox" id="autoRechargeToggle" class="sr-only peer" onchange="onAutoRechargeToggle()" />
+          <div class="w-11 h-6 bg-gray-200 peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+        </label>
+      </div>
+      <div id="autoRechargeAmountRow" class="flex flex-wrap gap-2 items-center mt-3 pt-3 border-t border-gray-100">
+        <span class="text-sm text-gray-600 mr-1">Recharge amount:</span>
+        <button class="btn btn-secondary btn-sm auto-recharge-amount-btn" data-cents="1000" onclick="setAutoRechargeAmount(1000)">$10</button>
+        <button class="btn btn-secondary btn-sm auto-recharge-amount-btn" data-cents="2500" onclick="setAutoRechargeAmount(2500)">$25</button>
+        <button class="btn btn-secondary btn-sm auto-recharge-amount-btn" data-cents="5000" onclick="setAutoRechargeAmount(5000)">$50</button>
+        <input type="number" id="autoRechargeCustom" min="5" max="500" step="1" placeholder="custom $"
+          style="width:90px; padding:4px 8px; font-size:13px;"
+          oninput="onAutoRechargeCustomAmount()" />
+        <button class="btn btn-primary btn-sm" id="autoRechargeSaveBtn" onclick="saveAutoRecharge()">Save</button>
+      </div>
+      <p id="autoRechargeMsg" class="text-sm mt-2 hidden"></p>
     </div>
 
     <!-- Provider Preferences -->
@@ -396,6 +422,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       renderDashboard();
       renderKeys();
       loadBillingHistory();
+      loadAutoRecharge();
       showDashboard();
     } catch (err) {
       console.error('loadDashboard error:', err);
@@ -472,17 +499,21 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       const data = await res.json();
       const tbody = document.getElementById('billingHistoryBody');
       if (!data.transactions?.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-gray-400 text-center py-4">No top-ups yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-gray-400 text-center py-4">No top-ups yet</td></tr>';
         return;
       }
-      tbody.innerHTML = data.transactions.map(t =>
-        '<tr>' +
-        '<td>' + formatDate(t.createdAt) + '</td>' +
-        '<td>' + t.amountChargedUsd + '</td>' +
-        '<td>' + t.creditsAddedUsd + '</td>' +
-        '<td class="status-' + t.status + '">' + t.status + '</td>' +
-        '</tr>'
-      ).join('');
+      tbody.innerHTML = data.transactions.map(t => {
+        const sourceLabel = t.source === 'auto_recharge'
+          ? '<span class="badge badge-blue" style="font-size:11px">auto</span>'
+          : '<span class="badge badge-gray" style="font-size:11px">manual</span>';
+        return '<tr>' +
+          '<td>' + formatDate(t.createdAt) + '</td>' +
+          '<td>' + t.amountChargedUsd + '</td>' +
+          '<td>' + t.creditsAddedUsd + '</td>' +
+          '<td>' + sourceLabel + '</td>' +
+          '<td class="status-' + t.status + '">' + t.status + '</td>' +
+          '</tr>';
+      }).join('');
     } catch (err) {
       console.error('loadBillingHistory error:', err);
     }
@@ -896,6 +927,112 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       }
     }
   }
+
+
+  // ─── Auto-recharge ─────────────────────────────────────────
+
+  let autoRechargeSettings = { enabled: false, amountCents: 1000 };
+
+  async function loadAutoRecharge() {
+    try {
+      const res = await apiFetch('GET', '/v1/billing/auto-recharge');
+      if (!res.ok) return;
+      const data = await res.json();
+      autoRechargeSettings = { enabled: data.enabled, amountCents: data.amountCents };
+      renderAutoRecharge();
+    } catch (err) {
+      console.error('loadAutoRecharge error:', err);
+    }
+  }
+
+  function renderAutoRecharge() {
+    const toggle = document.getElementById('autoRechargeToggle');
+    toggle.checked = autoRechargeSettings.enabled;
+
+    // Highlight the matching amount button
+    document.querySelectorAll('.auto-recharge-amount-btn').forEach(btn => {
+      const cents = parseInt(btn.dataset.cents);
+      btn.className = 'btn btn-sm auto-recharge-amount-btn ' +
+        (cents === autoRechargeSettings.amountCents ? 'btn-primary' : 'btn-secondary');
+    });
+
+    // If it's a custom amount not in presets, show it in the custom input
+    const presets = [1000, 2500, 5000];
+    const customInput = document.getElementById('autoRechargeCustom');
+    if (!presets.includes(autoRechargeSettings.amountCents)) {
+      customInput.value = (autoRechargeSettings.amountCents / 100).toFixed(0);
+    } else {
+      customInput.value = '';
+    }
+  }
+
+  function setAutoRechargeAmount(cents) {
+    autoRechargeSettings.amountCents = cents;
+    document.getElementById('autoRechargeCustom').value = '';
+    renderAutoRecharge();
+  }
+
+  function onAutoRechargeCustomAmount() {
+    const val = parseFloat(document.getElementById('autoRechargeCustom').value);
+    if (!isNaN(val) && val >= 5 && val <= 500) {
+      autoRechargeSettings.amountCents = Math.round(val * 100);
+      // Clear selection from preset buttons
+      document.querySelectorAll('.auto-recharge-amount-btn').forEach(btn => {
+        btn.className = 'btn btn-sm btn-secondary auto-recharge-amount-btn';
+      });
+    }
+  }
+
+  function onAutoRechargeToggle() {
+    const toggle = document.getElementById('autoRechargeToggle');
+    autoRechargeSettings.enabled = toggle.checked;
+  }
+
+  async function saveAutoRecharge() {
+    const msgEl = document.getElementById('autoRechargeMsg');
+    msgEl.classList.add('hidden');
+
+    const btn = document.getElementById('autoRechargeSaveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    try {
+      const res = await apiFetch('PATCH', '/v1/billing/auto-recharge', {
+        enabled: autoRechargeSettings.enabled,
+        amountCents: autoRechargeSettings.amountCents,
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        msgEl.textContent = autoRechargeSettings.enabled
+          ? 'Auto-recharge enabled. We\'ll top up $' + (data.amountCents / 100).toFixed(2) + ' when you run out.'
+          : 'Auto-recharge disabled.';
+        msgEl.className = 'text-sm mt-2 success-msg';
+        msgEl.classList.remove('hidden');
+        autoRechargeSettings = { enabled: data.enabled, amountCents: data.amountCents };
+        renderAutoRecharge();
+      } else if (res.status === 402) {
+        msgEl.textContent = 'Add a payment method first before enabling auto-recharge.';
+        msgEl.className = 'text-sm mt-2 error-msg';
+        msgEl.classList.remove('hidden');
+        // Reset toggle
+        autoRechargeSettings.enabled = false;
+        document.getElementById('autoRechargeToggle').checked = false;
+      } else {
+        msgEl.textContent = data.error?.message || 'Failed to save settings.';
+        msgEl.className = 'text-sm mt-2 error-msg';
+        msgEl.classList.remove('hidden');
+      }
+    } catch (err) {
+      msgEl.textContent = 'Network error. Please try again.';
+      msgEl.className = 'text-sm mt-2 error-msg';
+      msgEl.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save';
+    }
+  }
+
 
   // ─── Settings ─────────────────────────────────────────────
 

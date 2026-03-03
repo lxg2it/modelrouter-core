@@ -16,6 +16,7 @@
  *   amount_charged_cents INT   — what Stripe charged the card
  *   credits_added_cents INT    — what we credited (after fee)
  *   status TEXT NOT NULL       — 'succeeded' | 'requires_action' | 'failed'
+ *   source TEXT NOT NULL       — 'manual' | 'auto_recharge'
  *   created_at TEXT NOT NULL
  */
 
@@ -30,6 +31,8 @@ export interface BillingTransaction {
   amountChargedCents: number;
   creditsAddedCents: number;
   status: 'succeeded' | 'requires_action' | 'failed';
+  /** Whether this was triggered automatically (auto-recharge) or by the user (manual top-up). */
+  source: 'manual' | 'auto_recharge';
   createdAt: string;
 }
 
@@ -52,6 +55,7 @@ export class BillingTransactionStore {
         amount_charged_cents INTEGER NOT NULL,
         credits_added_cents INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'manual',
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     `);
@@ -101,6 +105,14 @@ export class BillingTransactionStore {
       `);
     }
 
+    // Migration: add source column if not present (added in v0.3)
+    const colsV2 = this.db.pragma('table_info(billing_transactions)') as { name: string }[];
+    if (!colsV2.some((c) => c.name === 'source')) {
+      this.db.exec(`
+        ALTER TABLE billing_transactions ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'
+      `);
+    }
+
     // Create indexes after any migrations (user_id must exist before indexing it)
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_billing_user_id ON billing_transactions(user_id);
@@ -116,8 +128,8 @@ export class BillingTransactionStore {
     const id = randomBytes(8).toString('hex');
     this.db.prepare(`
       INSERT INTO billing_transactions
-        (id, user_id, key_id, payment_intent_id, amount_charged_cents, credits_added_cents, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (id, user_id, key_id, payment_intent_id, amount_charged_cents, credits_added_cents, status, source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       params.userId ?? null,
@@ -126,6 +138,7 @@ export class BillingTransactionStore {
       params.amountChargedCents,
       params.creditsAddedCents,
       params.status,
+      params.source ?? 'manual',
     );
 
     return {
@@ -172,6 +185,7 @@ export class BillingTransactionStore {
       amountChargedCents: row.amount_charged_cents,
       creditsAddedCents: row.credits_added_cents,
       status: row.status as BillingTransaction['status'],
+      source: (row.source ?? 'manual') as BillingTransaction['source'],
       createdAt: row.created_at,
     };
   }
@@ -185,5 +199,6 @@ interface DbRow {
   amount_charged_cents: number;
   credits_added_cents: number;
   status: string;
+  source: string | null;
   created_at: string;
 }

@@ -153,6 +153,13 @@ export interface User {
    * e.g. ['openai', 'grok'] to exclude those providers from routing.
    */
   blockedProviders: string[];
+
+  /** Whether auto-recharge is enabled. When true, a failed credit reservation triggers a Stripe charge. */
+  autoRechargeEnabled: boolean;
+  /** Amount to charge on auto-recharge, in cents (e.g. 1000 = $10.00). */
+  autoRechargeAmountCents: number;
+  /** ISO timestamp of the last auto-recharge attempt (for debounce). */
+  autoRechargeLastAt?: string;
 }
 
 export interface ApiKey {

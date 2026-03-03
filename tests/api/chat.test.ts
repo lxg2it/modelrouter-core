@@ -13,6 +13,8 @@ import type { ProviderAdapter, StreamingCompletion } from '../../src/providers/t
 import type { UsageLogger } from '../../src/tracking/logger.js';
 import type { AuthEnv } from '../../src/auth/middleware.js';
 import type { ChatCompletionRequest, ProviderName, ApiKey, User } from '../../src/types.js';
+import type { StripeService } from '../../src/billing/stripe.js';
+import type { BillingTransactionStore } from '../../src/billing/transactions.js';
 
 // ─── Helpers ───────────────────────────────────────────
 
@@ -129,15 +131,38 @@ interface MockUserStore {
   tryReserveCredits: ReturnType<typeof vi.fn>;
   refundCredits: ReturnType<typeof vi.fn>;
   deductCredits: ReturnType<typeof vi.fn>;
+  findById: ReturnType<typeof vi.fn>;
+  addCredits: ReturnType<typeof vi.fn>;
+  tryClaimAutoRecharge: ReturnType<typeof vi.fn>;
 }
 
 function makeMockUserStore(overrides?: Partial<MockUserStore>): MockUserStore {
   return {
-    tryReserveCredits: vi.fn().mockReturnValue(true),
-    refundCredits:     vi.fn(),
-    deductCredits:     vi.fn().mockReturnValue(49900),
+    tryReserveCredits:    vi.fn().mockReturnValue(true),
+    refundCredits:        vi.fn(),
+    deductCredits:        vi.fn().mockReturnValue(49900),
+    findById:             vi.fn().mockReturnValue(null),
+    addCredits:           vi.fn().mockReturnValue(1960),
+    tryClaimAutoRecharge: vi.fn().mockReturnValue(true),
     ...overrides,
   };
+}
+
+function makeMockStripe(chargeResult?: Partial<{ status: string; paymentIntentId: string; amountCents: number }>): StripeService {
+  return {
+    charge: vi.fn().mockResolvedValue({
+      paymentIntentId: 'pi_auto_test',
+      status: 'succeeded',
+      amountCents: 1000,
+      ...chargeResult,
+    }),
+  } as unknown as StripeService;
+}
+
+function makeMockBillingTxStore(): BillingTransactionStore {
+  return {
+    record: vi.fn().mockReturnValue({ id: 'tx-auto', createdAt: new Date().toISOString() }),
+  } as unknown as BillingTransactionStore;
 }
 
 /**
@@ -153,6 +178,8 @@ function makeTestApp(
     user?: User;
     keyStore?: { deductCredits: (id: string, cents: number) => number };
     userStore?: MockUserStore;
+    stripe?: StripeService;
+    billingTxStore?: BillingTransactionStore;
   } = {},
 ) {
   const app = new Hono<AuthEnv>();
@@ -172,6 +199,8 @@ function makeTestApp(
     logger,
     keyStore: opts.keyStore as any,
     userStore: opts.userStore as any,
+    stripe: opts.stripe,
+    billingTxStore: opts.billingTxStore,
   }));
   return app;
 }
@@ -545,6 +574,9 @@ describe('User-owned key billing — pre-request credit reservation', () => {
     createdAt: new Date().toISOString(),
     stripeCustomerId: 'cus_test123',
     creditBalanceCents: 50000, // $500.00 — comfortably above any tier ceiling
+    blockedProviders: [],
+    autoRechargeEnabled: false,
+    autoRechargeAmountCents: 1000,
   };
 
   /** A user-owned key (no stripeCustomerId on the key — billing is at user level). */
@@ -678,5 +710,171 @@ describe('User-owned key billing — pre-request credit reservation', () => {
     expect(mockUserStore.tryReserveCredits).toHaveBeenCalledOnce();
     // refundCredits should be called to settle to actual cost
     expect(mockUserStore.refundCredits).toHaveBeenCalledOnce();
+  });
+});
+
+// ─── Auto-recharge in request path ───────────────────────
+
+describe('Auto-recharge — triggered when reservation fails', () => {
+  const engine = new RoutingEngine({
+    availableProviders: new Set(['google']),
+    defaultTier: 'standard',
+    defaultOutputRatio: 0.33,
+  });
+
+  const userOwnedKey: ApiKey = {
+    ...fakeApiKey,
+    id: 'key-auto-recharge',
+    tier: 'standard',
+  };
+
+  /** User with auto-recharge enabled and enough funds after the charge. */
+  const autoRechargeUser: User = {
+    id: 'usr-auto-recharge',
+    email: 'auto@example.com',
+    createdAt: new Date().toISOString(),
+    stripeCustomerId: 'cus_auto_test',
+    creditBalanceCents: 10, // Very low — first reservation fails
+    blockedProviders: [],
+    autoRechargeEnabled: true,
+    autoRechargeAmountCents: 1000,
+  };
+
+  it('retries the request after a successful auto-recharge charge', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Success after recharge!');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+
+    const mockUserStore = makeMockUserStore({
+      // First call fails (no credits), subsequent call succeeds (credits added by auto-recharge)
+      tryReserveCredits: vi.fn().mockReturnValueOnce(false).mockReturnValue(true),
+      findById: vi.fn().mockReturnValue(autoRechargeUser),
+    });
+    const mockStripe = makeMockStripe({ status: 'succeeded', amountCents: 1000 });
+    const mockTxStore = makeMockBillingTxStore();
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: userOwnedKey,
+      user: autoRechargeUser,
+      userStore: mockUserStore,
+      stripe: mockStripe,
+      billingTxStore: mockTxStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(200);
+
+    // Auto-recharge should have fired
+    expect(mockStripe.charge).toHaveBeenCalledOnce();
+    expect(mockStripe.charge).toHaveBeenCalledWith('cus_auto_test', 1000, expect.stringContaining('auto@example.com'));
+
+    // Credits should have been added (96% of 1000 = 960)
+    expect(mockUserStore.addCredits).toHaveBeenCalledWith('usr-auto-recharge', 960);
+
+    // Transaction should be recorded as auto_recharge
+    expect(mockTxStore.record).toHaveBeenCalledWith(
+      expect.objectContaining({ source: 'auto_recharge', status: 'succeeded' }),
+    );
+
+    // Provider was eventually called
+    expect(googleAdapter.complete).toHaveBeenCalledOnce();
+  });
+
+  it('returns 402 when auto-recharge is disabled and balance is insufficient', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Should not be called');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+
+    const userNoAutoRecharge: User = {
+      ...autoRechargeUser,
+      autoRechargeEnabled: false,
+    };
+
+    const mockUserStore = makeMockUserStore({
+      tryReserveCredits: vi.fn().mockReturnValue(false),
+    });
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: userOwnedKey,
+      user: userNoAutoRecharge,
+      userStore: mockUserStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(402);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('insufficient_credits');
+    expect(googleAdapter.complete).not.toHaveBeenCalled();
+  });
+
+  it('returns 402 when auto-recharge Stripe charge fails', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Should not be called');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+
+    const mockUserStore = makeMockUserStore({
+      tryReserveCredits: vi.fn().mockReturnValue(false),
+      findById: vi.fn().mockReturnValue(autoRechargeUser),
+    });
+    const failingStripe = {
+      charge: vi.fn().mockRejectedValue(new Error('Card declined')),
+    } as unknown as StripeService;
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: userOwnedKey,
+      user: autoRechargeUser,
+      userStore: mockUserStore,
+      stripe: failingStripe,
+      billingTxStore: makeMockBillingTxStore(),
+    });
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(402);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('insufficient_credits');
+    expect(googleAdapter.complete).not.toHaveBeenCalled();
+  });
+
+  it('returns 402 when the debounce blocks a concurrent auto-recharge claim', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Should not be called');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+
+    const mockUserStore = makeMockUserStore({
+      tryReserveCredits: vi.fn().mockReturnValue(false),
+      findById: vi.fn().mockReturnValue(autoRechargeUser),
+      tryClaimAutoRecharge: vi.fn().mockReturnValue(false), // Debounce blocks it
+    });
+    const mockStripe = makeMockStripe();
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: userOwnedKey,
+      user: autoRechargeUser,
+      userStore: mockUserStore,
+      stripe: mockStripe,
+      billingTxStore: makeMockBillingTxStore(),
+    });
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    // Debounce blocked the charge — 402 returned
+    expect(res.status).toBe(402);
+    // Stripe charge was NOT attempted
+    expect(mockStripe.charge).not.toHaveBeenCalled();
   });
 });

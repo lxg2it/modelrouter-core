@@ -233,6 +233,7 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<SessionEnv> {
       amountChargedCents: result.amountCents,
       creditsAddedCents: result.status === 'succeeded' ? creditsToAdd : 0,
       status: result.status as 'succeeded' | 'requires_action' | 'failed',
+      source: 'manual',
     });
 
     return c.json({
@@ -248,6 +249,87 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<SessionEnv> {
       creditBalanceUsd: formatUsd(newBalance),
     });
   });
+
+  // ─── GET /v1/billing/auto-recharge ────────────────────────
+  //
+  // Returns the user's current auto-recharge settings.
+  //
+  router.get('/auto-recharge', (c: Context<SessionEnv>) => {
+    const user = c.get('user');
+    return c.json({
+      enabled: user.autoRechargeEnabled,
+      amountCents: user.autoRechargeAmountCents,
+      amountUsd: formatUsd(user.autoRechargeAmountCents),
+      lastRechargeAt: user.autoRechargeLastAt ?? null,
+    });
+  });
+
+  // ─── PATCH /v1/billing/auto-recharge ──────────────────────
+  //
+  // Update auto-recharge settings.
+  // Body: { enabled?: boolean, amountCents?: number }
+  //
+  // amountCents must be between $5 and $500 when setting.
+  //
+  router.patch('/auto-recharge', async (c: Context<SessionEnv>) => {
+    const user = c.get('user');
+
+    let body: { enabled?: unknown; amountCents?: unknown };
+    try {
+      body = await c.req.json() as { enabled?: unknown; amountCents?: unknown };
+    } catch {
+      return c.json({ error: { message: 'Invalid JSON body', code: 'invalid_request' } }, 400);
+    }
+
+    const enabled = body.enabled !== undefined
+      ? Boolean(body.enabled)
+      : user.autoRechargeEnabled;
+
+    let amountCents = user.autoRechargeAmountCents;
+    if (body.amountCents !== undefined) {
+      if (typeof body.amountCents !== 'number' || !Number.isInteger(body.amountCents)) {
+        return c.json({
+          error: { message: 'amountCents must be an integer', code: 'invalid_request' },
+        }, 400);
+      }
+      if (body.amountCents < MIN_TOP_UP_CENTS) {
+        return c.json({
+          error: {
+            message: `Auto-recharge amount must be at least ${formatUsd(MIN_TOP_UP_CENTS)}`,
+            code: 'amount_too_small',
+          },
+        }, 400);
+      }
+      if (body.amountCents > MAX_TOP_UP_CENTS) {
+        return c.json({
+          error: {
+            message: `Auto-recharge amount cannot exceed ${formatUsd(MAX_TOP_UP_CENTS)}`,
+            code: 'amount_too_large',
+          },
+        }, 400);
+      }
+      amountCents = body.amountCents;
+    }
+
+    // Require a saved card before enabling
+    if (enabled && !user.stripeCustomerId) {
+      return c.json({
+        error: {
+          message: 'Add a payment method before enabling auto-recharge.',
+          code: 'no_payment_method',
+        },
+      }, 402);
+    }
+
+    userStore.setAutoRecharge(user.id, { enabled, amountCents });
+
+    return c.json({
+      enabled,
+      amountCents,
+      amountUsd: formatUsd(amountCents),
+    });
+  });
+
 
   // ─── GET /v1/billing/history ──────────────────────────────
   //
@@ -269,6 +351,7 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<SessionEnv> {
         creditsAddedCents: t.creditsAddedCents,
         creditsAddedUsd: formatUsd(t.creditsAddedCents),
         status: t.status,
+        source: t.source,
         createdAt: t.createdAt,
       })),
     });
