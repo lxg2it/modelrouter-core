@@ -46,6 +46,33 @@ export class UserStore {
       )
     `);
 
+    // Migration: if password_hash was created as NOT NULL (legacy), recreate
+    // the table without the constraint. SQLite doesn't support ALTER COLUMN,
+    // so we use the table-rename approach. Safe: all existing data is preserved.
+    const cols = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{
+      name: string;
+      notnull: number;
+    }>;
+    const pwCol = cols.find((c) => c.name === 'password_hash');
+    if (pwCol && pwCol.notnull === 1) {
+      this.db.exec(`
+        BEGIN;
+        CREATE TABLE users_migration (
+          id TEXT PRIMARY KEY,
+          email TEXT NOT NULL UNIQUE,
+          password_hash TEXT,
+          account_name TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          stripe_customer_id TEXT,
+          credit_balance_cents INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO users_migration SELECT * FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_migration RENAME TO users;
+        COMMIT;
+      `);
+    }
+
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
