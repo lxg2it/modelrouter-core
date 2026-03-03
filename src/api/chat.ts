@@ -39,7 +39,7 @@ interface ChatDeps {
 export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
 
-  app.post('/', async (c) => {
+  app.post('/completions', async (c) => {
     const apiKey = c.get('apiKey');
     const satbillAccountId = c.get('satbillAccountId');
     const user = c.get('user');

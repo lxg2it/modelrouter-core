@@ -202,7 +202,7 @@ describe('POST /v1/chat/completions — non-streaming', () => {
     });
     const app = makeTestApp(providers, engine, makeMockLogger());
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(minimalRequest),
@@ -229,7 +229,7 @@ describe('POST /v1/chat/completions — non-streaming', () => {
     });
     const app = makeTestApp(providers, engine, makeMockLogger());
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(minimalRequest),
@@ -256,7 +256,7 @@ describe('POST /v1/chat/completions — non-streaming', () => {
     });
     const app = makeTestApp(providers, engine, makeMockLogger());
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(minimalRequest),
@@ -281,7 +281,7 @@ describe('POST /v1/chat/completions — streaming', () => {
     });
     const app = makeTestApp(providers, engine, makeMockLogger());
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...minimalRequest, stream: true }),
@@ -312,7 +312,7 @@ describe('POST /v1/chat/completions — streaming', () => {
     });
     const app = makeTestApp(providers, engine, makeMockLogger());
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...minimalRequest, stream: true }),
@@ -347,7 +347,7 @@ describe('POST /v1/chat/completions — streaming', () => {
     });
     const app = makeTestApp(providers, engine, makeMockLogger());
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...minimalRequest, stream: true }),
@@ -373,7 +373,7 @@ describe('POST /v1/chat/completions — streaming', () => {
     });
     const app = makeTestApp(providers, engine, makeMockLogger());
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...minimalRequest, stream: true }),
@@ -412,7 +412,7 @@ describe('POST /v1/chat/completions — streaming', () => {
     });
     const app = makeTestApp(providers, engine, makeMockLogger());
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...minimalRequest, stream: true }),
@@ -450,7 +450,7 @@ describe('Stripe credit deduction', () => {
       keyStore: mockKeyStore,
     });
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(minimalRequest),
@@ -476,7 +476,7 @@ describe('Stripe credit deduction', () => {
       keyStore: mockKeyStore,
     });
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(minimalRequest),
@@ -496,7 +496,7 @@ describe('Stripe credit deduction', () => {
       keyStore: mockKeyStore,
     });
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...minimalRequest, stream: true }),
@@ -524,7 +524,7 @@ describe('Stripe credit deduction', () => {
       keyStore: mockKeyStore,
     });
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(minimalRequest),
@@ -572,7 +572,7 @@ describe('User-owned key billing — pre-request credit reservation', () => {
       userStore: mockUserStore,
     });
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(minimalRequest),
@@ -609,7 +609,7 @@ describe('User-owned key billing — pre-request credit reservation', () => {
       userStore: mockUserStore,
     });
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(minimalRequest),
@@ -636,7 +636,7 @@ describe('User-owned key billing — pre-request credit reservation', () => {
       userStore: mockUserStore,
     });
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(minimalRequest),
@@ -665,7 +665,7 @@ describe('User-owned key billing — pre-request credit reservation', () => {
       userStore: mockUserStore,
     });
 
-    const res = await app.fetch(new Request('http://test/', {
+    const res = await app.fetch(new Request('http://test/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...minimalRequest, stream: true }),

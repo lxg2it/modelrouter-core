@@ -84,7 +84,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
   <!-- Header -->
   <div class="flex items-center justify-between mb-8">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">Model Router</h1>
+      <a href="/" class="text-2xl font-bold text-gray-900 hover:text-blue-600 transition-colors">Model Router</a>
       <p class="text-gray-500 mt-1">Account Dashboard</p>
     </div>
     <div id="headerActions" class="flex gap-2"></div>
