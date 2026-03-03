@@ -230,6 +230,23 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
           <p id="usageLatency" class="text-xl font-bold text-gray-900">—</p>
         </div>
       </div>
+      <!-- Daily usage chart (last 30 days) -->
+      <div id="usageChartWrap" class="hidden">
+        <p class="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Daily Requests — 30 days</p>
+        <div style="height:160px; position:relative;">
+          <canvas id="usageDailyChart"></canvas>
+        </div>
+        <div id="usageModelWrap" class="mt-4 hidden">
+          <p class="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">By Model</p>
+          <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
+            <div style="width:120px; height:120px; position:relative; flex-shrink:0;">
+              <canvas id="usageModelChart"></canvas>
+            </div>
+            <div id="usageModelLegend" class="text-xs text-gray-600" style="line-height:1.8;"></div>
+          </div>
+        </div>
+      </div>
+      <div id="usageChartEmpty" class="hidden text-sm text-gray-400 mt-2">No request data yet. Make your first API call to see usage charts.</div>
     </div>
 
     <!-- API Keys -->
@@ -423,6 +440,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       renderKeys();
       loadBillingHistory();
       loadAutoRecharge();
+      loadUsageCharts();
       showDashboard();
     } catch (err) {
       console.error('loadDashboard error:', err);
@@ -933,7 +951,128 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
   let autoRechargeSettings = { enabled: false, amountCents: 1000 };
 
-  async function loadAutoRecharge() {
+    // ─── Usage Charts ─────────────────────────────────────────
+  //
+  // Fetches 30-day daily usage data and renders two Chart.js charts:
+  //   1. Daily requests bar chart
+  //   2. Per-model doughnut chart
+  //
+  let usageDailyChartInstance = null;
+  let usageModelChartInstance = null;
+
+  async function loadUsageCharts() {
+    try {
+      const res = await apiFetch('GET', '/v1/account/usage');
+      if (!res.ok) return;
+      const data = await res.json();
+
+      const { daily, modelDistribution } = data;
+      const hasData = daily.length > 0 || modelDistribution.length > 0;
+
+      if (!hasData) {
+        document.getElementById('usageChartEmpty').classList.remove('hidden');
+        return;
+      }
+
+      document.getElementById('usageChartWrap').classList.remove('hidden');
+
+      // ── Daily bar chart ──
+      const dailyCtx = document.getElementById('usageDailyChart').getContext('2d');
+      if (usageDailyChartInstance) usageDailyChartInstance.destroy();
+      usageDailyChartInstance = new Chart(dailyCtx, {
+        type: 'bar',
+        data: {
+          labels: daily.map(d => {
+            const dt = new Date(d.day + 'T00:00:00');
+            return dt.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' });
+          }),
+          datasets: [{
+            label: 'Requests',
+            data: daily.map(d => d.requestCount),
+            backgroundColor: 'rgba(59,130,246,0.7)',
+            borderRadius: 3,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                afterLabel: (item) => {
+                  const row = daily[item.dataIndex];
+                  return '$' + (row.costCents / 100).toFixed(4);
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              ticks: { font: { size: 10 }, maxRotation: 45 },
+              grid: { display: false },
+            },
+            y: {
+              ticks: { font: { size: 10 }, precision: 0 },
+              beginAtZero: true,
+            },
+          },
+        },
+      });
+
+      // ── Model doughnut chart ──
+      if (modelDistribution.length > 0) {
+        document.getElementById('usageModelWrap').classList.remove('hidden');
+        const COLORS = [
+          '#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6',
+          '#06b6d4','#ec4899','#84cc16','#f97316','#6b7280',
+        ];
+        const modelCtx = document.getElementById('usageModelChart').getContext('2d');
+        if (usageModelChartInstance) usageModelChartInstance.destroy();
+        usageModelChartInstance = new Chart(modelCtx, {
+          type: 'doughnut',
+          data: {
+            labels: modelDistribution.map(m => m.model),
+            datasets: [{
+              data: modelDistribution.map(m => m.requestCount),
+              backgroundColor: COLORS.slice(0, modelDistribution.length),
+              borderWidth: 1,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (item) => {
+                    const m = modelDistribution[item.dataIndex];
+                    return \` \${m.requestCount} req (\${m.provider})\`;
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        // Build legend manually
+        const legendHtml = modelDistribution.map((m, i) =>
+          \`<div style="display:flex;align-items:center;gap:6px;">
+            <span style="width:10px;height:10px;border-radius:2px;background:\${COLORS[i]};flex-shrink:0;display:inline-block;"></span>
+            <span>\${esc(m.model)}</span>
+            <span class="text-gray-400">(\${m.requestCount})</span>
+          </div>\`
+        ).join('');
+        document.getElementById('usageModelLegend').innerHTML = legendHtml;
+      }
+    } catch (err) {
+      console.error('loadUsageCharts error:', err);
+    }
+  }
+
+
+async function loadAutoRecharge() {
     try {
       const res = await apiFetch('GET', '/v1/billing/auto-recharge');
       if (!res.ok) return;

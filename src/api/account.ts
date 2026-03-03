@@ -1,5 +1,6 @@
 /**
  * GET/PATCH /v1/account/profile — user profile for the authenticated session.
+ * GET /v1/account/usage          — daily usage data for charts (30 days).
  *
  * Returns account metadata, credit balance, usage summary across all keys,
  * and allows updating the display name.
@@ -7,6 +8,7 @@
  * Routes:
  *   GET  /v1/account/profile         — fetch profile + 30-day usage summary
  *   PATCH /v1/account/profile        — update display name
+ *   GET  /v1/account/usage           — daily + model breakdown for charts
  */
 
 import { Hono } from 'hono';
@@ -118,6 +120,61 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
 
     return c.json({ id: user.id, email: user.email, name });
   });
+
+  // ─── GET /v1/account/usage ────────────────────────────────
+  //
+  // Returns daily usage data for the last 30 days, aggregated across all
+  // active API keys for the authenticated user. Designed for chart rendering.
+  //
+  // Response:
+  //   {
+  //     daily: Array<{ day: string; requestCount: number; totalTokens: number; costCents: number }>,
+  //     modelDistribution: Array<{ model: string; provider: string; requestCount: number; totalTokens: number }>
+  //   }
+  //
+  router.get('/usage', (c: Context<SessionEnv>) => {
+    const user = c.get('user');
+    const keys = keyStore.listByUser(user.id).filter((k) => k.active);
+
+    // Aggregate daily usage across all keys
+    const dailyMap = new Map<string, { requestCount: number; totalTokens: number; costCents: number }>();
+    const modelMap = new Map<string, { model: string; provider: string; requestCount: number; totalTokens: number }>();
+
+    for (const key of keys) {
+      const daily = usageStore.getDailyUsage(key.id, 30);
+      for (const row of daily) {
+        const existing = dailyMap.get(row.day) ?? { requestCount: 0, totalTokens: 0, costCents: 0 };
+        dailyMap.set(row.day, {
+          requestCount: existing.requestCount + row.requestCount,
+          totalTokens: existing.totalTokens + row.totalTokens,
+          costCents: existing.costCents + row.costCents,
+        });
+      }
+
+      const summary = usageStore.getUsageSummary(key.id, 30);
+      for (const entry of summary.modelDistribution) {
+        const mapKey = `${entry.provider}/${entry.model}`;
+        const existing = modelMap.get(mapKey) ?? { model: entry.model, provider: entry.provider, requestCount: 0, totalTokens: 0 };
+        modelMap.set(mapKey, {
+          model: entry.model,
+          provider: entry.provider,
+          requestCount: existing.requestCount + entry.requestCount,
+          totalTokens: existing.totalTokens + entry.totalTokens,
+        });
+      }
+    }
+
+    // Sort daily entries chronologically (fill gaps with zero)
+    const daily = Array.from(dailyMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([day, data]) => ({ day, ...data }));
+
+    const modelDistribution = Array.from(modelMap.values())
+      .sort((a, b) => b.requestCount - a.requestCount);
+
+    return c.json({ daily, modelDistribution });
+  });
+
 
   // ─── PATCH /v1/account/providers ─────────────────────────────
   //
