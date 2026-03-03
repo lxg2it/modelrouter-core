@@ -457,7 +457,7 @@ describe('RoutingEngine', () => {
         const premiumModels = [
           { provider: 'anthropic' as const, model: 'claude-opus-4-6' },
           { provider: 'openai' as const, model: 'gpt-5.2' },
-          { provider: 'google' as const, model: 'gemini-3-pro' },
+          { provider: 'google' as const, model: 'gemini-3.1-pro-preview' },
         ];
         for (const m of premiumModels) {
           for (let i = 0; i < 3; i++) engine.recordFailure(m.provider, m.model);
@@ -573,7 +573,7 @@ describe('RoutingEngine', () => {
         { ...reqWithChars(630_000), prefer: 'cheap' },
       );
       expect(cheapDecision).not.toBeNull();
-      const largeCxtModels = ['gemini-2.5-flash', 'gpt-4.1-mini', 'gemini-2.5-pro', 'gpt-4.1', 'gemini-3-pro'];
+      const largeCxtModels = ['gemini-2.5-flash', 'gpt-4.1-mini', 'gemini-2.5-pro', 'gpt-4.1', 'gemini-3.1-pro-preview'];
       expect(largeCxtModels.includes(cheapDecision!.model)).toBe(true);
     });
 

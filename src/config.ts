@@ -127,7 +127,7 @@ export const TIERS: Record<string, TierConfig> = {
   },
   premium: {
     models: [
-      { provider: 'google',    model: 'gemini-3-pro',    quality: 0.95, inputPer1M: 2.00,  outputPer1M: 12.00, latencyMs: 900,  maxContextTokens: 1_048_576 },
+      { provider: 'google',    model: 'gemini-3.1-pro-preview', quality: 0.95, inputPer1M: 2.00,  outputPer1M: 12.00, latencyMs: 900,  maxContextTokens: 1_048_576 },
       { provider: 'anthropic', model: 'claude-opus-4-6', quality: 1.00, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 200_000   },
       { provider: 'openai',    model: 'gpt-5.2',         quality: 0.98, inputPer1M: 10.00, outputPer1M: 30.00, latencyMs: 1000, maxContextTokens: 200_000   },
     ],
