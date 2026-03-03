@@ -1,5 +1,6 @@
 /**
  * GET /admin — admin dashboard.
+ * POST /admin/grant-credit — grant promotional credit to a user by email.
  *
  * Session-authenticated. Only accessible to users whose email is in the
  * ADMIN_EMAILS environment variable (comma-separated).
@@ -8,17 +9,21 @@
  *   - Total user count and daily signups (last 30 days)
  *   - Total request count and daily requests (last 30 days)
  *   - Total revenue and top models
+ *   - Recent signups with balances
  */
 
 import { Hono } from 'hono';
+import { randomBytes } from 'crypto';
 import Database from 'better-sqlite3';
 import type { AuthEnv } from '../auth/middleware.js';
+import type { UserStore } from '../auth/users.js';
 
 // ─── Public interface ──────────────────────────────────
 
 export interface AdminDeps {
   db: Database.Database;
   adminEmails: string[];
+  userStore: UserStore;
 }
 
 export interface AdminStats {
@@ -39,6 +44,7 @@ export interface AdminStats {
     daily: DayRevenue[];
   };
   creditBalanceHeldCents: number;
+  recentUsers: RecentUser[];
 }
 
 export interface DayStat {
@@ -57,6 +63,12 @@ export interface ModelStat {
   count: number;
 }
 
+export interface RecentUser {
+  email: string;
+  creditBalanceCents: number;
+  createdAt: string;
+}
+
 // ─── Router factory ────────────────────────────────────
 
 export function createAdminRouter(deps: AdminDeps): Hono<AuthEnv> {
@@ -65,7 +77,6 @@ export function createAdminRouter(deps: AdminDeps): Hono<AuthEnv> {
   app.get('/', (c) => {
     const user = c.get('user');
     if (!user || !deps.adminEmails.includes(user.email.toLowerCase())) {
-      // Return 403 as JSON (the session middleware already handles 401)
       return c.json({
         error: { message: 'Forbidden', type: 'forbidden', code: 'forbidden' },
       }, 403);
@@ -84,6 +95,64 @@ export function createAdminRouter(deps: AdminDeps): Hono<AuthEnv> {
     }
 
     return c.json(stats);
+  });
+
+  /**
+   * POST /admin/grant-credit
+   * Body: { email: string, amountCents: number, note?: string }
+   *
+   * Grants promotional credit to a user by email. Records a billing transaction
+   * with source='promotional' and amount_charged_cents=0.
+   */
+  app.post('/grant-credit', async (c) => {
+    const adminUser = c.get('user');
+    if (!adminUser || !deps.adminEmails.includes(adminUser.email.toLowerCase())) {
+      return c.json({
+        error: { message: 'Forbidden', type: 'forbidden', code: 'forbidden' },
+      }, 403);
+    }
+
+    let body: { email?: unknown; amountCents?: unknown; note?: unknown };
+    try {
+      body = await c.req.json() as typeof body;
+    } catch {
+      return c.json({ error: { message: 'Invalid JSON body', type: 'invalid_request_error', code: 'invalid_request' } }, 400);
+    }
+
+    const { email, amountCents, note } = body;
+
+    if (typeof email !== 'string' || !email.trim()) {
+      return c.json({ error: { message: 'email is required', type: 'invalid_request_error', code: 'invalid_request' } }, 400);
+    }
+    if (typeof amountCents !== 'number' || amountCents <= 0 || !Number.isInteger(amountCents)) {
+      return c.json({ error: { message: 'amountCents must be a positive integer', type: 'invalid_request_error', code: 'invalid_request' } }, 400);
+    }
+
+    // Look up the user
+    const user = deps.userStore.findByEmail(email.trim().toLowerCase());
+    if (!user) {
+      return c.json({ error: { message: `User not found: ${email}`, type: 'not_found', code: 'not_found' } }, 404);
+    }
+
+    // Credit the user
+    const newBalance = deps.userStore.addCredits(user.id, amountCents);
+
+    // Record the billing transaction with amount_charged=0 (free credit)
+    const txId = randomBytes(8).toString('hex');
+    const noteStr = typeof note === 'string' ? note : 'Promotional credit';
+    deps.db.prepare(`
+      INSERT INTO billing_transactions
+        (id, user_id, key_id, payment_intent_id, amount_charged_cents, credits_added_cents, status, source)
+      VALUES (?, ?, NULL, ?, 0, ?, 'succeeded', 'promotional')
+    `).run(txId, user.id, `promo:${noteStr}`, amountCents);
+
+    return c.json({
+      success: true,
+      email: user.email,
+      amountCents,
+      newBalanceCents: newBalance,
+      txId,
+    });
   });
 
   return app;
@@ -159,6 +228,14 @@ function queryAdminStats(db: Database.Database): AdminStats {
     SELECT COALESCE(SUM(credit_balance_cents), 0) as total FROM users
   `).get() as { total: number }).total;
 
+  // ── Recent users ──
+  const recentUsersRaw = db.prepare(`
+    SELECT email, credit_balance_cents, created_at
+    FROM users
+    ORDER BY created_at DESC
+    LIMIT 20
+  `).all() as { email: string; credit_balance_cents: number; created_at: string }[];
+
   // Fill 30-day range with zeros for missing days
   const days30 = buildDayRange(30);
 
@@ -183,6 +260,11 @@ function queryAdminStats(db: Database.Database): AdminStats {
       })),
     },
     creditBalanceHeldCents: heldBalance,
+    recentUsers: recentUsersRaw.map((u) => ({
+      email: u.email,
+      creditBalanceCents: u.credit_balance_cents,
+      createdAt: u.created_at,
+    })),
   };
 }
 
@@ -418,10 +500,105 @@ function renderAdminHtml(s: AdminStats): string {
       </table>
     </div>
 
+    <div class="card">
+      <div class="card-title">Recent Users</div>
+      <table>
+        <thead>
+          <tr><th>Email</th><th>Balance</th><th>Signed Up</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          ${s.recentUsers.length > 0
+            ? s.recentUsers.map((u) => `
+          <tr>
+            <td>${u.email}</td>
+            <td>${cents(u.creditBalanceCents)}</td>
+            <td style="color:var(--muted);font-size:12px">${u.createdAt.slice(0, 16)}</td>
+            <td>
+              <button onclick="grantCredit('${u.email}')" style="font-size:12px;padding:3px 10px;background:var(--bg3);border:1px solid var(--border);color:var(--accent);border-radius:4px;cursor:pointer">
+                Grant Credit
+              </button>
+            </td>
+          </tr>`).join('')
+            : `<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:16px">No users yet</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" id="grant-card">
+      <div class="card-title">Grant Promotional Credit</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Credit a user for free — amount_charged = $0, records a 'promotional' billing transaction.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div>
+          <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Email</label>
+          <input id="grant-email" type="email" placeholder="user@example.com"
+            style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px;width:220px">
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Amount (USD)</label>
+          <input id="grant-amount" type="number" min="1" step="1" value="20"
+            style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px;width:100px">
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Note</label>
+          <input id="grant-note" type="text" placeholder="Launch promo"
+            style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px;width:160px">
+        </div>
+        <button onclick="doGrant()" style="padding:8px 18px;background:var(--accent2);border:none;color:#0d1117;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">
+          Grant
+        </button>
+      </div>
+      <div id="grant-result" style="margin-top:12px;font-size:13px"></div>
+    </div>
+
     <div class="back">
       <a href="/profile">← Back to profile</a>
     </div>
   </div>
+
+  <script>
+    function grantCredit(email) {
+      document.getElementById('grant-email').value = email;
+      document.getElementById('grant-card').scrollIntoView({ behavior: 'smooth' });
+      document.getElementById('grant-email').focus();
+    }
+
+    async function doGrant() {
+      const email = document.getElementById('grant-email').value.trim();
+      const amountDollars = parseFloat(document.getElementById('grant-amount').value);
+      const note = document.getElementById('grant-note').value.trim() || 'Launch promo';
+      const resultEl = document.getElementById('grant-result');
+
+      if (!email || isNaN(amountDollars) || amountDollars <= 0) {
+        resultEl.style.color = 'var(--warn)';
+        resultEl.textContent = 'Please enter a valid email and amount.';
+        return;
+      }
+
+      const amountCents = Math.round(amountDollars * 100);
+      resultEl.style.color = 'var(--muted)';
+      resultEl.textContent = 'Granting…';
+
+      try {
+        const resp = await fetch('/admin/grant-credit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, amountCents, note }),
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+          resultEl.style.color = 'var(--accent2)';
+          resultEl.textContent = '✓ Granted $' + (data.amountCents / 100).toFixed(2) + ' to ' + data.email + '. New balance: $' + (data.newBalanceCents / 100).toFixed(2);
+          setTimeout(() => location.reload(), 1500);
+        } else {
+          resultEl.style.color = 'var(--warn)';
+          resultEl.textContent = '✗ ' + (data.error?.message ?? 'Unknown error');
+        }
+      } catch (e) {
+        resultEl.style.color = 'var(--warn)';
+        resultEl.textContent = '✗ Network error';
+      }
+    }
+  </script>
 </body>
 </html>`;
 }
