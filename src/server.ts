@@ -30,6 +30,7 @@ import { createAccountRouter } from './api/account.js';
 import { createProfileRouter } from './api/profile.js';
 import { ResendEmailSender, ConsoleEmailSender } from './auth/email.js';
 import type { EmailSender } from './auth/email.js';
+import { RateLimiter } from './ratelimit/token-bucket.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ProviderName, Tier } from './types.js';
 
@@ -102,6 +103,10 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     console.log(`[Billing] Stripe enabled (publishable key: ${config.stripe!.publishableKey.slice(0, 14)}...)`);
   }
 
+  // Rate limiter — in-memory token bucket, one bucket per API key
+  const rateLimiter = new RateLimiter();
+
+
   // Billing transaction store — always initialised (records top-up history)
   const billingTxStore = new BillingTransactionStore(db);
 
@@ -155,7 +160,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   // Chat, models, and usage — authenticated with API keys (mr_sk_...).
   // Middleware is applied per-path to avoid intercepting management routes.
   //
-  const apiAuth = authMiddleware(keyStore, userStore, billing);
+  const apiAuth = authMiddleware(keyStore, userStore, billing, rateLimiter);
 
   const chatRouter = createChatRouter({
     router,

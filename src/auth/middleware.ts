@@ -16,6 +16,7 @@ import type { Context, Next } from 'hono';
 import type { KeyStore } from './keys.js';
 import type { UserStore } from './users.js';
 import type { SatbillClient } from '../billing/satbill-client.js';
+import type { RateLimiter } from '../ratelimit/token-bucket.js';
 import type { ApiKey, User } from '../types.js';
 
 /**
@@ -51,11 +52,13 @@ export interface SessionEnv {
  * @param keyStore     Key storage for validation
  * @param userStore    User storage — needed to load user balance for user-owned keys
  * @param satbill      Optional satbill client for Bitcoin balance checks
+ * @param rateLimiter  Optional rate limiter — enforces per-key RPM limits
  */
 export function authMiddleware(
   keyStore: KeyStore,
   userStore: UserStore,
   satbill?: SatbillClient,
+  rateLimiter?: RateLimiter,
 ) {
   return async (c: Context<AuthEnv>, next: Next) => {
     const authHeader = c.req.header('Authorization');
@@ -90,6 +93,32 @@ export function authMiddleware(
           code: 'invalid_api_key',
         },
       }, 401);
+    }
+
+    // ── Per-key rate limiting ──────────────────────────────────────────────
+    //
+    // Checked immediately after authentication, before any billing or
+    // provider logic. Headers are added to both allowed and rejected responses
+    // so clients can track their consumption.
+    if (rateLimiter) {
+      const rl = rateLimiter.consume(apiKey.id, apiKey.rateLimitPerMinute);
+
+      // Always attach rate limit headers, regardless of outcome.
+      c.header('X-RateLimit-Limit', String(rl.limit));
+      c.header('X-RateLimit-Remaining', String(rl.remaining));
+      c.header('X-RateLimit-Reset', String(rl.resetAt));
+
+      if (!rl.allowed) {
+        c.header('Retry-After', String(rl.retryAfter));
+        return c.json({
+          error: {
+            message: `Rate limit exceeded. Your key is limited to ${rl.limit} requests per minute.`,
+            type: 'rate_limit_error',
+            code: 'rate_limit_exceeded',
+            retry_after: rl.retryAfter,
+          },
+        }, 429);
+      }
     }
 
     // Load the owning user if this is a user-owned key
