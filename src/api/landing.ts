@@ -462,6 +462,8 @@ curl -X POST https://api.lxg2it.com/v1/chat/completions \\
       <a href="/profile">Profile</a>
       <a href="/health">Health</a>
       <a href="/v1/models">Models</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
     </div>
     <div class="footer-note">Model Router · api.lxg2it.com</div>
   </div>
