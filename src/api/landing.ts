@@ -2,7 +2,7 @@
  * GET / — landing page.
  *
  * Serves as the public face of the API. Shows what it is, how to get started,
- * and links to the dashboard. Static HTML, self-contained.
+ * and links to the profile. Static HTML, self-contained.
  */
 
 import { Hono } from 'hono';
@@ -93,6 +93,19 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       margin-bottom: 16px;
     }
 
+    /* Features */
+    .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 600px) { .feature-grid { grid-template-columns: 1fr; } }
+    .feature-item {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .feature-icon { font-size: 20px; margin-bottom: 8px; }
+    .feature-name { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .feature-desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
     /* Quickstart */
     .qs-step { display: flex; gap: 16px; margin-bottom: 20px; }
     .qs-step:last-child { margin-bottom: 0; }
@@ -135,6 +148,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     }
     .method.get { background: #1f4d2e; color: #3fb950; }
     .method.post { background: #1a3255; color: #58a6ff; }
+    .method.patch { background: #2a2040; color: var(--accent3); }
     .method.del { background: #3d1515; color: #f85149; }
     .ep-path { font-size: 14px; font-weight: 600; color: var(--text); font-family: monospace; }
     .ep-desc { font-size: 13px; color: var(--muted); margin-top: 2px; }
@@ -157,10 +171,33 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       padding: 16px;
     }
     .tier-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
-    .tier-name.fast { color: var(--warn); }
-    .tier-name.balanced { color: var(--accent); }
-    .tier-name.capable { color: var(--accent3); }
-    .tier-models { font-size: 12px; color: var(--muted); line-height: 1.6; }
+    .tier-name.economy { color: var(--accent2); }
+    .tier-name.standard { color: var(--accent); }
+    .tier-name.premium { color: var(--accent3); }
+    .tier-models { font-size: 12px; color: var(--muted); line-height: 1.7; }
+    .tier-badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      margin-left: 4px;
+      background: var(--bg);
+      color: var(--muted);
+      font-family: monospace;
+      vertical-align: middle;
+    }
+
+    /* Prefer modes */
+    .prefer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 600px) { .prefer-grid { grid-template-columns: 1fr; } }
+    .prefer-item {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .prefer-name { font-size: 13px; font-weight: 700; color: var(--accent3); font-family: monospace; margin-bottom: 4px; }
+    .prefer-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
 
     /* Footer */
     .footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
@@ -188,10 +225,37 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       <div class="logo-icon">M</div>
       <span class="logo-name">Model Router</span>
     </div>
-    <p class="tagline">OpenAI-compatible AI API gateway — intelligent routing across Anthropic, OpenAI, and Google.</p>
+    <p class="tagline">OpenAI-compatible AI API gateway — intelligent routing across Anthropic, OpenAI, Google, and xAI.</p>
     <div class="status-row">
       <span class="dot loading" id="statusDot"></span>
       <span class="status-text" id="statusText">Checking status…</span>
+    </div>
+  </div>
+
+  <!-- Why Model Router -->
+  <div class="card">
+    <div class="card-title">Why Model Router</div>
+    <div class="feature-grid">
+      <div class="feature-item">
+        <div class="feature-icon">🎯</div>
+        <div class="feature-name">Smart routing</div>
+        <div class="feature-desc">Use <code class="inline">prefer</code> to route by cost, speed, or quality — not just failover. One endpoint, all providers.</div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">🚫</div>
+        <div class="feature-name">Provider blocking</div>
+        <div class="feature-desc">Exclude providers you don't want to fund. Your inference dollars go where you direct them.</div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">⚡</div>
+        <div class="feature-name">Automatic failover</div>
+        <div class="feature-desc">Circuit breakers reroute around outages automatically. Providers recover without intervention.</div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">💰</div>
+        <div class="feature-name">4% flat fee</div>
+        <div class="feature-desc">Pay-as-you-go. No subscription, no seat licenses. Cheaper than the alternatives.</div>
+      </div>
     </div>
   </div>
 
@@ -203,13 +267,13 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       <div class="qs-num">1</div>
       <div class="qs-content">
         <div class="qs-label">Create an account</div>
-        <div class="qs-sub">No password needed — we send a code to your email. Visit <a href="/profile">/profile</a> or use the API:</div>
-        <pre class="code-block"><code><span class="comment"># Step 1: request a login code</span>
+        <div class="qs-sub">No password needed — we email you a code. Visit <a href="/profile">/profile</a> or use the API:</div>
+        <pre class="code-block"><code><span class="comment"># Request a login code</span>
 curl -X POST https://api.lxg2it.com/v1/auth/request-code \\
   -H "Content-Type: application/json" \\
   -d '{"email": "you@example.com"}'
 
-<span class="comment"># Step 2: verify the code — first login creates your account + API key</span>
+<span class="comment"># Verify code → session. First login creates account + API key.</span>
 curl -X POST https://api.lxg2it.com/v1/auth/verify-code \\
   -H "Content-Type: application/json" \\
   -d '{"email": "you@example.com", "code": "123456"}'</code></pre>
@@ -221,12 +285,23 @@ curl -X POST https://api.lxg2it.com/v1/auth/verify-code \\
       <div class="qs-content">
         <div class="qs-label">Make a request</div>
         <div class="qs-sub">Drop-in replacement for the OpenAI API. Point your existing clients here.</div>
-        <pre class="code-block"><code>curl -X POST https://api.lxg2it.com/v1/chat/completions \\
+        <pre class="code-block"><code><span class="comment"># Automatic routing — let the router pick for you</span>
+curl -X POST https://api.lxg2it.com/v1/chat/completions \\
   -H "Authorization: Bearer mr_sk_your_key" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "auto",
     "messages": [{"role": "user", "content": "Hello"}]
+  }'
+
+<span class="comment"># Use prefer for cost/speed/quality control</span>
+curl -X POST https://api.lxg2it.com/v1/chat/completions \\
+  -H "Authorization: Bearer mr_sk_your_key" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "auto",
+    "prefer": "cheap",
+    "messages": [{"role": "user", "content": "Summarise this text"}]
   }'</code></pre>
       </div>
     </div>
@@ -234,11 +309,82 @@ curl -X POST https://api.lxg2it.com/v1/auth/verify-code \\
     <div class="qs-step">
       <div class="qs-num">3</div>
       <div class="qs-content">
-        <div class="qs-label">Add credits to continue</div>
-        <div class="qs-sub">Pay-as-you-go via card. Buy credits with a 4% platform fee — transparent pricing, cheaper than the alternatives.</div>
-        <div><a href="/dashboard">Open billing dashboard →</a></div>
+        <div class="qs-label">Add credits and configure</div>
+        <div class="qs-sub">Top up your balance and optionally block providers you don't want to use.</div>
+        <div><a href="/profile">Open your profile →</a></div>
       </div>
     </div>
+  </div>
+
+  <!-- prefer parameter -->
+  <div class="card">
+    <div class="card-title">Routing with <code style="font-size:12px; color:var(--accent3)">prefer</code></div>
+    <p style="font-size:14px; color:var(--muted); margin-bottom:16px;">
+      The <code class="inline">prefer</code> field on any request controls how the router selects a model.
+      Default is <code class="inline">balanced</code>.
+    </p>
+    <div class="prefer-grid">
+      <div class="prefer-item">
+        <div class="prefer-name">cheap</div>
+        <div class="prefer-desc">Cheapest model across all tiers. Ignores tier selection — ideal for batch jobs or high-volume tasks where cost dominates.</div>
+      </div>
+      <div class="prefer-item">
+        <div class="prefer-name">fast</div>
+        <div class="prefer-desc">Lowest time-to-first-token within your tier. Best for interactive apps where latency matters.</div>
+      </div>
+      <div class="prefer-item">
+        <div class="prefer-name">balanced</div>
+        <div class="prefer-desc">Cheapest available in the selected tier. The sensible default for general use.</div>
+      </div>
+      <div class="prefer-item">
+        <div class="prefer-name">quality</div>
+        <div class="prefer-desc">Forces premium tier, routes to highest quality score. Use when correctness matters more than cost.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tiers -->
+  <div class="card">
+    <div class="card-title">Model Tiers</div>
+    <p style="font-size:14px; color:var(--muted); margin-bottom:16px;">
+      Use tier aliases like <code class="inline">economy</code>, <code class="inline">standard</code>, <code class="inline">premium</code>,
+      or <code class="inline">auto</code> for automatic selection. Familiar model names (e.g. <code class="inline">gpt-4o</code>,
+      <code class="inline">claude-sonnet</code>) are mapped to the appropriate tier automatically.
+    </p>
+    <div class="tier-grid">
+      <div class="tier-card">
+        <div class="tier-name economy">economy</div>
+        <div class="tier-models">
+          gemini-2.5-flash<br>
+          gpt-4.1-mini<br>
+          o4-mini<br>
+          claude-haiku-4-5<br>
+          grok-3-mini-beta
+        </div>
+      </div>
+      <div class="tier-card">
+        <div class="tier-name standard">standard</div>
+        <div class="tier-models">
+          gemini-2.5-pro<br>
+          gpt-4.1<br>
+          o3<br>
+          claude-sonnet-4-6<br>
+          grok-3-beta
+        </div>
+      </div>
+      <div class="tier-card">
+        <div class="tier-name premium">premium</div>
+        <div class="tier-models">
+          gemini-3.1-pro-preview<br>
+          claude-opus-4-6<br>
+          gpt-5.2
+        </div>
+      </div>
+    </div>
+    <p style="font-size:12px; color:var(--muted); margin-top:12px;">
+      Context-window guard: requests are only routed to models that can handle your input length.
+      Circuit breakers automatically reroute around provider outages.
+    </p>
   </div>
 
   <!-- Endpoints -->
@@ -265,7 +411,7 @@ curl -X POST https://api.lxg2it.com/v1/auth/verify-code \\
       <span class="method post">POST</span>
       <div>
         <div class="ep-path">/v1/chat/completions <span class="ep-auth">auth</span></div>
-        <div class="ep-desc">OpenAI-compatible chat completions. Supports streaming, <code class="inline">model: "auto"</code>, and all tier aliases.</div>
+        <div class="ep-desc">OpenAI-compatible chat completions. Supports streaming, model aliases, and the <code class="inline">prefer</code> parameter.</div>
       </div>
     </div>
 
@@ -288,8 +434,16 @@ curl -X POST https://api.lxg2it.com/v1/auth/verify-code \\
     <div class="endpoint">
       <span class="method get">GET</span>
       <div>
-        <div class="ep-path">/v1/billing/status <span class="ep-auth">auth</span></div>
-        <div class="ep-desc">Credit balance and payment method status.</div>
+        <div class="ep-path">/v1/account <span class="ep-auth">session</span></div>
+        <div class="ep-desc">Account info, credit balance, and blocked provider list.</div>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <span class="method patch">PATCH</span>
+      <div>
+        <div class="ep-path">/v1/account/providers <span class="ep-auth">session</span></div>
+        <div class="ep-desc">Update your blocked providers list. Blocked providers are never used for routing your requests.</div>
       </div>
     </div>
 
@@ -302,48 +456,10 @@ curl -X POST https://api.lxg2it.com/v1/auth/verify-code \\
     </div>
   </div>
 
-  <!-- Tiers -->
-  <div class="card">
-    <div class="card-title">Model Tiers</div>
-    <p style="font-size:14px; color:var(--muted); margin-bottom:16px;">
-      Use <code class="inline">model: "auto"</code> to let the router pick based on prompt characteristics,
-      or specify a tier directly. Explicit model names (e.g. <code class="inline">claude-3-5-sonnet-20241022</code>) are passed through unchanged.
-    </p>
-    <div class="tier-grid">
-      <div class="tier-card">
-        <div class="tier-name fast">fast</div>
-        <div class="tier-models">
-          claude-haiku-4<br>
-          gpt-4o-mini<br>
-          gemini-2.0-flash
-        </div>
-      </div>
-      <div class="tier-card">
-        <div class="tier-name balanced">balanced</div>
-        <div class="tier-models">
-          claude-sonnet-4-5<br>
-          gpt-4o<br>
-          gemini-1.5-pro
-        </div>
-      </div>
-      <div class="tier-card">
-        <div class="tier-name capable">capable</div>
-        <div class="tier-models">
-          claude-opus-4-5<br>
-          gpt-4-turbo<br>
-          gemini-1.5-pro-exp
-        </div>
-      </div>
-    </div>
-    <p style="font-size:12px; color:var(--muted); margin-top:12px;">
-      Circuit breakers automatically reroute around provider outages. Failing providers are retried after a cooldown period.
-    </p>
-  </div>
-
   <!-- Footer -->
   <div class="footer">
     <div class="footer-links">
-      <a href="/dashboard">Dashboard</a>
+      <a href="/profile">Profile</a>
       <a href="/health">Health</a>
       <a href="/v1/models">Models</a>
     </div>
