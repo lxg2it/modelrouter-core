@@ -101,27 +101,28 @@ export function loadConfig(): Config {
 export const TIERS: Record<string, TierConfig> = {
   economy: {
     models: [
-      { provider: 'google',    model: 'gemini-2.5-flash',  quality: 0.70, inputPer1M: 0.30,  outputPer1M: 2.50  },
-      { provider: 'openai',    model: 'gpt-4.1-mini',      quality: 0.72, inputPer1M: 0.40,  outputPer1M: 1.60  },
-      { provider: 'openai',    model: 'o4-mini',           quality: 0.75, inputPer1M: 1.10,  outputPer1M: 4.40  },
-      { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', quality: 0.68, inputPer1M: 1.00, outputPer1M: 5.00 },
+      // latencyMs = approximate time-to-first-token in milliseconds (static estimates)
+      { provider: 'google',    model: 'gemini-2.5-flash',         quality: 0.70, inputPer1M: 0.30,  outputPer1M: 2.50,  latencyMs: 280  },
+      { provider: 'openai',    model: 'gpt-4.1-mini',             quality: 0.72, inputPer1M: 0.40,  outputPer1M: 1.60,  latencyMs: 380  },
+      { provider: 'openai',    model: 'o4-mini',                  quality: 0.75, inputPer1M: 1.10,  outputPer1M: 4.40,  latencyMs: 2500 },
+      { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', quality: 0.68, inputPer1M: 1.00, outputPer1M: 5.00,  latencyMs: 320  },
     ],
     description: 'Fast and cheap. Good for classification, extraction, simple generation.',
   },
   standard: {
     models: [
-      { provider: 'google',    model: 'gemini-2.5-pro',    quality: 0.88, inputPer1M: 1.25,  outputPer1M: 10.00 },
-      { provider: 'openai',    model: 'gpt-4.1',           quality: 0.87, inputPer1M: 2.00,  outputPer1M: 8.00  },
-      { provider: 'openai',    model: 'o3',                quality: 0.90, inputPer1M: 2.00,  outputPer1M: 8.00  },
-      { provider: 'anthropic', model: 'claude-sonnet-4-6',  quality: 0.92, inputPer1M: 3.00, outputPer1M: 15.00 },
+      { provider: 'google',    model: 'gemini-2.5-pro',    quality: 0.88, inputPer1M: 1.25,  outputPer1M: 10.00, latencyMs: 600  },
+      { provider: 'openai',    model: 'gpt-4.1',           quality: 0.87, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 750  },
+      { provider: 'openai',    model: 'o3',                quality: 0.90, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 3500 },
+      { provider: 'anthropic', model: 'claude-sonnet-4-6',  quality: 0.92, inputPer1M: 3.00, outputPer1M: 15.00, latencyMs: 650  },
     ],
     description: 'Balanced quality and cost. The default for most applications.',
   },
   premium: {
     models: [
-      { provider: 'google',    model: 'gemini-3-pro',      quality: 0.95, inputPer1M: 2.00,  outputPer1M: 12.00 },
-      { provider: 'anthropic', model: 'claude-opus-4-6',    quality: 1.00, inputPer1M: 5.00, outputPer1M: 25.00 },
-      { provider: 'openai',    model: 'gpt-5.2',           quality: 0.98, inputPer1M: 10.00, outputPer1M: 30.00 },
+      { provider: 'google',    model: 'gemini-3-pro',      quality: 0.95, inputPer1M: 2.00,  outputPer1M: 12.00, latencyMs: 900  },
+      { provider: 'anthropic', model: 'claude-opus-4-6',    quality: 1.00, inputPer1M: 5.00, outputPer1M: 25.00, latencyMs: 1200 },
+      { provider: 'openai',    model: 'gpt-5.2',           quality: 0.98, inputPer1M: 10.00, outputPer1M: 30.00, latencyMs: 1000 },
     ],
     description: 'Maximum capability. For complex reasoning, creative work, difficult tasks.',
   },

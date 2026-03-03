@@ -50,6 +50,7 @@ export interface ChatCompletionRequest {
 
   // Model Router extensions
   tier?: 'economy' | 'standard' | 'premium'; // Override key's default tier
+  prefer?: 'balanced' | 'cheap' | 'fast' | 'quality'; // Routing preference
 }
 
 // ─── Response Types ────────────────────────────────────
@@ -125,6 +126,7 @@ export interface ModelConfig {
   quality: number; // 0-1, subjective but useful for tie-breaking
   inputPer1M: number; // USD per 1M input tokens
   outputPer1M: number; // USD per 1M output tokens
+  latencyMs: number; // Approximate time-to-first-token in ms (static estimate)
   maxContextTokens?: number;
   maxOutputTokens?: number;
 }

@@ -273,6 +273,207 @@ describe('RoutingEngine', () => {
     });
   });
 
+
+  describe('prefer parameter', () => {
+    describe('prefer: balanced (default)', () => {
+      it('returns balanced as the prefer value when not specified', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'standard',
+          defaultOutputRatio: 0.33,
+        });
+
+        const decision = engine.selectModel(req())!;
+        expect(decision.prefer).toBe('balanced');
+      });
+
+      it('returns balanced as the prefer value when explicitly set', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'standard',
+          defaultOutputRatio: 0.33,
+        });
+
+        const decision = engine.selectModel(req({ prefer: 'balanced' }))!;
+        expect(decision.prefer).toBe('balanced');
+      });
+
+      it('balanced still picks within the resolved tier', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'economy',
+          defaultOutputRatio: 0.33,
+        });
+
+        const decision = engine.selectModel(req({ prefer: 'balanced' }))!;
+        expect(decision.tier).toBe('economy');
+      });
+    });
+
+    describe('prefer: cheap', () => {
+      it('returns cheap as the prefer value', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'premium',
+          defaultOutputRatio: 0.33,
+        });
+
+        const decision = engine.selectModel(req({ prefer: 'cheap' }))!;
+        expect(decision.prefer).toBe('cheap');
+      });
+
+      it('can route to a lower tier than requested when prefer:cheap', () => {
+        // Even if tier:premium, cheap mode ignores tier and picks cheapest overall
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'premium',
+          defaultOutputRatio: 0.33,
+        });
+
+        const decision = engine.selectModel(req({ tier: 'premium', prefer: 'cheap' }))!;
+        expect(decision).not.toBeNull();
+        // The cheapest model overall should be economy tier
+        expect(decision.tier).toBe('economy');
+      });
+
+      it('returns null when no providers are configured', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(),
+          defaultTier: 'standard',
+          defaultOutputRatio: 0.33,
+        });
+
+        const decision = engine.selectModel(req({ prefer: 'cheap' }));
+        expect(decision).toBeNull();
+      });
+
+      it('picks a cheaper model than balanced mode', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'premium',
+          defaultOutputRatio: 0.33,
+        });
+
+        const balancedDecision = engine.selectModel(req({ tier: 'premium', prefer: 'balanced' }))!;
+        const cheapDecision = engine.selectModel(req({ tier: 'premium', prefer: 'cheap' }))!;
+
+        // cheap mode should produce equal or lower cost
+        expect(cheapDecision.estimatedCostPer1M).toBeLessThanOrEqual(balancedDecision.estimatedCostPer1M);
+      });
+    });
+
+    describe('prefer: fast', () => {
+      it('returns fast as the prefer value', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'standard',
+          defaultOutputRatio: 0.33,
+        });
+
+        const decision = engine.selectModel(req({ prefer: 'fast' }))!;
+        expect(decision.prefer).toBe('fast');
+      });
+
+      it('stays within the resolved tier', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'economy',
+          defaultOutputRatio: 0.33,
+        });
+
+        const decision = engine.selectModel(req({ prefer: 'fast' }))!;
+        expect(decision.tier).toBe('economy');
+      });
+
+      it('does not pick o3 (slow reasoning) when faster options exist in standard tier', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'standard',
+          defaultOutputRatio: 0.33,
+        });
+
+        const decision = engine.selectModel(req({ tier: 'standard', prefer: 'fast' }))!;
+        // o3 has latencyMs: 3500. Gemini-2.5-pro is 600ms, should be chosen instead.
+        expect(decision.model).not.toBe('o3');
+      });
+
+      it('does not pick o4-mini (slow reasoning) when prefer:fast in economy tier', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'economy',
+          defaultOutputRatio: 0.33,
+        });
+
+        const decision = engine.selectModel(req({ tier: 'economy', prefer: 'fast' }))!;
+        // o4-mini has latencyMs: 2500. Gemini-flash is 280ms.
+        expect(decision.model).not.toBe('o4-mini');
+      });
+    });
+
+    describe('prefer: quality', () => {
+      it('returns quality as the prefer value', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'economy',
+          defaultOutputRatio: 0.33,
+        });
+
+        const decision = engine.selectModel(req({ prefer: 'quality' }))!;
+        expect(decision.prefer).toBe('quality');
+      });
+
+      it('forces premium tier regardless of requested tier', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'economy',
+          defaultOutputRatio: 0.33,
+        });
+
+        // Even though tier is economy and default is economy, quality forces premium
+        const decision = engine.selectModel(req({ tier: 'economy', prefer: 'quality' }))!;
+        expect(decision.tier).toBe('premium');
+      });
+
+      it('picks the highest quality model in premium', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'economy',
+          defaultOutputRatio: 0.33,
+        });
+
+        const decision = engine.selectModel(req({ prefer: 'quality' }))!;
+        // claude-opus-4-6 has quality: 1.00 — the highest in the catalog
+        expect(decision.model).toBe('claude-opus-4-6');
+      });
+
+      it('falls back to standard when all premium models are circuit-broken', () => {
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'economy',
+          defaultOutputRatio: 0.33,
+        });
+
+        // Trip all premium circuits
+        const premiumModels = [
+          { provider: 'anthropic' as const, model: 'claude-opus-4-6' },
+          { provider: 'openai' as const, model: 'gpt-5.2' },
+          { provider: 'google' as const, model: 'gemini-3-pro' },
+        ];
+        for (const m of premiumModels) {
+          for (let i = 0; i < 3; i++) engine.recordFailure(m.provider, m.model);
+        }
+        vi.advanceTimersByTime(1); // Ensure circuit opens
+
+        const decision = engine.selectModel(req({ prefer: 'quality' }))!;
+        // Falls back to best standard model
+        expect(decision).not.toBeNull();
+        expect(decision.tier).toBe('standard');
+        expect(decision.prefer).toBe('quality');
+      });
+    });
+  });
+
+
   describe('getHealthStatus', () => {
     it('shows no open circuits initially', () => {
       const engine = new RoutingEngine({
