@@ -699,7 +699,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
     const blocked = KNOWN_PROVIDERS
       .filter(p => {
         const el = document.getElementById('prov-' + p.id);
-        return el && !(el as HTMLInputElement).checked;
+        return el && !(/** @type {HTMLInputElement} */ (el)).checked;
       })
       .map(p => p.id);
 
