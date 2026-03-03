@@ -153,7 +153,7 @@ async function handleNonStreaming(
     deps.router.recordFailure(decision.provider, decision.model);
 
     // Try failover
-    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier);
+    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages);
     if (fallback) {
       const fallbackAdapter = deps.providers.get(fallback.provider);
       if (fallbackAdapter) {
@@ -285,7 +285,7 @@ async function handleStreaming(
 
   // If primary failed, try one fallback (matches non-streaming behaviour)
   if (!completion) {
-    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier);
+    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages);
     if (fallback) {
       const fallbackAdapter = deps.providers.get(fallback.provider);
       if (fallbackAdapter) {
