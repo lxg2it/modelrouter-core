@@ -5,27 +5,25 @@
  * multiple API keys. Billing (Stripe customer, credit balance) lives
  * at the user level — all keys for a user share one balance.
  *
- * Authentication uses email + password (scrypt-hashed).
+ * Authentication uses passwordless email codes (6-digit OTP, 15-minute TTL).
  * Sessions use opaque tokens (SHA-256 hashed in DB, prefix: mr_st_).
  *
  * Schema:
- *   users    — account records
- *   sessions — active session tokens (hashed)
+ *   users       — account records
+ *   sessions    — active session tokens (hashed)
+ *   login_codes — one-time login codes (hashed, 15-minute TTL)
  */
 
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import Database from 'better-sqlite3';
 import type { User } from '../types.js';
 
 const SESSION_PREFIX = 'mr_st_';
 const SESSION_TTL_DAYS = 90;
 
-// ─── Scrypt parameters ──────────────────────────────────────
-// N=16384, r=8, p=1 — standard interactive login parameters.
-const SCRYPT_N = 16384;
-const SCRYPT_R = 8;
-const SCRYPT_P = 1;
-const SCRYPT_KEYLEN = 32;
+// One-time login code: 6 digits, 15-minute TTL
+const LOGIN_CODE_LENGTH = 6;
+const LOGIN_CODE_TTL_MINUTES = 15;
 
 export class UserStore {
   private db: Database.Database;
@@ -40,7 +38,7 @@ export class UserStore {
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT NOT NULL UNIQUE,
-        password_hash TEXT NOT NULL,
+        password_hash TEXT,
         account_name TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         stripe_customer_id TEXT,
@@ -57,64 +55,115 @@ export class UserStore {
         expires_at TEXT NOT NULL
       )
     `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS login_codes (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        code_hash TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        used_at TEXT
+      )
+    `);
+
+    // Index for quick lookup by email
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS login_codes_email_idx ON login_codes (email)
+    `);
   }
 
-  // ─── Registration ─────────────────────────────────────────
+  // ─── Passwordless auth ────────────────────────────────
 
   /**
-   * Create a new user account.
-   * Returns the user record and a session token for immediate login.
-   * Throws if the email is already registered.
+   * Generate a 6-digit login code for the given email.
+   * Invalidates any previous unused codes for this email.
+   * Returns the plaintext code (must be emailed to the user — not stored).
+   *
+   * Does NOT create the user — account creation happens on verify.
    */
-  signup(
-    email: string,
-    password: string,
-    accountName?: string,
-  ): { user: User; sessionToken: string } {
+  requestLoginCode(email: string): string {
     const normalizedEmail = email.toLowerCase().trim();
-
-    // Check if email is already in use
-    const existing = this.db.prepare(
-      `SELECT id FROM users WHERE email = ?`,
-    ).get(normalizedEmail);
-    if (existing) {
-      throw new Error('EMAIL_IN_USE');
-    }
-
+    const code = generateCode(LOGIN_CODE_LENGTH);
+    const codeHash = hashCode(code);
     const id = randomBytes(8).toString('hex');
-    const passwordHash = this.hashPassword(password);
+
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + LOGIN_CODE_TTL_MINUTES);
+
+    // Invalidate previous unused codes for this email (by marking them expired)
+    this.db.prepare(`
+      UPDATE login_codes
+      SET used_at = datetime('now')
+      WHERE email = ? AND used_at IS NULL AND expires_at > datetime('now')
+    `).run(normalizedEmail);
 
     this.db.prepare(`
-      INSERT INTO users (id, email, password_hash, account_name)
+      INSERT INTO login_codes (id, email, code_hash, expires_at)
       VALUES (?, ?, ?, ?)
-    `).run(id, normalizedEmail, passwordHash, accountName ?? null);
+    `).run(id, normalizedEmail, codeHash, expiresAt.toISOString());
 
-    const user = this.findById(id)!;
-    const sessionToken = this.createSession(id);
-
-    return { user, sessionToken };
+    return code;
   }
 
-  // ─── Authentication ───────────────────────────────────────
-
   /**
-   * Verify email + password. Returns a session token on success, null on failure.
+   * Verify a login code for the given email.
+   *
+   * If valid:
+   *   - Marks the code as used
+   *   - Creates the user account if it doesn't exist yet
+   *   - Creates a session token
+   *   - Returns { user, sessionToken, isNewAccount }
+   *
+   * If invalid or expired, returns null.
    */
-  login(email: string, password: string): string | null {
+  verifyLoginCode(
+    email: string,
+    code: string,
+    accountName?: string,
+  ): { user: User; sessionToken: string; isNewAccount: boolean } | null {
     const normalizedEmail = email.toLowerCase().trim();
 
-    const row = this.db.prepare(
-      `SELECT id, password_hash FROM users WHERE email = ?`,
-    ).get(normalizedEmail) as { id: string; password_hash: string } | undefined;
+    const row = this.db.prepare(`
+      SELECT id, code_hash
+      FROM login_codes
+      WHERE email = ?
+        AND used_at IS NULL
+        AND expires_at > datetime('now')
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(normalizedEmail) as { id: string; code_hash: string } | undefined;
 
     if (!row) return null;
 
-    if (!this.verifyPassword(password, row.password_hash)) {
-      return null;
+    // Constant-time comparison
+    const expectedHash = hashCode(code);
+    const storedHash = Buffer.from(row.code_hash, 'hex');
+    const givenHash = Buffer.from(expectedHash, 'hex');
+    if (storedHash.length !== givenHash.length) return null;
+    if (!timingSafeEqual(storedHash, givenHash)) return null;
+
+    // Mark as used
+    this.db.prepare(`UPDATE login_codes SET used_at = datetime('now') WHERE id = ?`).run(row.id);
+
+    // Find or create the user
+    let isNewAccount = false;
+    let user = this.findByEmail(normalizedEmail);
+    if (!user) {
+      const id = randomBytes(8).toString('hex');
+      this.db.prepare(`
+        INSERT INTO users (id, email, account_name)
+        VALUES (?, ?, ?)
+      `).run(id, normalizedEmail, accountName ?? null);
+      user = this.findById(id)!;
+      isNewAccount = true;
     }
 
-    return this.createSession(row.id);
+    const sessionToken = this.createSession(user.id);
+    return { user, sessionToken, isNewAccount };
   }
+
+  // ─── Session management ───────────────────────────────
 
   /**
    * Validate a session token. Returns the associated user, or null if
@@ -144,7 +193,7 @@ export class UserStore {
     this.db.prepare(`DELETE FROM sessions WHERE token_hash = ?`).run(tokenHash);
   }
 
-  // ─── Queries ──────────────────────────────────────────────
+  // ─── Queries ──────────────────────────────────────────
 
   findById(id: string): User | null {
     const row = this.db.prepare(
@@ -167,7 +216,7 @@ export class UserStore {
     return row ? this.toUser(row) : null;
   }
 
-  // ─── Updates ──────────────────────────────────────────────
+  // ─── Updates ──────────────────────────────────────────
 
   updateAccountName(userId: string, name: string | null): boolean {
     const result = this.db.prepare(
@@ -183,7 +232,7 @@ export class UserStore {
     return result.changes > 0;
   }
 
-  // ─── Billing ──────────────────────────────────────────────
+  // ─── Billing ──────────────────────────────────────────
 
   /**
    * Add credits to a user's balance (after a successful Stripe charge).
@@ -225,7 +274,7 @@ export class UserStore {
     return result.credit_balance_cents;
   }
 
-  // ─── Private helpers ──────────────────────────────────────
+  // ─── Private helpers ──────────────────────────────────
 
   private createSession(userId: string): string {
     const rawToken = randomBytes(32).toString('base64url');
@@ -244,35 +293,6 @@ export class UserStore {
     return token;
   }
 
-  private hashPassword(password: string): string {
-    const salt = randomBytes(16);
-    const hash = scryptSync(password, salt, SCRYPT_KEYLEN, {
-      N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P,
-    });
-    return `${salt.toString('hex')}:${hash.toString('hex')}`;
-  }
-
-  private verifyPassword(password: string, stored: string): boolean {
-    const [saltHex, hashHex] = stored.split(':');
-    if (!saltHex || !hashHex) return false;
-
-    const salt = Buffer.from(saltHex, 'hex');
-    const storedHash = Buffer.from(hashHex, 'hex');
-
-    let derived: Buffer;
-    try {
-      derived = scryptSync(password, salt, SCRYPT_KEYLEN, {
-        N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P,
-      });
-    } catch {
-      return false;
-    }
-
-    // Constant-time comparison to prevent timing attacks
-    if (derived.length !== storedHash.length) return false;
-    return timingSafeEqual(derived, storedHash);
-  }
-
   private hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
   }
@@ -289,10 +309,29 @@ export class UserStore {
   }
 }
 
+// ─── Module-level helpers ─────────────────────────────
+
+function generateCode(length: number): string {
+  // Generate a cryptographically random decimal code of the given length.
+  // Uses rejection sampling to avoid modulo bias.
+  const max = Math.pow(10, length);
+  let n: number;
+  do {
+    const buf = randomBytes(4);
+    n = buf.readUInt32BE(0) % max;
+    // Reject values in the biased region
+  } while (n >= Math.floor(0xffffffff / max) * max);
+  return n.toString().padStart(length, '0');
+}
+
+function hashCode(code: string): string {
+  return createHash('sha256').update(code).digest('hex');
+}
+
 interface DbUserRow {
   id: string;
   email: string;
-  password_hash: string;
+  password_hash: string | null;
   account_name: string | null;
   created_at: string;
   stripe_customer_id: string | null;

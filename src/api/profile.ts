@@ -85,32 +85,31 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
   <!-- Auth section (shown when logged out) -->
   <div id="authSection" class="card" style="display:none">
-    <div class="flex gap-4 mb-6 border-b border-gray-200 pb-4">
-      <button class="btn btn-primary" id="showLoginBtn" onclick="showTab('login')">Log in</button>
-      <button class="btn btn-secondary" id="showSignupBtn" onclick="showTab('signup')">Sign up</button>
-    </div>
+    <h2 class="text-base font-semibold text-gray-800 mb-1">Sign in</h2>
+    <p class="text-sm text-gray-500 mb-5">No password needed — we'll email you a code.</p>
 
-    <!-- Login form -->
-    <div id="loginForm">
-      <h2 class="text-base font-semibold text-gray-800 mb-4">Log in to your account</h2>
+    <!-- Step 1: email entry -->
+    <div id="authStep1">
       <div class="flex flex-col gap-3">
-        <input type="email" id="loginEmail" placeholder="you@example.com" />
-        <input type="password" id="loginPassword" placeholder="Password" />
-        <button class="btn btn-primary" onclick="doLogin()">Log in</button>
-        <div id="loginError" class="error-msg hidden"></div>
+        <input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email" />
+        <button class="btn btn-primary" onclick="requestCode()">Send login code</button>
+        <div id="authStep1Error" class="error-msg hidden"></div>
       </div>
     </div>
 
-    <!-- Sign-up form -->
-    <div id="signupForm" class="hidden">
-      <h2 class="text-base font-semibold text-gray-800 mb-4">Create an account</h2>
+    <!-- Step 2: code verification -->
+    <div id="authStep2" class="hidden">
+      <p class="text-sm text-gray-600 mb-4">
+        Check your inbox — a 6-digit code was sent to <strong id="authEmailDisplay"></strong>.
+        <button class="text-blue-600 hover:underline text-sm ml-1" onclick="backToEmail()">Change</button>
+      </p>
       <div class="flex flex-col gap-3">
-        <input type="text" id="signupName" placeholder="Your name or company (optional)" />
-        <input type="email" id="signupEmail" placeholder="you@example.com" />
-        <input type="password" id="signupPassword" placeholder="Password (min 8 chars)" />
-        <button class="btn btn-primary" onclick="doSignup()">Create account</button>
-        <div id="signupError" class="error-msg hidden"></div>
-        <div id="signupSuccess" class="success-msg hidden"></div>
+        <input type="text" id="authCode" placeholder="123456" maxlength="6" inputmode="numeric"
+               autocomplete="one-time-code"
+               style="font-size:24px; letter-spacing:6px; text-align:center; font-weight:700;" />
+        <input type="text" id="authName" placeholder="Your name or company (optional)" />
+        <button class="btn btn-primary" onclick="verifyCode()">Sign in</button>
+        <div id="authStep2Error" class="error-msg hidden"></div>
       </div>
     </div>
   </div>
@@ -415,65 +414,63 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
   // ─── Auth ─────────────────────────────────────────────────
 
-  function showTab(tab) {
-    document.getElementById('loginForm').classList.toggle('hidden', tab !== 'login');
-    document.getElementById('signupForm').classList.toggle('hidden', tab !== 'signup');
-    document.getElementById('showLoginBtn').className = 'btn ' + (tab === 'login' ? 'btn-primary' : 'btn-secondary');
-    document.getElementById('showSignupBtn').className = 'btn ' + (tab === 'signup' ? 'btn-primary' : 'btn-secondary');
+  function backToEmail() {
+    document.getElementById('authStep1').classList.remove('hidden');
+    document.getElementById('authStep2').classList.add('hidden');
+    document.getElementById('authStep1Error').classList.add('hidden');
+    document.getElementById('authStep2Error').classList.add('hidden');
+    document.getElementById('authCode').value = '';
   }
 
-  async function doLogin() {
-    const email = document.getElementById('loginEmail').value.trim();
-    const password = document.getElementById('loginPassword').value;
-    const errEl = document.getElementById('loginError');
+  async function requestCode() {
+    const email = document.getElementById('authEmail').value.trim();
+    const errEl = document.getElementById('authStep1Error');
     errEl.classList.add('hidden');
 
-    const res = await fetch(BASE + '/v1/auth/login', {
+    const res = await fetch(BASE + '/v1/auth/request-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email }),
     });
 
     const data = await res.json();
     if (!res.ok) {
-      errEl.textContent = data.error?.message || 'Login failed';
+      errEl.textContent = data.error?.message || 'Failed to send code';
       errEl.classList.remove('hidden');
       return;
     }
 
-    sessionToken = data.sessionToken;
-    localStorage.setItem('mr_session', sessionToken);
-    await loadDashboard();
+    document.getElementById('authEmailDisplay').textContent = email;
+    document.getElementById('authStep1').classList.add('hidden');
+    document.getElementById('authStep2').classList.remove('hidden');
+    document.getElementById('authCode').focus();
   }
 
-  async function doSignup() {
-    const email = document.getElementById('signupEmail').value.trim();
-    const password = document.getElementById('signupPassword').value;
-    const name = document.getElementById('signupName').value.trim() || undefined;
-    const errEl = document.getElementById('signupError');
-    const successEl = document.getElementById('signupSuccess');
+  async function verifyCode() {
+    const email = document.getElementById('authEmail').value.trim();
+    const code = document.getElementById('authCode').value.trim();
+    const name = document.getElementById('authName').value.trim() || undefined;
+    const errEl = document.getElementById('authStep2Error');
     errEl.classList.add('hidden');
-    successEl.classList.add('hidden');
 
-    const res = await fetch(BASE + '/v1/auth/signup', {
+    const res = await fetch(BASE + '/v1/auth/verify-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, name }),
+      body: JSON.stringify({ email, code, ...(name ? { name } : {}) }),
     });
 
     const data = await res.json();
     if (!res.ok) {
-      errEl.textContent = data.error?.message || 'Signup failed';
+      errEl.textContent = data.error?.message || 'Invalid code';
       errEl.classList.remove('hidden');
       return;
     }
 
-    // Store session and show dashboard with new key reveal
     sessionToken = data.sessionToken;
     localStorage.setItem('mr_session', sessionToken);
 
     if (data.apiKey?.key) {
-      // Show the new key before loading dashboard
+      // New account — show the API key before dashboard loads
       document.getElementById('newKeyValue').textContent = data.apiKey.key;
       document.getElementById('newKeyReveal').classList.remove('hidden');
     }
@@ -629,8 +626,8 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
-  // Show login form by default
-  showTab('login');
+  // Focus email field when auth section is shown
+  document.getElementById('authEmail').focus();
 </script>
 </body>
 </html>`;

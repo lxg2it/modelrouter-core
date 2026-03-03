@@ -145,27 +145,11 @@ const DASHBOARD_HTML = /* html */ `<!DOCTYPE html>
     <p id="cardMsg" class="text-sm mt-2"></p>
   </div>
 
-  <!-- Register -->
-  <div id="registerSection" class="card mb-6">
+  <!-- Account link -->
+  <div class="card mb-6">
     <h2 class="text-lg font-semibold text-gray-800 mb-2">New here?</h2>
-    <p class="text-sm text-gray-500 mb-3">Create a free API key to get started. Save it somewhere safe — it's shown once.</p>
-    <div class="flex gap-2 items-center">
-      <input
-        id="registerName"
-        type="text"
-        placeholder="Name for this key (optional)"
-        class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-      <button class="btn-primary text-sm" onclick="register()">Register</button>
-    </div>
-    <div id="registerResult" class="mt-3 hidden">
-      <p class="text-sm font-medium text-gray-700 mb-1">Your API key (copy it now!):</p>
-      <div class="flex gap-2 items-center">
-        <code id="newApiKey" class="text-xs bg-gray-100 p-2 rounded flex-1 break-all font-mono"></code>
-        <button class="btn-secondary text-xs" onclick="copyNewKey()">Copy</button>
-      </div>
-    </div>
-    <p id="registerMsg" class="text-sm mt-2"></p>
+    <p class="text-sm text-gray-500 mb-3">Create an account and manage your API keys at the account page.</p>
+    <a href="/profile" class="btn-primary text-sm inline-block">Go to account →</a>
   </div>
 
 </div>
@@ -409,35 +393,6 @@ async function saveCard() {
 
   btn.disabled = false;
   btn.textContent = 'Save Card';
-}
-
-// ─── Register ────────────────────────────────────────────────────
-
-async function register() {
-  setMsg('registerMsg', '', 'success');
-  const name = document.getElementById('registerName').value.trim();
-
-  const res = await fetch(apiBase() + '/v1/auth/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(name ? { name } : {}),
-  });
-  const body = await res.json();
-
-  if (res.status === 201) {
-    document.getElementById('newApiKey').textContent = body.apiKey;
-    document.getElementById('registerResult').classList.remove('hidden');
-    setMsg('registerMsg', '✓ Key created. Copy it now — this is the only time it will be shown.', 'success');
-  } else {
-    setMsg('registerMsg', body.error?.message || 'Registration failed.');
-  }
-}
-
-function copyNewKey() {
-  const key = document.getElementById('newApiKey').textContent;
-  navigator.clipboard.writeText(key).then(() => {
-    setMsg('registerMsg', '✓ Copied to clipboard.', 'success');
-  });
 }
 
 // ─── Init ────────────────────────────────────────────────────────

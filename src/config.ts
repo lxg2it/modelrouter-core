@@ -36,6 +36,12 @@ export interface Config {
     secretKey: string;
     publishableKey: string;
   };
+
+  // Email (optional — falls back to console logging in dev)
+  email?: {
+    resendApiKey: string;
+    fromEmail: string;
+  };
 }
 
 export function loadConfig(): Config {
@@ -74,6 +80,13 @@ export function loadConfig(): Config {
       ? {
           secretKey: process.env.STRIPE_SECRET_KEY,
           publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+        }
+      : undefined,
+
+    email: process.env.RESEND_API_KEY
+      ? {
+          resendApiKey: process.env.RESEND_API_KEY,
+          fromEmail: process.env.FROM_EMAIL ?? 'auth@lxg2it.com',
         }
       : undefined,
   };

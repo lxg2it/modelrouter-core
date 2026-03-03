@@ -202,12 +202,17 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     <div class="qs-step">
       <div class="qs-num">1</div>
       <div class="qs-content">
-        <div class="qs-label">Register for an API key</div>
-        <div class="qs-sub">Free to create. Keys are prefixed <code class="inline">mr_sk_</code>. Save it — it's shown once.</div>
-        <pre class="code-block"><code><span class="comment"># Register (no auth required)</span>
-curl -X POST https://api.lxg2it.com/v1/auth/register \\
+        <div class="qs-label">Create an account</div>
+        <div class="qs-sub">No password needed — we send a code to your email. Visit <a href="/profile">/profile</a> or use the API:</div>
+        <pre class="code-block"><code><span class="comment"># Step 1: request a login code</span>
+curl -X POST https://api.lxg2it.com/v1/auth/request-code \\
   -H "Content-Type: application/json" \\
-  -d '{"name": "my-key"}'</code></pre>
+  -d '{"email": "you@example.com"}'
+
+<span class="comment"># Step 2: verify the code — first login creates your account + API key</span>
+curl -X POST https://api.lxg2it.com/v1/auth/verify-code \\
+  -H "Content-Type: application/json" \\
+  -d '{"email": "you@example.com", "code": "123456"}'</code></pre>
       </div>
     </div>
 
@@ -243,8 +248,16 @@ curl -X POST https://api.lxg2it.com/v1/auth/register \\
     <div class="endpoint">
       <span class="method post">POST</span>
       <div>
-        <div class="ep-path">/v1/auth/register</div>
-        <div class="ep-desc">Create a new API key. Returns <code class="inline">key</code> and <code class="inline">key_id</code>.</div>
+        <div class="ep-path">/v1/auth/request-code</div>
+        <div class="ep-desc">Send a login code to your email. Works for sign-up and sign-in.</div>
+      </div>
+    </div>
+
+    <div class="endpoint">
+      <span class="method post">POST</span>
+      <div>
+        <div class="ep-path">/v1/auth/verify-code</div>
+        <div class="ep-desc">Verify code → session token. Creates account on first use. Returns API key for new accounts.</div>
       </div>
     </div>
 

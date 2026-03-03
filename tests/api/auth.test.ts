@@ -1,15 +1,18 @@
 /**
- * Tests for POST /v1/auth/signup, POST /v1/auth/login, POST /v1/auth/logout.
+ * Tests for passwordless auth routes:
+ *   POST /v1/auth/request-code
+ *   POST /v1/auth/verify-code
+ *   POST /v1/auth/logout
  *
  * Covers:
- *   - Successful signup: returns session token, first API key, account details
- *   - Signup generates a first key via keyStore.generate()
- *   - Signup validates email format
- *   - Signup requires password >= 8 chars
- *   - Signup returns 409 when email is already registered
- *   - Successful login: returns session token
- *   - Login returns 401 for wrong password
- *   - Logout invalidates session
+ *   - request-code: valid email → 200, invalid email → 400
+ *   - request-code: email send errors are swallowed (non-enumeration)
+ *   - verify-code: valid code for existing user → 200, no apiKey
+ *   - verify-code: valid code for new user → 201 with apiKey
+ *   - verify-code: invalid/expired code → 401
+ *   - verify-code: missing fields → 400
+ *   - logout: valid token → 200, calls userStore.logout
+ *   - logout: empty body → 200, no crash
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -17,6 +20,7 @@ import { Hono } from 'hono';
 import { createAuthRouter } from '../../src/api/auth.js';
 import type { UserStore } from '../../src/auth/users.js';
 import type { KeyStore } from '../../src/auth/keys.js';
+import type { EmailSender } from '../../src/auth/email.js';
 import type { User, ApiKey } from '../../src/types.js';
 
 // ─── Helpers ───────────────────────────────────────────
@@ -50,8 +54,8 @@ function fakeKey(overrides: Partial<ApiKey> = {}): { fullKey: string; record: Ap
 function mockUserStore(overrides: Partial<UserStore> = {}): UserStore {
   const user = fakeUser();
   return {
-    signup: vi.fn().mockReturnValue({ user, sessionToken: 'mr_st_session123' }),
-    login: vi.fn().mockReturnValue('mr_st_session123'),
+    requestLoginCode: vi.fn().mockReturnValue('123456'),
+    verifyLoginCode: vi.fn().mockReturnValue({ user, sessionToken: 'mr_st_session123', isNewAccount: false }),
     logout: vi.fn(),
     validateSession: vi.fn().mockReturnValue(user),
     findById: vi.fn().mockReturnValue(user),
@@ -84,75 +88,47 @@ function mockKeyStore(overrides: Partial<KeyStore> = {}): KeyStore {
   } as unknown as KeyStore;
 }
 
-function buildApp(userStore: UserStore, keyStore: KeyStore): Hono {
+function mockEmailSender(): EmailSender {
+  return {
+    sendLoginCode: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+function buildApp(userStore: UserStore, keyStore: KeyStore, email?: EmailSender): Hono {
   const app = new Hono();
-  app.route('/', createAuthRouter({ userStore, keyStore }));
+  app.route('/', createAuthRouter({
+    userStore,
+    keyStore,
+    email: email ?? mockEmailSender(),
+  }));
   return app;
 }
 
-// ─── Tests ─────────────────────────────────────────────
+// ─── POST /request-code ────────────────────────────────
 
-describe('POST /signup', () => {
-  it('returns 201 with session token, account details, and first API key', async () => {
+describe('POST /request-code', () => {
+  it('returns 200 and calls userStore.requestLoginCode for a valid email', async () => {
     const userStore = mockUserStore();
-    const keyStore = mockKeyStore();
-    const app = buildApp(userStore, keyStore);
+    const emailSender = mockEmailSender();
+    const app = buildApp(userStore, mockKeyStore(), emailSender);
 
-    const res = await app.request('/signup', {
+    const res = await app.request('/request-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'alice@example.com', password: 'password123' }),
+      body: JSON.stringify({ email: 'alice@example.com' }),
     });
 
-    expect(res.status).toBe(201);
-    const body = await res.json() as any;
-
-    expect(body.sessionToken).toBe('mr_st_session123');
-    expect(body.account.email).toBe('alice@example.com');
-    expect(body.apiKey.key).toBe('mr_sk_FULL_KEY_HERE');
-    expect(body.apiKey.tier).toBe('standard');
-    expect(typeof body.apiKey.message).toBe('string');
-  });
-
-  it('calls userStore.signup with the provided email and password', async () => {
-    const userStore = mockUserStore();
-    const app = buildApp(userStore, mockKeyStore());
-
-    await app.request('/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'Alice@Example.COM', password: 'securepass' }),
-    });
-
-    // signup is called — the auth route passes trimmed email; UserStore normalises to lowercase.
-    expect(userStore.signup).toHaveBeenCalled();
-    const [email] = (userStore.signup as any).mock.calls[0];
-    // Auth route trims, UserStore lowercases — check trimmed
-    expect(email.trim()).toBe(email);
-  });
-
-  it('calls keyStore.generate with the new user ID', async () => {
-    const keyStore = mockKeyStore();
-    const app = buildApp(mockUserStore(), keyStore);
-
-    await app.request('/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'alice@example.com', password: 'securepass' }),
-    });
-
-    // generate should be called with the user ID as the 4th argument
-    const generateArgs = (keyStore.generate as any).mock.calls[0];
-    expect(generateArgs[3]).toBe('user-123');
+    expect(res.status).toBe(200);
+    expect(userStore.requestLoginCode).toHaveBeenCalled();
   });
 
   it('returns 400 for an invalid email address', async () => {
     const app = buildApp(mockUserStore(), mockKeyStore());
 
-    const res = await app.request('/signup', {
+    const res = await app.request('/request-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'not-an-email', password: 'password123' }),
+      body: JSON.stringify({ email: 'not-an-email' }),
     });
 
     expect(res.status).toBe(400);
@@ -160,88 +136,93 @@ describe('POST /signup', () => {
     expect(body.error.code).toBe('invalid_email');
   });
 
-  it('returns 400 when password is shorter than 8 characters', async () => {
-    const app = buildApp(mockUserStore(), mockKeyStore());
+  it('returns 200 even if the email sender throws (prevents enumeration)', async () => {
+    const emailSender: EmailSender = {
+      sendLoginCode: vi.fn().mockRejectedValue(new Error('SMTP failed')),
+    };
+    const app = buildApp(mockUserStore(), mockKeyStore(), emailSender);
 
-    const res = await app.request('/signup', {
+    const res = await app.request('/request-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'alice@example.com', password: 'short' }),
+      body: JSON.stringify({ email: 'alice@example.com' }),
     });
 
-    expect(res.status).toBe(400);
-    const body = await res.json() as any;
-    expect(body.error.code).toBe('weak_password');
-  });
-
-  it('returns 409 when the email is already registered', async () => {
-    const userStore = mockUserStore({
-      signup: vi.fn().mockImplementation(() => { throw new Error('EMAIL_IN_USE'); }),
-    });
-    const app = buildApp(userStore, mockKeyStore());
-
-    const res = await app.request('/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'alice@example.com', password: 'password123' }),
-    });
-
-    expect(res.status).toBe(409);
-    const body = await res.json() as any;
-    expect(body.error.code).toBe('email_in_use');
-  });
-
-  it('trims whitespace from email before passing to userStore', async () => {
-    const userStore = mockUserStore();
-    const app = buildApp(userStore, mockKeyStore());
-
-    await app.request('/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: '  Alice@Example.COM  ', password: 'password123' }),
-    });
-
-    const [email] = (userStore.signup as any).mock.calls[0];
-    // Auth route trims whitespace; full lowercase normalisation happens in UserStore
-    expect(email).toBe('Alice@Example.COM');
+    expect(res.status).toBe(200);
   });
 });
 
-describe('POST /login', () => {
-  it('returns 200 with session token and account on valid credentials', async () => {
-    const app = buildApp(mockUserStore(), mockKeyStore());
+// ─── POST /verify-code ─────────────────────────────────
 
-    const res = await app.request('/login', {
+describe('POST /verify-code', () => {
+  it('returns 200 with session token and account for an existing user', async () => {
+    const user = fakeUser();
+    const userStore = mockUserStore({
+      verifyLoginCode: vi.fn().mockReturnValue({ user, sessionToken: 'mr_st_session123', isNewAccount: false }),
+    });
+    const app = buildApp(userStore, mockKeyStore());
+
+    const res = await app.request('/verify-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'alice@example.com', password: 'password123' }),
+      body: JSON.stringify({ email: 'alice@example.com', code: '123456' }),
     });
 
     expect(res.status).toBe(200);
     const body = await res.json() as any;
     expect(body.sessionToken).toBe('mr_st_session123');
     expect(body.account.email).toBe('alice@example.com');
+    // No apiKey for existing users
+    expect(body.apiKey).toBeUndefined();
   });
 
-  it('returns 401 on invalid credentials', async () => {
-    const userStore = mockUserStore({ login: vi.fn().mockReturnValue(null) });
-    const app = buildApp(userStore, mockKeyStore());
+  it('returns 201 with session token, account, and first API key for a new user', async () => {
+    const user = fakeUser();
+    const userStore = mockUserStore({
+      verifyLoginCode: vi.fn().mockReturnValue({ user, sessionToken: 'mr_st_session123', isNewAccount: true }),
+    });
+    const keyStore = mockKeyStore();
+    const app = buildApp(userStore, keyStore);
 
-    const res = await app.request('/login', {
+    const res = await app.request('/verify-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'alice@example.com', password: 'wrongpass' }),
+      body: JSON.stringify({ email: 'alice@example.com', code: '123456' }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json() as any;
+    expect(body.sessionToken).toBe('mr_st_session123');
+    expect(body.apiKey.key).toBe('mr_sk_FULL_KEY_HERE');
+    expect(body.apiKey.tier).toBe('standard');
+    expect(typeof body.apiKey.message).toBe('string');
+    // keyStore.generate should be called with the user ID
+    expect(keyStore.generate).toHaveBeenCalled();
+    const generateArgs = (keyStore.generate as any).mock.calls[0];
+    expect(generateArgs[3]).toBe('user-123');
+  });
+
+  it('returns 401 for an invalid or expired code', async () => {
+    const userStore = mockUserStore({
+      verifyLoginCode: vi.fn().mockReturnValue(null),
+    });
+    const app = buildApp(userStore, mockKeyStore());
+
+    const res = await app.request('/verify-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'alice@example.com', code: '000000' }),
     });
 
     expect(res.status).toBe(401);
     const body = await res.json() as any;
-    expect(body.error.code).toBe('invalid_credentials');
+    expect(body.error.code).toBe('invalid_code');
   });
 
-  it('returns 400 when email or password is missing', async () => {
+  it('returns 400 when the code is missing', async () => {
     const app = buildApp(mockUserStore(), mockKeyStore());
 
-    const res = await app.request('/login', {
+    const res = await app.request('/verify-code', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'alice@example.com' }),
@@ -249,7 +230,23 @@ describe('POST /login', () => {
 
     expect(res.status).toBe(400);
   });
+
+  it('returns 400 for an invalid email', async () => {
+    const app = buildApp(mockUserStore(), mockKeyStore());
+
+    const res = await app.request('/verify-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'not-valid', code: '123456' }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('invalid_email');
+  });
 });
+
+// ─── POST /logout ──────────────────────────────────────
 
 describe('POST /logout', () => {
   it('returns 200 and calls userStore.logout with the session token', async () => {

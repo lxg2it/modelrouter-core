@@ -28,6 +28,8 @@ import { createDashboardRouter } from './api/dashboard.js';
 import { createLandingRouter } from './api/landing.js';
 import { createAccountRouter } from './api/account.js';
 import { createProfileRouter } from './api/profile.js';
+import { ResendEmailSender, ConsoleEmailSender } from './auth/email.js';
+import type { EmailSender } from './auth/email.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ProviderName, Tier } from './types.js';
 
@@ -41,6 +43,7 @@ export interface AppContext {
   providers: Map<ProviderName, ProviderAdapter>;
   billing?: SatbillClient;
   stripe?: StripeService;
+  email: EmailSender;
 }
 
 /**
@@ -102,6 +105,17 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   // Billing transaction store — always initialised (records top-up history)
   const billingTxStore = new BillingTransactionStore(db);
 
+  // Email sender — Resend in production, console logger in dev
+  const emailSender: EmailSender = config.email
+    ? new ResendEmailSender(config.email.resendApiKey, config.email.fromEmail)
+    : new ConsoleEmailSender();
+
+  if (config.email) {
+    console.log(`[Email] Resend enabled (from: ${config.email.fromEmail})`);
+  } else {
+    console.log('[Email] Dev mode — login codes logged to console (set RESEND_API_KEY for production)');
+  }
+
   // Hono app
   const app = new Hono();
 
@@ -134,7 +148,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   // Mounted BEFORE the authenticated sub-routers so they are
   // reachable without credentials.
   //
-  app.route('/v1/auth', createAuthRouter({ userStore, keyStore }));
+  app.route('/v1/auth', createAuthRouter({ userStore, keyStore, email: emailSender }));
 
   // ─── API routes (API key auth) ────────────────────────────
   //
@@ -221,6 +235,6 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     }, 404);
   });
 
-  const ctx: AppContext = { config, db, keyStore, userStore, usageStore, router, providers, billing, stripe: stripeService };
+  const ctx: AppContext = { config, db, keyStore, userStore, usageStore, router, providers, billing, stripe: stripeService, email: emailSender };
   return { app, ctx };
 }
