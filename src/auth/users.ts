@@ -301,6 +301,42 @@ export class UserStore {
     return result.credit_balance_cents;
   }
 
+  /**
+   * Atomically reserve credits before making a provider call.
+   *
+   * Deducts `amountCents` from the balance in a single statement that
+   * also checks sufficiency — if the balance would go negative the update
+   * matches no rows and this returns false without touching the balance.
+   *
+   * Every successful reservation MUST be paired with a `refundCredits` call
+   * once the actual cost is known (settle the reservation-to-actual cycle).
+   */
+  tryReserveCredits(userId: string, amountCents: number): boolean {
+    if (amountCents <= 0) return true;
+    const result = this.db.prepare(`
+      UPDATE users
+      SET credit_balance_cents = credit_balance_cents - ?
+      WHERE id = ? AND credit_balance_cents >= ?
+    `).run(amountCents, userId, amountCents);
+    return result.changes > 0;
+  }
+
+  /**
+   * Return unused reserved credits after a provider call.
+   *
+   * Called with the difference (reserved - actual) to settle the reservation.
+   * No-op if refundCents <= 0.
+   */
+  refundCredits(userId: string, refundCents: number): void {
+    if (refundCents <= 0) return;
+    this.db.prepare(`
+      UPDATE users
+      SET credit_balance_cents = credit_balance_cents + ?
+      WHERE id = ?
+    `).run(refundCents, userId);
+  }
+
+
   // ─── Private helpers ──────────────────────────────────
 
   private createSession(userId: string): string {

@@ -12,7 +12,7 @@ import { RoutingEngine } from '../../src/routing/engine.js';
 import type { ProviderAdapter, StreamingCompletion } from '../../src/providers/types.js';
 import type { UsageLogger } from '../../src/tracking/logger.js';
 import type { AuthEnv } from '../../src/auth/middleware.js';
-import type { ChatCompletionRequest, ProviderName, ApiKey } from '../../src/types.js';
+import type { ChatCompletionRequest, ProviderName, ApiKey, User } from '../../src/types.js';
 
 // ─── Helpers ───────────────────────────────────────────
 
@@ -124,6 +124,22 @@ function makeMockLogger(): UsageLogger {
   return { log: vi.fn() } as unknown as UsageLogger;
 }
 
+/** Minimal mock for the UserStore billing methods used by chat.ts. */
+interface MockUserStore {
+  tryReserveCredits: ReturnType<typeof vi.fn>;
+  refundCredits: ReturnType<typeof vi.fn>;
+  deductCredits: ReturnType<typeof vi.fn>;
+}
+
+function makeMockUserStore(overrides?: Partial<MockUserStore>): MockUserStore {
+  return {
+    tryReserveCredits: vi.fn().mockReturnValue(true),
+    refundCredits:     vi.fn(),
+    deductCredits:     vi.fn().mockReturnValue(49900),
+    ...overrides,
+  };
+}
+
 /**
  * Create a minimal Hono test app with auth bypassed.
  * Mounts createChatRouter at the root.
@@ -132,14 +148,21 @@ function makeTestApp(
   providers: Map<ProviderName, ProviderAdapter>,
   engine: RoutingEngine,
   logger: UsageLogger,
-  opts: { apiKey?: ApiKey; keyStore?: { deductCredits: (id: string, cents: number) => number } } = {},
+  opts: {
+    apiKey?: ApiKey;
+    user?: User;
+    keyStore?: { deductCredits: (id: string, cents: number) => number };
+    userStore?: MockUserStore;
+  } = {},
 ) {
   const app = new Hono<AuthEnv>();
   const key = opts.apiKey ?? fakeApiKey;
+  const user = opts.user;
 
-  // Bypass auth: inject a fake API key into every request context
+  // Bypass auth: inject a fake API key (and optional user) into every request context
   app.use('*', async (c, next) => {
     c.set('apiKey', key);
+    c.set('user', user as any);
     await next();
   });
 
@@ -148,6 +171,7 @@ function makeTestApp(
     providers,
     logger,
     keyStore: opts.keyStore as any,
+    userStore: opts.userStore as any,
   }));
   return app;
 }
@@ -508,5 +532,151 @@ describe('Stripe credit deduction', () => {
 
     // Deduction failure must NOT fail the user's request
     expect(res.status).toBe(200);
+  });
+});
+
+// ─── User-owned key billing: pre-request reservation ─────────────────────
+
+describe('User-owned key billing — pre-request credit reservation', () => {
+  /** A user with Stripe billing enabled and a healthy balance. */
+  const billedUser: User = {
+    id: 'usr-123',
+    email: 'test@example.com',
+    createdAt: new Date().toISOString(),
+    stripeCustomerId: 'cus_test123',
+    creditBalanceCents: 50000, // $500.00 — comfortably above any tier ceiling
+  };
+
+  /** A user-owned key (no stripeCustomerId on the key — billing is at user level). */
+  const userOwnedKey: ApiKey = {
+    ...fakeApiKey,
+    id: 'key-user-owned',
+    tier: 'standard',
+    // No stripeCustomerId on the key itself — billing is on the User
+  };
+
+  const engine = new RoutingEngine({
+    availableProviders: new Set(['google']),
+    defaultTier: 'standard',
+    defaultOutputRatio: 0.33,
+  });
+
+  it('reserves credits before the provider call and refunds the unused portion', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Hello!');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const mockUserStore = makeMockUserStore();
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: userOwnedKey,
+      user: billedUser,
+      userStore: mockUserStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(200);
+
+    // Reservation should have been attempted with the standard tier ceiling ($2.00 = 200 cents)
+    expect(mockUserStore.tryReserveCredits).toHaveBeenCalledOnce();
+    const [reserveUserId, reserveCents] = mockUserStore.tryReserveCredits.mock.calls[0] as [string, number];
+    expect(reserveUserId).toBe(billedUser.id);
+    expect(reserveCents).toBe(200); // TIER_MAX_RESERVE_CENTS.standard
+
+    // refundCredits should have been called to return the unused portion
+    expect(mockUserStore.refundCredits).toHaveBeenCalledOnce();
+    const [refundUserId, refundCents] = mockUserStore.refundCredits.mock.calls[0] as [string, number];
+    expect(refundUserId).toBe(billedUser.id);
+    expect(typeof refundCents).toBe('number');
+    expect(refundCents).toBeGreaterThan(0); // Some portion was unused
+    expect(refundCents).toBeLessThanOrEqual(200); // Can't refund more than reserved
+  });
+
+  it('returns 402 and calls no providers when reservation fails', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Hello!');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    // Simulate a user with insufficient balance — reservation always fails
+    const mockUserStore = makeMockUserStore({
+      tryReserveCredits: vi.fn().mockReturnValue(false),
+    });
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: userOwnedKey,
+      user: { ...billedUser, creditBalanceCents: 10 }, // Only 10 cents — not enough for standard tier
+      userStore: mockUserStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(402);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('insufficient_credits');
+
+    // Provider should NOT have been called
+    expect(googleAdapter.complete).not.toHaveBeenCalled();
+    // No refund needed since reservation failed
+    expect(mockUserStore.refundCredits).not.toHaveBeenCalled();
+  });
+
+  it('refunds the full reservation when all providers fail', async () => {
+    const googleAdapter = makeFailingStreamAdapter('google');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const mockUserStore = makeMockUserStore();
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: userOwnedKey,
+      user: billedUser,
+      userStore: mockUserStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    // All providers failed
+    expect(res.status).toBe(502);
+
+    // Reservation was made
+    expect(mockUserStore.tryReserveCredits).toHaveBeenCalledOnce();
+    // Full refund issued since no actual cost was incurred
+    expect(mockUserStore.refundCredits).toHaveBeenCalledOnce();
+    const [refundUserId, refundCents] = mockUserStore.refundCredits.mock.calls[0] as [string, number];
+    expect(refundUserId).toBe(billedUser.id);
+    expect(refundCents).toBe(200); // Full standard tier ceiling refunded
+  });
+
+  it('reserves and settles correctly for streaming requests', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Streamed response');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const mockUserStore = makeMockUserStore();
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: userOwnedKey,
+      user: billedUser,
+      userStore: mockUserStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...minimalRequest, stream: true }),
+    }));
+
+    expect(res.status).toBe(200);
+    // Consume the full stream so finalize() and settlement run
+    await res.text();
+
+    expect(mockUserStore.tryReserveCredits).toHaveBeenCalledOnce();
+    // refundCredits should be called to settle to actual cost
+    expect(mockUserStore.refundCredits).toHaveBeenCalledOnce();
   });
 });

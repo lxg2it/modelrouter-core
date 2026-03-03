@@ -15,7 +15,7 @@ import { UsageLogger as UsageLoggerClass } from '../tracking/logger.js';
 import type { SatbillClient } from '../billing/satbill-client.js';
 import type { KeyStore } from '../auth/keys.js';
 import type { UserStore } from '../auth/users.js';
-import { TIERS } from '../config.js';
+import { TIERS, TIER_MAX_RESERVE_CENTS } from '../config.js';
 import type { ApiKey, User, ChatCompletionRequest, ProviderName } from '../types.js';
 
 interface ChatDeps {
@@ -87,6 +87,18 @@ async function handleNonStreaming(
     }, 500);
   }
 
+  // ── Pre-request credit reservation (user-owned keys only) ──────────────
+  //
+  // Atomically reserves the tier ceiling BEFORE calling the provider.
+  // This prevents concurrent overdraft: if two requests arrive simultaneously
+  // with the same key, only the one whose reservation succeeds will proceed.
+  // The reserved amount is settled to the actual cost after the response.
+  const reservedCents = await reserveCreditsForRequest(c, deps, decision.tier, user);
+  if (reservedCents === null) {
+    // reserveCreditsForRequest has already written the 402 response
+    return c.res;
+  }
+
   try {
     const result = await adapter.complete(decision.model, request);
 
@@ -126,8 +138,8 @@ async function handleNonStreaming(
       });
     }
 
-    // Stripe credit deduction — synchronous SQLite update, safe to do inline.
-    deductStripeCredits(deps, apiKey, costCents, user);
+    // Settle the reservation to the actual cost, or deduct for legacy keys.
+    settleStripeCredits(deps, apiKey, reservedCents, costCents, user);
 
     // Add router metadata
     result.response._router = {
@@ -182,8 +194,8 @@ async function handleNonStreaming(
             });
           }
 
-          // Stripe credit deduction for fallback path
-          deductStripeCredits(deps, apiKey, costCents, user);
+          // Settle reservation for fallback path
+          settleStripeCredits(deps, apiKey, reservedCents, costCents, user);
 
           result.response._router = {
             provider: fallback.provider,
@@ -194,8 +206,13 @@ async function handleNonStreaming(
           return c.json(result.response);
         } catch (fallbackErr) {
           deps.router.recordFailure(fallback.provider, fallback.model);
+          // Refund the full reservation since all providers failed
+          fullRefundReservation(deps, reservedCents, user);
         }
       }
+    } else {
+      // No fallback available — refund the reservation
+      fullRefundReservation(deps, reservedCents, user);
     }
 
     // All providers failed
@@ -233,6 +250,15 @@ async function handleStreaming(
   user?: User,
 ) {
   const keyId = apiKey.id;
+
+  // ── Pre-request credit reservation (user-owned keys only) ──────────────
+  // Reserve before attempting any provider connection. If reservation fails
+  // we return a clean 402 (no SSE response has been committed yet).
+  const reservedCents = await reserveCreditsForRequest(c, deps, decision.tier, user);
+  if (reservedCents === null) {
+    return c.res;
+  }
+
   // --- Pre-stream failover ---
   //
   // The key insight: `adapter.stream()` initiates the HTTP connection to the provider
@@ -273,8 +299,9 @@ async function handleStreaming(
     }
   }
 
-  // All providers failed before sending any data — return a clean JSON error.
+  // All providers failed before sending any data — refund the reservation and return a clean JSON error.
   if (!completion) {
+    fullRefundReservation(deps, reservedCents, user);
     deps.logger.log({
       keyId,
       provider: decision.provider,
@@ -350,10 +377,11 @@ async function handleStreaming(
           });
         }
 
-        // Stripe credit deduction for streaming path
-        deductStripeCredits(deps, apiKey, costCents, user);
+        // Settle reservation to actual cost for streaming path
+        settleStripeCredits(deps, apiKey, reservedCents, costCents, user);
       } catch {
-        // finalize() failed — log without usage data
+        // finalize() failed — we don't know actual cost, refund the full reservation
+        fullRefundReservation(deps, reservedCents, user);
         deps.logger.log({
           keyId,
           provider: activeDecision.provider,
@@ -370,7 +398,9 @@ async function handleStreaming(
     } catch (err) {
       // Mid-stream failure: the client is already receiving SSE data — cannot failover.
       // Write a final error event so the client knows the stream was interrupted.
+      // Refund the reservation since we have no usage data.
       deps.router.recordFailure(activeDecision.provider, activeDecision.model);
+      fullRefundReservation(deps, reservedCents, user);
 
       const errorChunk = {
         error: {
@@ -399,32 +429,105 @@ async function handleStreaming(
 }
 
 /**
- * Deduct from the Stripe credit balance after a successful request.
+ * Reserve credits before calling a provider (user-owned keys only).
  *
- * For user-owned keys: deducts from the user's account balance (shared across all keys).
- * For legacy keys (no userId): deducts from the key's own balance.
+ * Atomically deducts the tier ceiling from the user's balance. Returns
+ * `null` and writes a 402 response if the balance is insufficient.
+ * Returns `0` for legacy keys (no reservation needed — they use post-hoc deduction).
+ * Returns the reserved amount (>= 0) on success.
  *
- * Failures are logged but never bubble up — a deduction failure must not
+ * Every non-null return MUST be followed by either settleStripeCredits()
+ * (on success) or fullRefundReservation() (on failure).
+ */
+async function reserveCreditsForRequest(
+  c: any,
+  deps: ChatDeps,
+  tier: string,
+  user?: User,
+): Promise<number | null> {
+  if (!user || !deps.userStore || !user.stripeCustomerId) {
+    // No user billing configured — no reservation needed
+    return 0;
+  }
+
+  const reserveCents = TIER_MAX_RESERVE_CENTS[tier] ?? 200;
+  const reserved = deps.userStore.tryReserveCredits(user.id, reserveCents);
+  if (!reserved) {
+    c.res = c.json({
+      error: {
+        message: `Insufficient credits. Please top up your account. Estimated cost for ${tier} tier: up to $${(reserveCents / 100).toFixed(2)}.`,
+        type: 'insufficient_quota',
+        code: 'insufficient_credits',
+        creditBalanceCents: user.creditBalanceCents,
+        tierMaxReserveCents: reserveCents,
+      },
+    }, 402);
+    return null;
+  }
+
+  return reserveCents;
+}
+
+/**
+ * Settle the pre-request credit reservation to the actual cost.
+ *
+ * For user-owned keys: refunds the unused portion of the reservation
+ * (reserved - actual). If actual somehow exceeds reserved, deducts the
+ * difference to keep the accounting exact.
+ *
+ * For legacy keys (reservedCents = 0): falls back to post-hoc deduction.
+ *
+ * Failures are logged but never bubble up — a billing failure must not
  * retroactively invalidate a completed API response.
  */
-function deductStripeCredits(
+function settleStripeCredits(
   deps: ChatDeps,
   apiKey: ApiKey,
-  costCents: number,
+  reservedCents: number,
+  actualCents: number,
   user?: User,
 ): void {
-  if (costCents <= 0) return;
-
   try {
     if (user && deps.userStore && user.stripeCustomerId) {
-      // User-owned key: deduct from user balance
-      deps.userStore.deductCredits(user.id, costCents);
+      if (reservedCents > 0) {
+        // Reservation was pre-deducted — return the unused portion
+        const refund = reservedCents - actualCents;
+        if (refund > 0) {
+          deps.userStore.refundCredits(user.id, refund);
+        } else if (refund < 0) {
+          // Actual cost exceeded ceiling (shouldn't happen but handle defensively)
+          deps.userStore.deductCredits(user.id, -refund);
+        }
+        // refund === 0: exact match, no adjustment needed
+      } else if (actualCents > 0) {
+        // No reservation was made (billing was added after auth) — deduct directly
+        deps.userStore.deductCredits(user.id, actualCents);
+      }
     } else if (!user && deps.keyStore && apiKey.stripeCustomerId) {
-      // Legacy key: deduct from key balance
-      deps.keyStore.deductCredits(apiKey.id, costCents);
+      // Legacy key: post-hoc deduction (no reservation was made)
+      if (actualCents > 0) {
+        deps.keyStore.deductCredits(apiKey.id, actualCents);
+      }
     }
   } catch (err) {
-    console.error('[Billing] Stripe credit deduction failed (non-fatal):', err);
+    console.error('[Billing] Stripe credit settlement failed (non-fatal):', err);
+  }
+}
+
+/**
+ * Refund the full reservation when a request fails without a known cost.
+ * Called when all providers fail or finalize() throws.
+ */
+function fullRefundReservation(
+  deps: ChatDeps,
+  reservedCents: number,
+  user?: User,
+): void {
+  if (reservedCents <= 0 || !user || !deps.userStore || !user.stripeCustomerId) return;
+  try {
+    deps.userStore.refundCredits(user.id, reservedCents);
+  } catch (err) {
+    console.error('[Billing] Credit reservation refund failed (non-fatal):', err);
   }
 }
 

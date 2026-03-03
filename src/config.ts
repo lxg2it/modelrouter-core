@@ -127,6 +127,23 @@ export const TIERS: Record<string, TierConfig> = {
   },
 };
 
+// ─── Per-Tier Credit Reservation ───────────────────────
+//
+// Before calling a provider we atomically reserve this many cents from the
+// user's balance. The unused portion is refunded once the actual cost is known.
+//
+// This prevents concurrent overdraft: two requests with the same key can no
+// longer both pass a "balance > 0" gate and then both deduct after the fact.
+// The second reservation fails atomically if the first has consumed the budget.
+//
+// Values are conservative ceilings, not typical costs:
+//   standard at 4k output tokens ≈ 6 cents; 200 cents covers large contexts.
+export const TIER_MAX_RESERVE_CENTS: Record<string, number> = {
+  economy:  50,   // $0.50 — economy models are cheap; covers even long requests
+  standard: 200,  // $2.00 — standard tier; typical request is well under this
+  premium:  500,  // $5.00 — premium tier (claude-opus, gpt-5) can be expensive
+};
+
 // ─── Model Alias Map ───────────────────────────────────
 //
 // When clients send familiar model names, we map them to tiers.
