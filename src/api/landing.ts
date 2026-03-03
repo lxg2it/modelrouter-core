@@ -254,7 +254,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       <div class="feature-item">
         <div class="feature-icon">💰</div>
         <div class="feature-name">4% flat fee</div>
-        <div class="feature-desc">Pay-as-you-go. No subscription, no seat licenses. Cheaper than the alternatives.</div>
+        <div class="feature-desc">Pay-as-you-go. No subscription, no seat licenses. All prices in USD. Cheaper than the alternatives.</div>
       </div>
     </div>
   </div>

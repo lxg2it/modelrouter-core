@@ -161,7 +161,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
           <div>
             <p class="text-xs text-blue-600 font-medium uppercase tracking-wide mb-1">Credit Balance</p>
             <p id="creditBalance" class="text-2xl font-bold text-blue-900"></p>
-            <p class="text-xs text-blue-500 mt-1">Shared across all your API keys</p>
+            <p class="text-xs text-blue-500 mt-1">Shared across all your API keys &mdash; <span class="font-medium">USD</span></p>
           </div>
           <button class="btn btn-primary" onclick="toggleBillingPanel()">Top up ↓</button>
         </div>
