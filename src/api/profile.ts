@@ -535,6 +535,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       stripeInstance = Stripe(data.publishableKey);
       const elements = stripeInstance.elements();
       stripeCardElement = elements.create('card', {
+        hidePostalCode: true,
         style: {
           base: { fontSize: '16px', color: '#374151', '::placeholder': { color: '#9ca3af' } },
         },

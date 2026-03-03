@@ -57,12 +57,49 @@ export class BillingTransactionStore {
     `);
 
     // Migrations: add columns to existing tables that pre-date them
-    const cols = this.db.pragma('table_info(billing_transactions)') as { name: string }[];
+    const cols = this.db.pragma('table_info(billing_transactions)') as { name: string; notnull: number }[];
     if (!cols.some((c) => c.name === 'user_id')) {
       this.db.exec(`ALTER TABLE billing_transactions ADD COLUMN user_id TEXT`);
     }
-    // key_id was previously NOT NULL in old schemas — SQLite can't alter constraints,
-    // but existing rows will continue to have their key_id values.
+
+    // key_id was previously NOT NULL in old schemas — SQLite can't alter column
+    // constraints, so we recreate the table to make key_id nullable.
+    // This is safe: user-level billing has no key_id, and old key-level rows keep their values.
+    const keyIdCol = cols.find((c) => c.name === 'key_id');
+    if (keyIdCol && keyIdCol.notnull === 1) {
+      // Build the INSERT column list dynamically: include user_id only if it existed
+      // in the old table (it was added via ALTER TABLE in a prior migration).
+      const hasUserId = cols.some((c) => c.name === 'user_id');
+      const insertCols = [
+        'id',
+        ...(hasUserId ? ['user_id'] : []),
+        'key_id',
+        'payment_intent_id',
+        'amount_charged_cents',
+        'credits_added_cents',
+        'status',
+        'created_at',
+      ].join(', ');
+
+      this.db.exec(`
+        BEGIN;
+        ALTER TABLE billing_transactions RENAME TO _billing_transactions_v1;
+        CREATE TABLE billing_transactions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT,
+          key_id TEXT,
+          payment_intent_id TEXT,
+          amount_charged_cents INTEGER NOT NULL,
+          credits_added_cents INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO billing_transactions (${insertCols})
+          SELECT ${insertCols} FROM _billing_transactions_v1;
+        DROP TABLE _billing_transactions_v1;
+        COMMIT;
+      `);
+    }
 
     // Create indexes after any migrations (user_id must exist before indexing it)
     this.db.exec(`
