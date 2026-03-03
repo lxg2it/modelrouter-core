@@ -42,6 +42,7 @@ export class BillingTransactionStore {
   }
 
   private initSchema(): void {
+    // Create table with full schema (for new databases)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS billing_transactions (
         id TEXT PRIMARY KEY,
@@ -52,19 +53,23 @@ export class BillingTransactionStore {
         credits_added_cents INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      CREATE INDEX IF NOT EXISTS idx_billing_user_id ON billing_transactions(user_id);
-      CREATE INDEX IF NOT EXISTS idx_billing_key_id ON billing_transactions(key_id);
-      CREATE INDEX IF NOT EXISTS idx_billing_created ON billing_transactions(created_at);
+      )
     `);
 
-    // Migration: add user_id column to existing tables
+    // Migrations: add columns to existing tables that pre-date them
     const cols = this.db.pragma('table_info(billing_transactions)') as { name: string }[];
     if (!cols.some((c) => c.name === 'user_id')) {
       this.db.exec(`ALTER TABLE billing_transactions ADD COLUMN user_id TEXT`);
     }
-    // key_id was previously NOT NULL — it's now nullable (user_id takes its place)
-    // SQLite can't alter constraints, but since key_id is TEXT it already allows NULL via ALTER
+    // key_id was previously NOT NULL in old schemas — SQLite can't alter constraints,
+    // but existing rows will continue to have their key_id values.
+
+    // Create indexes after any migrations (user_id must exist before indexing it)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_billing_user_id ON billing_transactions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_billing_key_id ON billing_transactions(key_id);
+      CREATE INDEX IF NOT EXISTS idx_billing_created ON billing_transactions(created_at);
+    `);
   }
 
   /**
