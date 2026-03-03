@@ -17,6 +17,9 @@ services:
       # Stripe billing (optional — card payments)
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY:-}
+      # Email (Resend)
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - FROM_EMAIL=${FROM_EMAIL:-auth@api.lxg2it.com}
       # Satbill billing (optional — Bitcoin payments)
       - SATBILL_BASE_URL=${SATBILL_BASE_URL:-}
       - SATBILL_API_SECRET=${SATBILL_API_SECRET:-}
