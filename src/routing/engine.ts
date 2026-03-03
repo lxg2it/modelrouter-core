@@ -6,10 +6,11 @@
  *
  * V1: cheapest available model in the tier.
  * V2: prefer parameter for cross-tier cost minimisation, latency preference,
- *     and quality maximisation.
+ *     and quality maximisation. Context-window guard: filter models whose
+ *     context window is smaller than the estimated input token count.
  */
 
-import type { ModelConfig, Tier, ProviderName, ChatCompletionRequest } from '../types.js';
+import type { ModelConfig, Tier, ProviderName, ChatCompletionRequest, ChatMessage } from '../types.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import { getModelsForTier, getAllTiers, resolveTier } from './tiers.js';
 
@@ -56,15 +57,16 @@ export class RoutingEngine {
     keyTier?: Tier,
   ): RouteDecision | null {
     const prefer = request.prefer ?? 'balanced';
+    const estimatedTokens = this.estimateInputTokens(request.messages);
 
     // ── quality mode: force premium tier regardless ──────────────
     if (prefer === 'quality') {
-      return this.selectByQuality();
+      return this.selectByQuality(estimatedTokens);
     }
 
     // ── cheap mode: cross-tier cost minimisation ─────────────────
     if (prefer === 'cheap') {
-      return this.selectCheapestAcrossAllTiers();
+      return this.selectCheapestAcrossAllTiers(estimatedTokens);
     }
 
     // ── balanced / fast: operate within the resolved tier ─────────
@@ -73,15 +75,18 @@ export class RoutingEngine {
       ?? keyTier
       ?? this.config.defaultTier;
 
-    const candidates = getModelsForTier(tier, this.config.availableProviders);
+    const candidates = this.filterByContext(
+      getModelsForTier(tier, this.config.availableProviders),
+      estimatedTokens,
+    );
     if (candidates.length === 0) return null;
 
     const available = candidates.filter((m) =>
       this.circuitBreaker.isAvailable(m.provider, m.model),
     );
     if (available.length === 0) {
-      // All models in tier are circuit-broken. Return the first candidate anyway
-      // (circuit breaker will allow a test request if cooldown has passed)
+      // All context-compatible models in tier are circuit-broken.
+      // Return the first candidate anyway — circuit breaker will allow a test request if cooldown has passed.
       return this.toDecision(candidates[0], tier, undefined, prefer);
     }
 
@@ -115,8 +120,13 @@ export class RoutingEngine {
     failedProvider: ProviderName,
     failedModel: string,
     tier: Tier,
+    messages: ChatMessage[] = [],
   ): RouteDecision | null {
-    const candidates = getModelsForTier(tier, this.config.availableProviders)
+    const estimatedTokens = this.estimateInputTokens(messages);
+    const candidates = this.filterByContext(
+      getModelsForTier(tier, this.config.availableProviders),
+      estimatedTokens,
+    )
       .filter((m) => !(m.provider === failedProvider && m.model === failedModel))
       .filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model));
 
@@ -165,13 +175,15 @@ export class RoutingEngine {
    * prefer: 'cheap' — find cheapest model across ALL tiers.
    * Ignores tier entirely; useful for batch workloads that don't need quality guarantees.
    */
-  private selectCheapestAcrossAllTiers(): RouteDecision | null {
+  private selectCheapestAcrossAllTiers(estimatedTokens: number): RouteDecision | null {
     const ratio = this.config.defaultOutputRatio;
     let best: { config: ModelConfig; tier: Tier; cost: number } | null = null;
 
     for (const tier of getAllTiers()) {
-      const available = getModelsForTier(tier, this.config.availableProviders)
-        .filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model));
+      const available = this.filterByContext(
+        getModelsForTier(tier, this.config.availableProviders),
+        estimatedTokens,
+      ).filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model));
 
       for (const m of available) {
         const cost = m.inputPer1M + m.outputPer1M * ratio;
@@ -188,13 +200,18 @@ export class RoutingEngine {
   /**
    * prefer: 'quality' — force premium tier, pick highest quality model.
    */
-  private selectByQuality(): RouteDecision | null {
-    const available = getModelsForTier('premium', this.config.availableProviders)
-      .filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model));
+  private selectByQuality(estimatedTokens: number): RouteDecision | null {
+    const available = this.filterByContext(
+      getModelsForTier('premium', this.config.availableProviders),
+      estimatedTokens,
+    ).filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model));
 
     if (available.length === 0) {
-      // Premium tier fully unavailable — fall back to best in standard
-      const fallback = getModelsForTier('standard', this.config.availableProviders)
+      // Premium tier fully unavailable or no model fits context — fall back to best in standard
+      const fallback = this.filterByContext(
+        getModelsForTier('standard', this.config.availableProviders),
+        estimatedTokens,
+      )
         .filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model))
         .sort((a, b) => b.quality - a.quality);
       if (fallback.length === 0) return null;
@@ -203,6 +220,41 @@ export class RoutingEngine {
 
     const sorted = [...available].sort((a, b) => b.quality - a.quality);
     return this.toDecision(sorted[0], 'premium', undefined, 'quality');
+  }
+
+  /**
+   * Filter models whose context window is large enough for the estimated input.
+   * Models without a maxContextTokens limit are always included.
+   */
+  private filterByContext(models: ModelConfig[], estimatedTokens: number): ModelConfig[] {
+    if (estimatedTokens === 0) return models;
+    return models.filter((m) => !m.maxContextTokens || m.maxContextTokens >= estimatedTokens);
+  }
+
+  /**
+   * Estimate input token count from message content.
+   *
+   * Uses a conservative approximation: 1 token ≈ 3 characters (slightly below
+   * the 3.5–4 character average used in practice). This intentional overestimate
+   * means we err on the side of routing to larger-context models when the input
+   * is near a boundary, preventing avoidable context-exceeded errors.
+   */
+  private estimateInputTokens(messages: ChatMessage[]): number {
+    let charCount = 0;
+    for (const msg of messages) {
+      // Per-message overhead: role name + separators (~20 chars)
+      charCount += 20;
+      if (typeof msg.content === 'string') {
+        charCount += msg.content.length;
+      } else if (Array.isArray(msg.content)) {
+        for (const part of msg.content) {
+          if (part.type === 'text' && part.text) charCount += part.text.length;
+          // Image tokens: rough estimate — actual cost varies by detail/resolution
+          if (part.type === 'image_url') charCount += 3000; // ~750 tokens at 4 chars/tok
+        }
+      }
+    }
+    return Math.ceil(charCount / 3);
   }
 
   private toDecision(

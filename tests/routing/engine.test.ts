@@ -515,4 +515,99 @@ describe('RoutingEngine', () => {
       expect(health.openCircuits.length).toBeGreaterThan(0);
     });
   });
+
+  describe('context-length routing guard', () => {
+    // Helper: build a request with messages summing to roughly N characters
+    const reqWithChars = (chars: number): ChatCompletionRequest => ({
+      messages: [{ role: 'user', content: 'x'.repeat(chars) }],
+    });
+
+    it('routes normally when messages are small (no context filter triggered)', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['openai', 'google', 'anthropic']),
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+
+      // Small request — all models should be eligible
+      const decision = engine.selectModel(reqWithChars(100));
+      expect(decision).not.toBeNull();
+    });
+
+    it('skips models whose context window is too small for the input', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['openai', 'google', 'anthropic']),
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+
+      // ~210k tokens estimated (chars / 3 ≈ 210k). Models with 200k context window
+      // (o4-mini, claude-haiku) should be filtered out; 1M+ context models remain.
+      const decision = engine.selectModel(reqWithChars(630_000));
+      expect(decision).not.toBeNull();
+      expect(['gemini-2.5-flash', 'gpt-4.1-mini'].includes(decision!.model)).toBe(true);
+    });
+
+    it('returns null when the input exceeds ALL models in the tier', () => {
+      const engine = new RoutingEngine({
+        // Only Anthropic available (claude-haiku: 200k context)
+        availableProviders: new Set(['anthropic']),
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+
+      // ~210k token estimate exceeds claude-haiku's 200k window
+      const decision = engine.selectModel(reqWithChars(630_000));
+      expect(decision).toBeNull();
+    });
+
+    it('cheap mode applies context filter across all tiers', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['openai', 'google', 'anthropic']),
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+
+      // 210k tokens — 200k models filtered, leaving only 1M+ context models
+      const cheapDecision = engine.selectModel(
+        { ...reqWithChars(630_000), prefer: 'cheap' },
+      );
+      expect(cheapDecision).not.toBeNull();
+      const largeCxtModels = ['gemini-2.5-flash', 'gpt-4.1-mini', 'gemini-2.5-pro', 'gpt-4.1', 'gemini-3-pro'];
+      expect(largeCxtModels.includes(cheapDecision!.model)).toBe(true);
+    });
+
+    it('selectFallback respects context limits', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['openai', 'google', 'anthropic']),
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+
+      // Primary: gpt-4.1-mini (1M context). Fallback with 210k token input —
+      // claude-haiku (200k) and o4-mini (200k) are filtered out, leaving gemini-2.5-flash.
+      const messages = [{ role: 'user' as const, content: 'x'.repeat(630_000) }];
+      const fallback = engine.selectFallback('openai', 'gpt-4.1-mini', 'economy', messages);
+      expect(fallback).not.toBeNull();
+      expect(fallback!.model).toBe('gemini-2.5-flash');
+    });
+
+    it('handles messages with array content parts', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['openai', 'google', 'anthropic']),
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+
+      const request: ChatCompletionRequest = {
+        messages: [{
+          role: 'user',
+          content: [{ type: 'text', text: 'x'.repeat(630_000) }],
+        }],
+      };
+      const decision = engine.selectModel(request);
+      expect(decision).not.toBeNull();
+      expect(['gemini-2.5-flash', 'gpt-4.1-mini'].includes(decision!.model)).toBe(true);
+    });
+  });
 });
