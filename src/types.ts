@@ -136,6 +136,17 @@ export interface TierConfig {
 
 // ─── Auth Types ────────────────────────────────────────
 
+export interface User {
+  id: string;
+  email: string;
+  accountName?: string;
+  createdAt: string;
+  /** Stripe customer ID for card billing. One per user account. */
+  stripeCustomerId?: string;
+  /** Credit balance in cents (USD). Shared across all keys for this user. */
+  creditBalanceCents: number;
+}
+
 export interface ApiKey {
   id: string;
   keyHash: string;
@@ -147,11 +158,25 @@ export interface ApiKey {
   createdAt: string;
   lastUsedAt?: string;
   active: boolean;
+  /**
+   * The user account this key belongs to.
+   * Null for legacy keys created before user accounts were introduced.
+   * When set, billing (Stripe/credits) is managed at the user level.
+   */
+  userId?: string;
   /** Satbill account ID for Bitcoin billing. When set, requests are checked against BTC balance. */
   satbillAccountId?: string;
-  /** Stripe customer ID for card billing. Created on first billing setup. */
+  /**
+   * Stripe customer ID for card billing.
+   * @deprecated For user-owned keys, billing lives on the User record.
+   *             This field is retained for legacy (pre-user) keys only.
+   */
   stripeCustomerId?: string;
-  /** Credit balance in cents (USD). Loaded from top-ups, deducted per request. */
+  /**
+   * Credit balance in cents (USD).
+   * @deprecated For user-owned keys, balance lives on the User record.
+   *             This field is retained for legacy (pre-user) keys only.
+   */
   creditBalanceCents: number;
 }
 

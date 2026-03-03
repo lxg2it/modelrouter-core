@@ -8,7 +8,8 @@ import { logger as honoLogger } from 'hono/logger';
 import Database from 'better-sqlite3';
 import { loadConfig, type Config } from './config.js';
 import { KeyStore } from './auth/keys.js';
-import { authMiddleware, type AuthEnv } from './auth/middleware.js';
+import { UserStore } from './auth/users.js';
+import { authMiddleware, sessionMiddleware, type AuthEnv, type SessionEnv } from './auth/middleware.js';
 import { RoutingEngine } from './routing/engine.js';
 import { createChatRouter } from './api/chat.js';
 import { createModelsRouter, createUsageRouter } from './api/models.js';
@@ -21,7 +22,8 @@ import { SatbillClient } from './billing/satbill-client.js';
 import { StripeService } from './billing/stripe.js';
 import { BillingTransactionStore } from './billing/transactions.js';
 import { createBillingRouter } from './api/billing.js';
-import { createRegisterRouter } from './api/register.js';
+import { createAuthRouter } from './api/auth.js';
+import { createKeysRouter } from './api/keys.js';
 import { createDashboardRouter } from './api/dashboard.js';
 import { createLandingRouter } from './api/landing.js';
 import { createAccountRouter } from './api/account.js';
@@ -33,6 +35,7 @@ export interface AppContext {
   config: Config;
   db: Database.Database;
   keyStore: KeyStore;
+  userStore: UserStore;
   usageStore: UsageStore;
   router: RoutingEngine;
   providers: Map<ProviderName, ProviderAdapter>;
@@ -53,6 +56,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
 
   // Stores
   const keyStore = new KeyStore(db);
+  const userStore = new UserStore(db);
   const usageStore = new UsageStore(db);
   const usageLogger = new UsageLogger(usageStore);
 
@@ -110,7 +114,6 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   // Landing page (unauthenticated)
   app.route('/', createLandingRouter());
 
-
   // Health check (unauthenticated)
   app.get('/health', (c) => {
     const health = router.getHealthStatus();
@@ -126,32 +129,54 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     });
   });
 
-  // Authenticated API routes
-  const api = new Hono<AuthEnv>();
-  api.use('*', authMiddleware(keyStore, billing));
+  // ─── Auth routes (unauthenticated) ───────────────────────
+  //
+  // Mounted BEFORE the authenticated sub-routers so they are
+  // reachable without credentials.
+  //
+  app.route('/v1/auth', createAuthRouter({ userStore, keyStore }));
 
-  // Mount API endpoints
-  api.route('/chat/completions', createChatRouter({ router, providers, logger: usageLogger, billing, keyStore }));
+  // ─── API routes (API key auth) ────────────────────────────
+  //
+  // Chat, models, and usage — authenticated with API keys (mr_sk_...).
+  //
+  const api = new Hono<AuthEnv>();
+  api.use('*', authMiddleware(keyStore, userStore, billing));
+
+  api.route('/chat/completions', createChatRouter({
+    router,
+    providers,
+    logger: usageLogger,
+    billing,
+    userStore: stripeService ? userStore : undefined,
+    keyStore: stripeService ? keyStore : undefined,
+  }));
   api.route('/models', createModelsRouter({ usageStore }));
   api.route('/usage', createUsageRouter({ usageStore }));
-  api.route('/account', createAccountRouter({ keyStore, usageStore, db }));
 
-  // Stripe billing routes (mounted only when Stripe is configured)
+  app.route('/v1', api);
+
+  // ─── Management routes (session auth) ────────────────────
+  //
+  // Key management, account profile, and billing — authenticated with
+  // session tokens (mr_st_...) returned by /v1/auth/login.
+  //
+  const mgmt = new Hono<SessionEnv>();
+  mgmt.use('*', sessionMiddleware(userStore));
+
+  mgmt.route('/account', createAccountRouter({ userStore, keyStore, usageStore }));
+  mgmt.route('/keys', createKeysRouter({ keyStore, usageStore }));
+
   if (stripeService && config.stripe) {
-    api.route('/billing', createBillingRouter({
-      keyStore,
+    mgmt.route('/billing', createBillingRouter({
+      userStore,
       stripe: stripeService,
       billingTxStore,
       publishableKey: config.stripe.publishableKey,
     }));
   }
 
-  // Registration endpoint — must be mounted BEFORE the authenticated api
-  // sub-router so that Hono matches it first. app.route('/v1', api) would
-  // otherwise capture all /v1/* paths and run auth middleware on them.
-  app.route('/v1/auth/register', createRegisterRouter({ keyStore }));
-
-  app.route('/v1', api);
+  app.route('/v1', mgmt);
 
   // Dashboard — self-service billing UI, served only when Stripe is configured.
   if (stripeService) {
@@ -178,13 +203,13 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   app.notFound((c) => {
     return c.json({
       error: {
-        message: `Not found: ${c.req.path}. Available endpoints: POST /v1/auth/register, POST /v1/chat/completions, GET /v1/models, GET /v1/usage, GET /v1/billing/status`,
+        message: `Not found: ${c.req.path}. See POST /v1/auth/signup to create an account, POST /v1/auth/login to get a session token, POST /v1/chat/completions for inference.`,
         type: 'invalid_request_error',
         code: 'not_found',
       },
     }, 404);
   });
 
-  const ctx: AppContext = { config, db, keyStore, usageStore, router, providers, billing, stripe: stripeService };
+  const ctx: AppContext = { config, db, keyStore, userStore, usageStore, router, providers, billing, stripe: stripeService };
   return { app, ctx };
 }

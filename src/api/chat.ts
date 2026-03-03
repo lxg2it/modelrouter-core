@@ -14,8 +14,9 @@ import type { UsageLogger } from '../tracking/logger.js';
 import { UsageLogger as UsageLoggerClass } from '../tracking/logger.js';
 import type { SatbillClient } from '../billing/satbill-client.js';
 import type { KeyStore } from '../auth/keys.js';
+import type { UserStore } from '../auth/users.js';
 import { TIERS } from '../config.js';
-import type { ApiKey, ChatCompletionRequest, ProviderName } from '../types.js';
+import type { ApiKey, User, ChatCompletionRequest, ProviderName } from '../types.js';
 
 interface ChatDeps {
   router: RoutingEngine;
@@ -24,8 +25,13 @@ interface ChatDeps {
   /** Optional satbill client. When present, costs are deducted from the satbill account. */
   billing?: SatbillClient;
   /**
-   * Key store for Stripe credit deductions. When present, successful requests
-   * deduct costCents from creditBalanceCents for Stripe-billed keys.
+   * User store for user-level Stripe credit deductions.
+   * Used for user-owned keys (apiKey.userId is set).
+   */
+  userStore?: UserStore;
+  /**
+   * Key store for legacy (pre-user) Stripe credit deductions.
+   * Used when a key has no associated user (old keys).
    */
   keyStore?: KeyStore;
 }
@@ -36,6 +42,7 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
   app.post('/', async (c) => {
     const apiKey = c.get('apiKey');
     const satbillAccountId = c.get('satbillAccountId');
+    const user = c.get('user');
     const body = await c.req.json<ChatCompletionRequest>();
 
     // Route the request
@@ -53,9 +60,9 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
     const startTime = Date.now();
 
     if (body.stream) {
-      return handleStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId);
+      return handleStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user);
     } else {
-      return handleNonStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId);
+      return handleNonStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user);
     }
   });
 
@@ -70,6 +77,7 @@ async function handleNonStreaming(
   apiKey: ApiKey,
   startTime: number,
   satbillAccountId: string | undefined,
+  user?: User,
 ) {
   const keyId = apiKey.id;
   const adapter = deps.providers.get(decision.provider);
@@ -119,7 +127,7 @@ async function handleNonStreaming(
     }
 
     // Stripe credit deduction — synchronous SQLite update, safe to do inline.
-    deductStripeCredits(deps, apiKey, costCents);
+    deductStripeCredits(deps, apiKey, costCents, user);
 
     // Add router metadata
     result.response._router = {
@@ -175,7 +183,7 @@ async function handleNonStreaming(
           }
 
           // Stripe credit deduction for fallback path
-          deductStripeCredits(deps, apiKey, costCents);
+          deductStripeCredits(deps, apiKey, costCents, user);
 
           result.response._router = {
             provider: fallback.provider,
@@ -222,6 +230,7 @@ async function handleStreaming(
   apiKey: ApiKey,
   startTime: number,
   satbillAccountId: string | undefined,
+  user?: User,
 ) {
   const keyId = apiKey.id;
   // --- Pre-stream failover ---
@@ -342,7 +351,7 @@ async function handleStreaming(
         }
 
         // Stripe credit deduction for streaming path
-        deductStripeCredits(deps, apiKey, costCents);
+        deductStripeCredits(deps, apiKey, costCents, user);
       } catch {
         // finalize() failed — log without usage data
         deps.logger.log({
@@ -392,19 +401,28 @@ async function handleStreaming(
 /**
  * Deduct from the Stripe credit balance after a successful request.
  *
- * Only runs when:
- *   - keyStore is configured (Stripe billing is enabled)
- *   - The key has a stripeCustomerId
- *   - costCents > 0
+ * For user-owned keys: deducts from the user's account balance (shared across all keys).
+ * For legacy keys (no userId): deducts from the key's own balance.
  *
  * Failures are logged but never bubble up — a deduction failure must not
  * retroactively invalidate a completed API response.
  */
-function deductStripeCredits(deps: ChatDeps, apiKey: ApiKey, costCents: number): void {
-  if (!deps.keyStore || !apiKey.stripeCustomerId || costCents <= 0) return;
+function deductStripeCredits(
+  deps: ChatDeps,
+  apiKey: ApiKey,
+  costCents: number,
+  user?: User,
+): void {
+  if (costCents <= 0) return;
 
   try {
-    deps.keyStore.deductCredits(apiKey.id, costCents);
+    if (user && deps.userStore && user.stripeCustomerId) {
+      // User-owned key: deduct from user balance
+      deps.userStore.deductCredits(user.id, costCents);
+    } else if (!user && deps.keyStore && apiKey.stripeCustomerId) {
+      // Legacy key: deduct from key balance
+      deps.keyStore.deductCredits(apiKey.id, costCents);
+    }
   } catch (err) {
     console.error('[Billing] Stripe credit deduction failed (non-fatal):', err);
   }

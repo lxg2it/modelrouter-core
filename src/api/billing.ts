@@ -1,23 +1,22 @@
 /**
  * Billing API routes — Stripe payment setup and credit top-ups.
  *
+ * All routes require a session token (mr_st_...) in the Authorization header.
+ * Billing is managed at the user account level — all API keys for a user
+ * share one credit balance.
+ *
  * Route overview:
  *   POST /v1/billing/setup-intent   — Create SetupIntent for card entry
  *   POST /v1/billing/payment-method — Attach a confirmed payment method
  *   POST /v1/billing/top-up         — Charge saved card to add credits
  *   GET  /v1/billing/status         — Current balance and card info
- *
- * All routes require a valid API key (Bearer auth). The balance check
- * in the main auth middleware is bypassed for billing routes — you need
- * to be able to add credits even when balance is zero.
- *
- * Credit amounts are in cents (USD). 1000 = $10.00.
+ *   GET  /v1/billing/history        — Past top-up transactions
  */
 
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import type { AuthEnv } from '../auth/middleware.js';
-import type { KeyStore } from '../auth/keys.js';
+import type { SessionEnv } from '../auth/middleware.js';
+import type { UserStore } from '../auth/users.js';
 import type { StripeService } from '../billing/stripe.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
 
@@ -32,27 +31,27 @@ const MAX_TOP_UP_CENTS = 50_000;
 const PLATFORM_FEE_RATE = 0.04;
 
 export interface BillingRouterDeps {
-  keyStore: KeyStore;
+  userStore: UserStore;
   stripe: StripeService;
   billingTxStore: BillingTransactionStore;
   /** Stripe publishable key to include in responses (for client-side Stripe.js). */
   publishableKey: string;
 }
 
-export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
-  const { keyStore, stripe, billingTxStore, publishableKey } = deps;
-  const router = new Hono<AuthEnv>();
+export function createBillingRouter(deps: BillingRouterDeps): Hono<SessionEnv> {
+  const { userStore, stripe, billingTxStore, publishableKey } = deps;
+  const router = new Hono<SessionEnv>();
 
-  // ─── GET /v1/billing/status ────────────────────────────
+  // ─── GET /v1/billing/status ────────────────────────────────
   //
-  // Returns the current billing status for the authenticated key:
+  // Returns the current billing status for the authenticated user:
   //   - credit balance in cents
   //   - whether a Stripe customer exists
   //   - list of saved cards (masked)
   //   - publishable key for Stripe.js initialisation
   //
-  router.get('/status', async (c: Context<AuthEnv>) => {
-    const apiKey = c.get('apiKey');
+  router.get('/status', async (c: Context<SessionEnv>) => {
+    const user = c.get('user');
 
     const status: {
       creditBalanceCents: number;
@@ -67,16 +66,16 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
         expYear: number;
       }>;
     } = {
-      creditBalanceCents: apiKey.creditBalanceCents,
-      creditBalanceUsd: formatUsd(apiKey.creditBalanceCents),
-      stripeEnabled: !!apiKey.stripeCustomerId,
+      creditBalanceCents: user.creditBalanceCents,
+      creditBalanceUsd: formatUsd(user.creditBalanceCents),
+      stripeEnabled: !!user.stripeCustomerId,
       publishableKey,
       paymentMethods: [],
     };
 
-    if (apiKey.stripeCustomerId) {
+    if (user.stripeCustomerId) {
       try {
-        status.paymentMethods = await stripe.listPaymentMethods(apiKey.stripeCustomerId);
+        status.paymentMethods = await stripe.listPaymentMethods(user.stripeCustomerId);
       } catch (err) {
         // Non-fatal — return empty list rather than erroring the status endpoint
         console.error('[Billing] listPaymentMethods failed:', err);
@@ -86,7 +85,7 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
     return c.json(status);
   });
 
-  // ─── POST /v1/billing/setup-intent ────────────────────
+  // ─── POST /v1/billing/setup-intent ────────────────────────
   //
   // Creates a Stripe SetupIntent so the client can save a card without charging.
   //
@@ -96,19 +95,20 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
   //   3. On submit, Stripe.js confirms the SetupIntent
   //   4. Client calls POST /v1/billing/payment-method with the paymentMethodId
   //
-  // If the API key doesn't have a Stripe customer yet, one is created automatically.
+  // If the user doesn't have a Stripe customer yet, one is created automatically.
   //
-  router.post('/setup-intent', async (c: Context<AuthEnv>) => {
-    const apiKey = c.get('apiKey');
+  router.post('/setup-intent', async (c: Context<SessionEnv>) => {
+    const user = c.get('user');
 
-    // Ensure a Stripe customer exists for this key
-    let stripeCustomerId = apiKey.stripeCustomerId;
+    // Ensure a Stripe customer exists for this user
+    let stripeCustomerId = user.stripeCustomerId;
     if (!stripeCustomerId) {
       stripeCustomerId = await stripe.createCustomer({
-        name: apiKey.name,
-        metadata: { keyId: apiKey.id, keyPrefix: apiKey.keyPrefix },
+        email: user.email,
+        name: user.accountName,
+        metadata: { userId: user.id },
       });
-      keyStore.setStripeCustomerId(apiKey.id, stripeCustomerId);
+      userStore.setStripeCustomerId(user.id, stripeCustomerId);
     }
 
     const result = await stripe.createSetupIntent(stripeCustomerId);
@@ -121,17 +121,14 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
     });
   });
 
-  // ─── POST /v1/billing/payment-method ──────────────────
+  // ─── POST /v1/billing/payment-method ──────────────────────
   //
-  // Attach a payment method to the customer after SetupIntent confirmation.
+  // Attach a payment method to the user's Stripe customer after SetupIntent confirmation.
   //
   // Body: { paymentMethodId: string }
   //
-  // This is called by the client after Stripe.js has confirmed the SetupIntent.
-  // The paymentMethodId comes from the Stripe.js confirmation result.
-  //
-  router.post('/payment-method', async (c: Context<AuthEnv>) => {
-    const apiKey = c.get('apiKey');
+  router.post('/payment-method', async (c: Context<SessionEnv>) => {
+    const user = c.get('user');
 
     let body: { paymentMethodId?: string };
     try {
@@ -146,14 +143,14 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
       }, 400);
     }
 
-    let stripeCustomerId = apiKey.stripeCustomerId;
+    let stripeCustomerId = user.stripeCustomerId;
     if (!stripeCustomerId) {
-      // Create customer if needed (can happen if setup-intent wasn't called first)
       stripeCustomerId = await stripe.createCustomer({
-        name: apiKey.name,
-        metadata: { keyId: apiKey.id, keyPrefix: apiKey.keyPrefix },
+        email: user.email,
+        name: user.accountName,
+        metadata: { userId: user.id },
       });
-      keyStore.setStripeCustomerId(apiKey.id, stripeCustomerId);
+      userStore.setStripeCustomerId(user.id, stripeCustomerId);
     }
 
     const pm = await stripe.attachPaymentMethod(stripeCustomerId, body.paymentMethodId);
@@ -164,18 +161,17 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
     });
   });
 
-  // ─── POST /v1/billing/top-up ──────────────────────────
+  // ─── POST /v1/billing/top-up ──────────────────────────────
   //
-  // Charge the customer's saved card and add credits.
+  // Charge the user's saved card and add credits to their account balance.
   //
   // Body: { amountCents: number }   (e.g. 1000 = $10.00)
   //
-  // If the charge succeeds immediately, credits are added and returned.
-  // If 3DS is required, status is 'requires_action' and clientSecret is returned
-  // for the client to complete authentication.
+  // Credits are shared across all of the user's API keys.
+  // Platform fee of 4% is applied: a $10.00 charge gives $9.60 in credits.
   //
-  router.post('/top-up', async (c: Context<AuthEnv>) => {
-    const apiKey = c.get('apiKey');
+  router.post('/top-up', async (c: Context<SessionEnv>) => {
+    const user = c.get('user');
 
     let body: { amountCents?: number };
     try {
@@ -210,7 +206,7 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
       }, 400);
     }
 
-    if (!apiKey.stripeCustomerId) {
+    if (!user.stripeCustomerId) {
       return c.json({
         error: {
           message: 'No payment method on file. Call POST /v1/billing/setup-intent first.',
@@ -219,21 +215,20 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
       }, 402);
     }
 
-    const description = `Model Router credits — ${formatUsd(amountCents)} for key ${apiKey.keyPrefix}`;
-    const result = await stripe.charge(apiKey.stripeCustomerId, amountCents, description);
+    const description = `Model Router credits — ${formatUsd(amountCents)} for account ${user.email}`;
+    const result = await stripe.charge(user.stripeCustomerId, amountCents, description);
 
-    // Only add credits if the charge succeeded immediately.
     // Apply the 4% platform fee: user is credited 96% of the charge amount.
-    // Provider costs are passed through at exact rates — we only take our cut here.
     const creditsToAdd = Math.floor(amountCents * (1 - PLATFORM_FEE_RATE));
-    let newBalance = apiKey.creditBalanceCents;
+    let newBalance = user.creditBalanceCents;
     if (result.status === 'succeeded') {
-      newBalance = keyStore.addCredits(apiKey.id, creditsToAdd);
+      newBalance = userStore.addCredits(user.id, creditsToAdd);
     }
 
     // Record transaction for billing history
     billingTxStore.record({
-      keyId: apiKey.id,
+      userId: user.id,
+      keyId: null,
       paymentIntentId: result.paymentIntentId,
       amountChargedCents: result.amountCents,
       creditsAddedCents: result.status === 'succeeded' ? creditsToAdd : 0,
@@ -254,17 +249,17 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<AuthEnv> {
     });
   });
 
-  // ─── GET /v1/billing/history ──────────────────────────
+  // ─── GET /v1/billing/history ──────────────────────────────
   //
-  // Returns a list of past billing transactions (top-ups) for the authenticated key.
-  // Sorted newest-first. Optional `?limit=N` (default 20, max 100).
+  // Returns a list of past billing transactions (top-ups) for the authenticated user.
+  // Sorted newest-first. Optional ?limit=N (default 20, max 100).
   //
-  router.get('/history', (c: Context<AuthEnv>) => {
-    const apiKey = c.get('apiKey');
+  router.get('/history', (c: Context<SessionEnv>) => {
+    const user = c.get('user');
     const limitParam = c.req.query('limit');
     const limit = Math.min(100, Math.max(1, parseInt(limitParam ?? '20', 10) || 20));
 
-    const transactions = billingTxStore.list(apiKey.id, limit);
+    const transactions = billingTxStore.listByUser(user.id, limit);
     return c.json({
       transactions: transactions.map((t) => ({
         id: t.id,

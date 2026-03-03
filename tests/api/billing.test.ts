@@ -1,34 +1,35 @@
 /**
  * Tests for billing API routes — /v1/billing/...
  *
+ * Billing routes now require session auth (SessionEnv) and operate
+ * on User accounts rather than individual API keys.
+ *
  * Covers:
  *   - 4% platform fee applied on successful top-up
  *   - creditsAddedCents is 96% of amountCents (floor)
  *   - balance check routes
  *   - validation (min/max amounts)
  *   - 3DS required_action path passes through correctly
+ *   - 402 when no payment method on file
  */
 
 import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
-import type { AuthEnv } from '../../src/auth/middleware.js';
+import type { SessionEnv } from '../../src/auth/middleware.js';
 import { createBillingRouter } from '../../src/api/billing.js';
-import type { KeyStore } from '../../src/auth/keys.js';
+import type { UserStore } from '../../src/auth/users.js';
 import type { StripeService } from '../../src/billing/stripe.js';
 import type { BillingTransactionStore } from '../../src/billing/transactions.js';
-import type { ApiKey } from '../../src/types.js';
+import type { User } from '../../src/types.js';
 
 // ─── Helpers ─────────────────────────────────────────────
 
 const PUBLISHABLE_KEY = 'pk_test_fake';
 
-function fakeApiKey(overrides: Partial<ApiKey> = {}): ApiKey {
+function fakeUser(overrides: Partial<User> = {}): User {
   return {
-    id: 'key-id-1',
-    keyHash: 'hash',
-    keyPrefix: 'mr_sk_ab12',
-    tier: 'standard',
-    active: true,
+    id: 'user-id-1',
+    email: 'test@example.com',
     createdAt: new Date().toISOString(),
     creditBalanceCents: 5000,
     stripeCustomerId: 'cus_test123',
@@ -36,36 +37,37 @@ function fakeApiKey(overrides: Partial<ApiKey> = {}): ApiKey {
   };
 }
 
-function mockKeyStore(overrides: Partial<KeyStore> = {}): KeyStore {
+function mockUserStore(overrides: Partial<UserStore> = {}): UserStore {
   return {
-    generate: vi.fn(),
-    validate: vi.fn(),
+    signup: vi.fn(),
+    login: vi.fn(),
+    validateSession: vi.fn(),
+    logout: vi.fn(),
     findById: vi.fn(),
-    list: vi.fn(),
-    revoke: vi.fn(),
-    updateTier: vi.fn(),
-    setSatbillAccountId: vi.fn(),
+    findByEmail: vi.fn(),
+    findByStripeCustomerId: vi.fn(),
+    updateAccountName: vi.fn(),
     setStripeCustomerId: vi.fn(),
     addCredits: vi.fn().mockImplementation((_id: string, amount: number) => 5000 + amount),
     deductCredits: vi.fn(),
     ...overrides,
-  } as unknown as KeyStore;
+  } as unknown as UserStore;
 }
 
 function mockBillingTxStore(): BillingTransactionStore {
   return {
     record: vi.fn().mockReturnValue({ id: 'tx-1', createdAt: new Date().toISOString() }),
-    list: vi.fn().mockReturnValue([]),
+    listByUser: vi.fn().mockReturnValue([]),
+    listByKey: vi.fn().mockReturnValue([]),
   } as unknown as BillingTransactionStore;
 }
-
 
 function mockStripe(overrides: Partial<StripeService> = {}): StripeService {
   return {
     createCustomer: vi.fn(),
     createSetupIntent: vi.fn(),
     attachPaymentMethod: vi.fn(),
-    getPaymentMethods: vi.fn().mockResolvedValue([]),
+    listPaymentMethods: vi.fn().mockResolvedValue([]),
     charge: vi.fn().mockResolvedValue({
       paymentIntentId: 'pi_test123',
       status: 'succeeded',
@@ -76,13 +78,26 @@ function mockStripe(overrides: Partial<StripeService> = {}): StripeService {
   } as unknown as StripeService;
 }
 
-/** Build the billing router wrapped in a minimal app that injects an API key into context. */
-function buildApp(apiKey: ApiKey, keyStore: KeyStore, stripe: StripeService, billingTxStore?: BillingTransactionStore): Hono {
-  const billing = createBillingRouter({ keyStore, stripe, billingTxStore: billingTxStore ?? mockBillingTxStore(), publishableKey: PUBLISHABLE_KEY });
-  const app = new Hono<AuthEnv>();
-  // Inject apiKey into context (simulating auth middleware)
+/**
+ * Build the billing router wrapped in a minimal app that injects a user into context,
+ * simulating the session middleware.
+ */
+function buildApp(
+  user: User,
+  userStore: UserStore,
+  stripe: StripeService,
+  billingTxStore?: BillingTransactionStore,
+): Hono {
+  const billing = createBillingRouter({
+    userStore,
+    stripe,
+    billingTxStore: billingTxStore ?? mockBillingTxStore(),
+    publishableKey: PUBLISHABLE_KEY,
+  });
+  const app = new Hono<SessionEnv>();
+  // Inject user into context (simulating session middleware)
   app.use('*', async (c, next) => {
-    c.set('apiKey', apiKey);
+    c.set('user', user);
     await next();
   });
   app.route('/', billing);
@@ -93,10 +108,10 @@ function buildApp(apiKey: ApiKey, keyStore: KeyStore, stripe: StripeService, bil
 
 describe('POST /top-up — platform fee', () => {
   it('credits 96% of the charge amount (4% fee)', async () => {
-    const keyStore = mockKeyStore();
+    const userStore = mockUserStore();
     const stripe = mockStripe();
-    const apiKey = fakeApiKey();
-    const app = buildApp(apiKey, keyStore, stripe);
+    const user = fakeUser();
+    const app = buildApp(user, userStore, stripe);
 
     const res = await app.request('/top-up', {
       method: 'POST',
@@ -112,12 +127,12 @@ describe('POST /top-up — platform fee', () => {
     expect(body.creditsAddedCents).toBe(960);
     expect(body.creditsAddedUsd).toBe('$9.60');
 
-    // addCredits called with the fee-adjusted amount
-    expect(keyStore.addCredits).toHaveBeenCalledWith(apiKey.id, 960);
+    // addCredits called with the fee-adjusted amount on the user
+    expect(userStore.addCredits).toHaveBeenCalledWith(user.id, 960);
   });
 
   it('floors fractional credits correctly', async () => {
-    const keyStore = mockKeyStore();
+    const userStore = mockUserStore();
     const stripe = mockStripe({
       charge: vi.fn().mockResolvedValue({
         paymentIntentId: 'pi_test',
@@ -126,8 +141,8 @@ describe('POST /top-up — platform fee', () => {
         clientSecret: null,
       }),
     });
-    const apiKey = fakeApiKey();
-    const app = buildApp(apiKey, keyStore, stripe);
+    const user = fakeUser();
+    const app = buildApp(user, userStore, stripe);
 
     const res = await app.request('/top-up', {
       method: 'POST',
@@ -138,11 +153,11 @@ describe('POST /top-up — platform fee', () => {
     expect(res.status).toBe(200);
     const body = await res.json() as Record<string, unknown>;
     expect(body.creditsAddedCents).toBe(480);
-    expect(keyStore.addCredits).toHaveBeenCalledWith(apiKey.id, 480);
+    expect(userStore.addCredits).toHaveBeenCalledWith(user.id, 480);
   });
 
   it('does not add credits if status is requires_action', async () => {
-    const keyStore = mockKeyStore();
+    const userStore = mockUserStore();
     const stripe = mockStripe({
       charge: vi.fn().mockResolvedValue({
         paymentIntentId: 'pi_test',
@@ -151,8 +166,8 @@ describe('POST /top-up — platform fee', () => {
         clientSecret: 'pi_secret_abc',
       }),
     });
-    const apiKey = fakeApiKey();
-    const app = buildApp(apiKey, keyStore, stripe);
+    const user = fakeUser();
+    const app = buildApp(user, userStore, stripe);
 
     const res = await app.request('/top-up', {
       method: 'POST',
@@ -164,11 +179,11 @@ describe('POST /top-up — platform fee', () => {
     const body = await res.json() as Record<string, unknown>;
     expect(body.status).toBe('requires_action');
     expect(body.creditsAddedCents).toBe(0);
-    expect(keyStore.addCredits).not.toHaveBeenCalled();
+    expect(userStore.addCredits).not.toHaveBeenCalled();
   });
 
   it('rejects amounts below minimum ($5.00)', async () => {
-    const app = buildApp(fakeApiKey(), mockKeyStore(), mockStripe());
+    const app = buildApp(fakeUser(), mockUserStore(), mockStripe());
     const res = await app.request('/top-up', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -180,7 +195,7 @@ describe('POST /top-up — platform fee', () => {
   });
 
   it('rejects amounts above maximum ($500.00)', async () => {
-    const app = buildApp(fakeApiKey(), mockKeyStore(), mockStripe());
+    const app = buildApp(fakeUser(), mockUserStore(), mockStripe());
     const res = await app.request('/top-up', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -192,8 +207,8 @@ describe('POST /top-up — platform fee', () => {
   });
 
   it('returns 402 if no payment method on file', async () => {
-    const apiKey = fakeApiKey({ stripeCustomerId: undefined });
-    const app = buildApp(apiKey, mockKeyStore(), mockStripe());
+    const user = fakeUser({ stripeCustomerId: undefined });
+    const app = buildApp(user, mockUserStore(), mockStripe());
     const res = await app.request('/top-up', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -205,7 +220,7 @@ describe('POST /top-up — platform fee', () => {
   });
 
   it('returns 400 for non-integer amountCents', async () => {
-    const app = buildApp(fakeApiKey(), mockKeyStore(), mockStripe());
+    const app = buildApp(fakeUser(), mockUserStore(), mockStripe());
     const res = await app.request('/top-up', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

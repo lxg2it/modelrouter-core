@@ -32,6 +32,7 @@ export class KeyStore {
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         last_used_at TEXT,
         active INTEGER NOT NULL DEFAULT 1,
+        user_id TEXT REFERENCES users(id),
         satbill_account_id TEXT,
         stripe_customer_id TEXT,
         credit_balance_cents INTEGER NOT NULL DEFAULT 0
@@ -49,6 +50,9 @@ export class KeyStore {
     if (!cols.some((c) => c.name === 'credit_balance_cents')) {
       this.db.exec(`ALTER TABLE api_keys ADD COLUMN credit_balance_cents INTEGER NOT NULL DEFAULT 0`);
     }
+    if (!cols.some((c) => c.name === 'user_id')) {
+      this.db.exec(`ALTER TABLE api_keys ADD COLUMN user_id TEXT REFERENCES users(id)`);
+    }
   }
 
   /**
@@ -58,6 +62,7 @@ export class KeyStore {
     tier: Tier,
     name?: string,
     satbillAccountId?: string,
+    userId?: string,
   ): { fullKey: string; record: ApiKey } {
     const rawKey = randomBytes(32).toString('base64url');
     const fullKey = `${KEY_PREFIX}${rawKey}`;
@@ -66,10 +71,10 @@ export class KeyStore {
     const id = randomBytes(8).toString('hex');
 
     const stmt = this.db.prepare(`
-      INSERT INTO api_keys (id, key_hash, key_prefix, tier, name, satbill_account_id)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO api_keys (id, key_hash, key_prefix, tier, name, satbill_account_id, user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(id, keyHash, keyPrefix, tier, name ?? null, satbillAccountId ?? null);
+    stmt.run(id, keyHash, keyPrefix, tier, name ?? null, satbillAccountId ?? null, userId ?? null);
 
     return {
       fullKey,
@@ -80,6 +85,7 @@ export class KeyStore {
         tier,
         name,
         satbillAccountId,
+        userId,
         createdAt: new Date().toISOString(),
         active: true,
         creditBalanceCents: 0,
@@ -192,13 +198,44 @@ export class KeyStore {
   }
 
   /**
-   * Revoke an API key.
+   * Revoke an API key (admin — by ID alone).
    */
   revoke(id: string): boolean {
     const result = this.db.prepare(`
       UPDATE api_keys SET active = 0 WHERE id = ?
     `).run(id);
     return result.changes > 0;
+  }
+
+  /**
+   * Revoke a key only if it belongs to the given user.
+   * Returns false if the key doesn't exist or isn't owned by that user.
+   */
+  revokeForUser(keyId: string, userId: string): boolean {
+    const result = this.db.prepare(`
+      UPDATE api_keys SET active = 0 WHERE id = ? AND user_id = ?
+    `).run(keyId, userId);
+    return result.changes > 0;
+  }
+
+  /**
+   * Rename a key — only if it belongs to the given user.
+   */
+  renameForUser(keyId: string, userId: string, name: string | null): boolean {
+    const result = this.db.prepare(`
+      UPDATE api_keys SET name = ? WHERE id = ? AND user_id = ?
+    `).run(name, keyId, userId);
+    return result.changes > 0;
+  }
+
+  /**
+   * List all API keys for a given user (including inactive ones, for management UI).
+   */
+  listByUser(userId: string): ApiKey[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC
+    `).all(userId) as DbApiKeyRow[];
+    return rows.map((r) => this.toApiKey(r));
   }
 
   /**
@@ -227,6 +264,7 @@ export class KeyStore {
       createdAt: row.created_at,
       lastUsedAt: row.last_used_at ?? undefined,
       active: row.active === 1,
+      userId: row.user_id ?? undefined,
       satbillAccountId: row.satbill_account_id ?? undefined,
       stripeCustomerId: row.stripe_customer_id ?? undefined,
       creditBalanceCents: row.credit_balance_cents ?? 0,
@@ -245,6 +283,7 @@ interface DbApiKeyRow {
   created_at: string;
   last_used_at: string | null;
   active: number;
+  user_id: string | null;
   satbill_account_id: string | null;
   stripe_customer_id: string | null;
   credit_balance_cents: number;

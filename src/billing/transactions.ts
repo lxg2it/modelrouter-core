@@ -4,13 +4,18 @@
  * Every successful (or attempted) Stripe charge is written here.
  * This powers the billing history section of the profile page.
  *
+ * Supports two billing modes:
+ *   - User-level billing: user_id is set, key_id is null
+ *   - Legacy key-level billing: key_id is set, user_id is null
+ *
  * Table: billing_transactions
  *   id TEXT PRIMARY KEY
- *   key_id TEXT NOT NULL
- *   payment_intent_id TEXT        — Stripe PI id (null for non-Stripe payments)
- *   amount_charged_cents INTEGER  — what Stripe charged the card
- *   credits_added_cents INTEGER   — what we credited (after fee)
- *   status TEXT NOT NULL          — 'succeeded' | 'requires_action' | 'failed'
+ *   user_id TEXT               — user account (for user-level billing)
+ *   key_id TEXT                — legacy: billing was per-key before user accounts
+ *   payment_intent_id TEXT     — Stripe PI id (null for non-Stripe payments)
+ *   amount_charged_cents INT   — what Stripe charged the card
+ *   credits_added_cents INT    — what we credited (after fee)
+ *   status TEXT NOT NULL       — 'succeeded' | 'requires_action' | 'failed'
  *   created_at TEXT NOT NULL
  */
 
@@ -19,7 +24,8 @@ import Database from 'better-sqlite3';
 
 export interface BillingTransaction {
   id: string;
-  keyId: string;
+  userId: string | null;
+  keyId: string | null;
   paymentIntentId: string | null;
   amountChargedCents: number;
   creditsAddedCents: number;
@@ -39,16 +45,26 @@ export class BillingTransactionStore {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS billing_transactions (
         id TEXT PRIMARY KEY,
-        key_id TEXT NOT NULL,
+        user_id TEXT,
+        key_id TEXT,
         payment_intent_id TEXT,
         amount_charged_cents INTEGER NOT NULL,
         credits_added_cents INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
+      CREATE INDEX IF NOT EXISTS idx_billing_user_id ON billing_transactions(user_id);
       CREATE INDEX IF NOT EXISTS idx_billing_key_id ON billing_transactions(key_id);
       CREATE INDEX IF NOT EXISTS idx_billing_created ON billing_transactions(created_at);
     `);
+
+    // Migration: add user_id column to existing tables
+    const cols = this.db.pragma('table_info(billing_transactions)') as { name: string }[];
+    if (!cols.some((c) => c.name === 'user_id')) {
+      this.db.exec(`ALTER TABLE billing_transactions ADD COLUMN user_id TEXT`);
+    }
+    // key_id was previously NOT NULL — it's now nullable (user_id takes its place)
+    // SQLite can't alter constraints, but since key_id is TEXT it already allows NULL via ALTER
   }
 
   /**
@@ -58,11 +74,12 @@ export class BillingTransactionStore {
     const id = randomBytes(8).toString('hex');
     this.db.prepare(`
       INSERT INTO billing_transactions
-        (id, key_id, payment_intent_id, amount_charged_cents, credits_added_cents, status)
-      VALUES (?, ?, ?, ?, ?, ?)
+        (id, user_id, key_id, payment_intent_id, amount_charged_cents, credits_added_cents, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
-      params.keyId,
+      params.userId ?? null,
+      params.keyId ?? null,
       params.paymentIntentId ?? null,
       params.amountChargedCents,
       params.creditsAddedCents,
@@ -77,12 +94,26 @@ export class BillingTransactionStore {
   }
 
   /**
-   * List billing history for a key, newest first.
+   * List billing history for a user, newest first.
    */
-  list(keyId: string, limit: number = 20): BillingTransaction[] {
+  listByUser(userId: string, limit: number = 20): BillingTransaction[] {
     const rows = this.db.prepare(`
       SELECT * FROM billing_transactions
-      WHERE key_id = ?
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(userId, limit) as DbRow[];
+
+    return rows.map(this.toTransaction);
+  }
+
+  /**
+   * List billing history for a legacy key, newest first.
+   */
+  listByKey(keyId: string, limit: number = 20): BillingTransaction[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM billing_transactions
+      WHERE key_id = ? AND user_id IS NULL
       ORDER BY created_at DESC
       LIMIT ?
     `).all(keyId, limit) as DbRow[];
@@ -93,7 +124,8 @@ export class BillingTransactionStore {
   private toTransaction(row: DbRow): BillingTransaction {
     return {
       id: row.id,
-      keyId: row.key_id,
+      userId: row.user_id ?? null,
+      keyId: row.key_id ?? null,
       paymentIntentId: row.payment_intent_id,
       amountChargedCents: row.amount_charged_cents,
       creditsAddedCents: row.credits_added_cents,
@@ -105,7 +137,8 @@ export class BillingTransactionStore {
 
 interface DbRow {
   id: string;
-  key_id: string;
+  user_id: string | null;
+  key_id: string | null;
   payment_intent_id: string | null;
   amount_charged_cents: number;
   credits_added_cents: number;

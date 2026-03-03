@@ -1,46 +1,62 @@
 /**
  * Authentication middleware for Hono.
  *
- * Validates Bearer tokens against the key store, then enforces billing
- * access checks before routing:
+ * Two middleware functions are exported:
  *
- *   1. Satbill: if the key is linked to a satbill account, check balance
- *      via the satbill API (returns 402 if canAccess is false).
+ * 1. authMiddleware — validates Bearer API keys (mr_sk_...) for API routes.
+ *    Also enforces billing access checks (Satbill, Stripe credits).
+ *    For user-owned keys, balance is checked on the User record.
+ *    For legacy keys (no userId), balance is checked on the key itself.
  *
- *   2. Stripe credits: if the key has a stripeCustomerId and a zero or
- *      negative creditBalanceCents, reject with 402. Billing routes are
- *      exempt — users must be able to top up even when balance is zero.
- *
- * Attaches the API key record (including tier) to the request context.
- * If billing is configured, also attaches the satbill account ID so the
- * chat handler can perform post-request cost deduction.
+ * 2. sessionMiddleware — validates session tokens (mr_st_...) for management
+ *    routes (key CRUD, billing setup, profile). Attaches the User record.
  */
 
 import type { Context, Next } from 'hono';
 import type { KeyStore } from './keys.js';
+import type { UserStore } from './users.js';
 import type { SatbillClient } from '../billing/satbill-client.js';
-import type { ApiKey } from '../types.js';
+import type { ApiKey, User } from '../types.js';
 
 /**
- * Environment type extension for Hono context.
- * Variables attached here are available downstream in route handlers.
+ * Environment type for routes authenticated with an API key.
+ * Most API routes (/v1/chat, /v1/models, /v1/usage) use this.
  */
 export interface AuthEnv {
   Variables: {
     apiKey: ApiKey;
     /** Satbill account ID — present only if billing is enabled for this key. */
     satbillAccountId: string | undefined;
+    /**
+     * The user who owns this key, if it's a user-owned key.
+     * Present when apiKey.userId is set.
+     */
+    user: User | undefined;
   };
 }
 
 /**
- * Create auth middleware that validates API keys and checks billing access.
+ * Environment type for routes authenticated with a session token.
+ * Management routes (/v1/keys, /v1/account, /v1/billing) use this.
+ */
+export interface SessionEnv {
+  Variables: {
+    user: User;
+  };
+}
+
+/**
+ * Create API key auth middleware.
  *
  * @param keyStore     Key storage for validation
- * @param satbill      Optional satbill client. When provided, keys with a
- *                     `satbillAccountId` will be checked for balance before routing.
+ * @param userStore    User storage — needed to load user balance for user-owned keys
+ * @param satbill      Optional satbill client for Bitcoin balance checks
  */
-export function authMiddleware(keyStore: KeyStore, satbill?: SatbillClient) {
+export function authMiddleware(
+  keyStore: KeyStore,
+  userStore: UserStore,
+  satbill?: SatbillClient,
+) {
   return async (c: Context<AuthEnv>, next: Next) => {
     const authHeader = c.req.header('Authorization');
 
@@ -76,6 +92,9 @@ export function authMiddleware(keyStore: KeyStore, satbill?: SatbillClient) {
       }, 401);
     }
 
+    // Load the owning user if this is a user-owned key
+    const user = apiKey.userId ? userStore.findById(apiKey.userId) ?? undefined : undefined;
+
     // Satbill access check (if this key is linked to a Bitcoin billing account)
     if (satbill && apiKey.satbillAccountId) {
       const access = await satbill.checkAccess(apiKey.satbillAccountId);
@@ -85,27 +104,34 @@ export function authMiddleware(keyStore: KeyStore, satbill?: SatbillClient) {
             message: 'Insufficient balance. Please top up your Bitcoin account.',
             type: 'insufficient_quota',
             code: 'insufficient_balance',
-            // Include the account ID so clients can construct a deposit link
             account_id: apiKey.satbillAccountId,
           },
         }, 402);
       }
     }
 
-    // Stripe credit check — if this key is on card billing, enforce balance.
+    // Stripe credit check — enforce balance if billing is enabled.
+    // Billing routes (/billing/*) are exempt: users must be able to top up
+    // even when balance is zero.
     //
-    // Billing routes (/billing/*) are exempt: users must be able to reach
-    // top-up and setup-intent even when their balance has hit zero.
-    //
-    // We use the local creditBalanceCents value loaded during validate() —
-    // it is always fresh (SQLite read) and avoids a Stripe API call here.
-    if (apiKey.stripeCustomerId && apiKey.creditBalanceCents <= 0) {
-      const isBillingPath = c.req.path.includes('/billing');
-      if (!isBillingPath) {
+    // For user-owned keys: check the user's balance.
+    // For legacy keys: check the key's own balance.
+    const isBillingPath = c.req.path.includes('/billing');
+    if (!isBillingPath) {
+      if (user && user.stripeCustomerId && user.creditBalanceCents <= 0) {
         return c.json({
           error: {
-            message:
-              'Insufficient credits. Add more at POST /v1/billing/top-up or visit your billing dashboard.',
+            message: 'Insufficient credits. Add more at POST /v1/billing/top-up or visit your billing dashboard.',
+            type: 'insufficient_quota',
+            code: 'insufficient_credits',
+            creditBalanceCents: user.creditBalanceCents,
+          },
+        }, 402);
+      } else if (!user && apiKey.stripeCustomerId && apiKey.creditBalanceCents <= 0) {
+        // Legacy key — check key-level balance
+        return c.json({
+          error: {
+            message: 'Insufficient credits. Add more at POST /v1/billing/top-up or visit your billing dashboard.',
             type: 'insufficient_quota',
             code: 'insufficient_credits',
             creditBalanceCents: apiKey.creditBalanceCents,
@@ -116,6 +142,52 @@ export function authMiddleware(keyStore: KeyStore, satbill?: SatbillClient) {
 
     c.set('apiKey', apiKey);
     c.set('satbillAccountId', apiKey.satbillAccountId);
+    c.set('user', user);
+    await next();
+  };
+}
+
+/**
+ * Create session auth middleware for management routes.
+ * Validates mr_st_... session tokens and attaches the User to context.
+ */
+export function sessionMiddleware(userStore: UserStore) {
+  return async (c: Context<SessionEnv>, next: Next) => {
+    const authHeader = c.req.header('Authorization');
+
+    if (!authHeader) {
+      return c.json({
+        error: {
+          message: 'Missing Authorization header. Use: Authorization: Bearer mr_st_...',
+          type: 'authentication_error',
+          code: 'missing_session_token',
+        },
+      }, 401);
+    }
+
+    const [scheme, token] = authHeader.split(' ');
+    if (scheme !== 'Bearer' || !token) {
+      return c.json({
+        error: {
+          message: 'Invalid Authorization header format.',
+          type: 'authentication_error',
+          code: 'invalid_session_token',
+        },
+      }, 401);
+    }
+
+    const user = userStore.validateSession(token);
+    if (!user) {
+      return c.json({
+        error: {
+          message: 'Invalid or expired session. Please log in again.',
+          type: 'authentication_error',
+          code: 'invalid_session_token',
+        },
+      }, 401);
+    }
+
+    c.set('user', user);
     await next();
   };
 }

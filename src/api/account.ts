@@ -1,8 +1,8 @@
 /**
- * GET/PATCH /v1/account/profile — user profile for the authenticated key.
+ * GET/PATCH /v1/account/profile — user profile for the authenticated session.
  *
- * Returns account metadata, usage summary, and key details.
- * Allows updating the display name for the key.
+ * Returns account metadata, credit balance, usage summary across all keys,
+ * and allows updating the display name.
  *
  * Routes:
  *   GET  /v1/account/profile         — fetch profile + 30-day usage summary
@@ -11,62 +11,84 @@
 
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import type { AuthEnv } from '../auth/middleware.js';
+import type { SessionEnv } from '../auth/middleware.js';
+import type { UserStore } from '../auth/users.js';
 import type { KeyStore } from '../auth/keys.js';
 import type { UsageStore } from '../tracking/store.js';
-import Database from 'better-sqlite3';
 
 export interface AccountRouterDeps {
+  userStore: UserStore;
   keyStore: KeyStore;
   usageStore: UsageStore;
-  db: Database.Database;
 }
 
-export function createAccountRouter(deps: AccountRouterDeps): Hono<AuthEnv> {
-  const { keyStore, usageStore, db } = deps;
-  const router = new Hono<AuthEnv>();
+export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
+  const { userStore, keyStore, usageStore } = deps;
+  const router = new Hono<SessionEnv>();
 
-  // ─── GET /v1/account/profile ──────────────────────────
-  router.get('/profile', (c: Context<AuthEnv>) => {
-    const apiKey = c.get('apiKey');
-    const summary7d = usageStore.getUsageSummary(apiKey.id, 7);
-    const summary30d = usageStore.getUsageSummary(apiKey.id, 30);
-    const daily30d = usageStore.getDailyUsage(apiKey.id, 30);
+  // ─── GET /v1/account/profile ──────────────────────────────
+  router.get('/profile', (c: Context<SessionEnv>) => {
+    const user = c.get('user');
+    const keys = keyStore.listByUser(user.id);
+
+    // Aggregate usage across all active keys
+    let totalRequests7d = 0, totalTokens7d = 0, totalCostCents7d = 0;
+    let totalRequests30d = 0, totalTokens30d = 0, totalCostCents30d = 0;
+    const modelRequestCounts: Record<string, number> = {};
+    const latencies: number[] = [];
+
+    for (const key of keys.filter((k) => k.active)) {
+      const s7d = usageStore.getUsageSummary(key.id, 7);
+      const s30d = usageStore.getUsageSummary(key.id, 30);
+      totalRequests7d += s7d.totalRequests;
+      totalTokens7d += s7d.totalTokens;
+      totalCostCents7d += s7d.totalCostCents;
+      totalRequests30d += s30d.totalRequests;
+      totalTokens30d += s30d.totalTokens;
+      totalCostCents30d += s30d.totalCostCents;
+      if (s7d.avgLatencyMs > 0) latencies.push(s7d.avgLatencyMs);
+      for (const entry of s30d.modelDistribution) {
+        const key_ = `${entry.provider}/${entry.model}`;
+        modelRequestCounts[key_] = (modelRequestCounts[key_] ?? 0) + entry.requestCount;
+      }
+    }
+
+    const avgLatencyMs = latencies.length > 0
+      ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+      : 0;
 
     return c.json({
-      keyPrefix: apiKey.keyPrefix,
-      name: apiKey.name ?? null,
-      tier: apiKey.tier,
-      createdAt: apiKey.createdAt,
-      lastUsedAt: apiKey.lastUsedAt ?? null,
-      creditBalanceCents: apiKey.creditBalanceCents,
-      creditBalanceUsd: formatUsd(apiKey.creditBalanceCents),
-      stripeEnabled: !!apiKey.stripeCustomerId,
+      id: user.id,
+      email: user.email,
+      name: user.accountName ?? null,
+      createdAt: user.createdAt,
+      creditBalanceCents: user.creditBalanceCents,
+      creditBalanceUsd: formatUsd(user.creditBalanceCents),
+      stripeEnabled: !!user.stripeCustomerId,
+      keyCount: keys.length,
+      activeKeyCount: keys.filter((k) => k.active).length,
       usage: {
         last7Days: {
-          requestCount: summary7d.totalRequests,
-          totalTokens: summary7d.totalTokens,
-          costCents: summary7d.totalCostCents,
-          costUsd: formatUsd(summary7d.totalCostCents),
-          avgLatencyMs: summary7d.avgLatencyMs,
-          modelDistribution: summary7d.modelDistribution,
+          requestCount: totalRequests7d,
+          totalTokens: totalTokens7d,
+          costCents: totalCostCents7d,
+          costUsd: formatUsd(totalCostCents7d),
+          avgLatencyMs,
         },
         last30Days: {
-          requestCount: summary30d.totalRequests,
-          totalTokens: summary30d.totalTokens,
-          costCents: summary30d.totalCostCents,
-          costUsd: formatUsd(summary30d.totalCostCents),
-          avgLatencyMs: summary30d.avgLatencyMs,
-          modelDistribution: summary30d.modelDistribution,
+          requestCount: totalRequests30d,
+          totalTokens: totalTokens30d,
+          costCents: totalCostCents30d,
+          costUsd: formatUsd(totalCostCents30d),
+          modelDistribution: modelRequestCounts,
         },
-        dailyHistory: daily30d,
       },
     });
   });
 
-  // ─── PATCH /v1/account/profile ────────────────────────
-  router.patch('/profile', async (c: Context<AuthEnv>) => {
-    const apiKey = c.get('apiKey');
+  // ─── PATCH /v1/account/profile ────────────────────────────
+  router.patch('/profile', async (c: Context<SessionEnv>) => {
+    const user = c.get('user');
 
     let body: { name?: unknown };
     try {
@@ -91,9 +113,9 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<AuthEnv> {
       }, 400);
     }
 
-    db.prepare(`UPDATE api_keys SET name = ? WHERE id = ?`).run(name, apiKey.id);
+    userStore.updateAccountName(user.id, name);
 
-    return c.json({ keyPrefix: apiKey.keyPrefix, name });
+    return c.json({ id: user.id, email: user.email, name });
   });
 
   return router;
