@@ -9,7 +9,7 @@ import Database from 'better-sqlite3';
 import { loadConfig, type Config } from './config.js';
 import { KeyStore } from './auth/keys.js';
 import { UserStore } from './auth/users.js';
-import { authMiddleware, sessionMiddleware, type AuthEnv, type SessionEnv } from './auth/middleware.js';
+import { authMiddleware, sessionMiddleware } from './auth/middleware.js';
 import { RoutingEngine } from './routing/engine.js';
 import { createChatRouter } from './api/chat.js';
 import { createModelsRouter, createUsageRouter } from './api/models.js';
@@ -139,44 +139,55 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   // ─── API routes (API key auth) ────────────────────────────
   //
   // Chat, models, and usage — authenticated with API keys (mr_sk_...).
+  // Middleware is applied per-path to avoid intercepting management routes.
   //
-  const api = new Hono<AuthEnv>();
-  api.use('*', authMiddleware(keyStore, userStore, billing));
+  const apiAuth = authMiddleware(keyStore, userStore, billing);
 
-  api.route('/chat/completions', createChatRouter({
+  const chatRouter = createChatRouter({
     router,
     providers,
     logger: usageLogger,
     billing,
     userStore: stripeService ? userStore : undefined,
     keyStore: stripeService ? keyStore : undefined,
-  }));
-  api.route('/models', createModelsRouter({ usageStore }));
-  api.route('/usage', createUsageRouter({ usageStore }));
+  });
+  app.use('/v1/chat/*', apiAuth);
+  app.route('/v1/chat', chatRouter);
 
-  app.route('/v1', api);
+  const modelsRouter = createModelsRouter({ usageStore });
+  app.use('/v1/models/*', apiAuth);
+  app.route('/v1/models', modelsRouter);
+
+  const usageRouter = createUsageRouter({ usageStore });
+  app.use('/v1/usage/*', apiAuth);
+  app.route('/v1/usage', usageRouter);
 
   // ─── Management routes (session auth) ────────────────────
   //
   // Key management, account profile, and billing — authenticated with
   // session tokens (mr_st_...) returned by /v1/auth/login.
   //
-  const mgmt = new Hono<SessionEnv>();
-  mgmt.use('*', sessionMiddleware(userStore));
+  const sessionAuth = sessionMiddleware(userStore);
 
-  mgmt.route('/account', createAccountRouter({ userStore, keyStore, usageStore }));
-  mgmt.route('/keys', createKeysRouter({ keyStore, usageStore }));
+  const accountRouter = createAccountRouter({ userStore, keyStore, usageStore });
+  app.use('/v1/account/*', sessionAuth);
+  app.route('/v1/account', accountRouter);
+
+  const keysRouter = createKeysRouter({ keyStore, usageStore });
+  app.use('/v1/keys/*', sessionAuth);
+  app.use('/v1/keys', sessionAuth); // also matches exact path (list)
+  app.route('/v1/keys', keysRouter);
 
   if (stripeService && config.stripe) {
-    mgmt.route('/billing', createBillingRouter({
+    const billingRouter = createBillingRouter({
       userStore,
       stripe: stripeService,
       billingTxStore,
       publishableKey: config.stripe.publishableKey,
-    }));
+    });
+    app.use('/v1/billing/*', sessionAuth);
+    app.route('/v1/billing', billingRouter);
   }
-
-  app.route('/v1', mgmt);
 
   // Dashboard — self-service billing UI, served only when Stripe is configured.
   if (stripeService) {
