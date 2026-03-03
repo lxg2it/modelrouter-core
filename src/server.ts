@@ -30,6 +30,7 @@ import { createLandingRouter } from './api/landing.js';
 import { createAccountRouter } from './api/account.js';
 import { createProfileRouter } from './api/profile.js';
 import { createLegalRouter } from './api/legal.js';
+import { createAdminRouter } from './api/admin.js';
 import { ResendEmailSender, ConsoleEmailSender } from './auth/email.js';
 import type { EmailSender } from './auth/email.js';
 import { RateLimiter } from './ratelimit/token-bucket.js';
@@ -232,10 +233,15 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   }
 
   // Profile page — always available (shows account + usage; billing section shown only if Stripe is configured)
-  app.route('/profile', createProfileRouter());
+  app.route('/profile', createProfileRouter({ adminEmails: config.adminEmails }));
 
   // Legal pages — always available, unauthenticated
   app.route('/', createLegalRouter());
+
+  // Admin dashboard — session auth + admin email required
+  app.use('/admin/*', sessionAuth);
+  app.use('/admin', sessionAuth); // also matches exact path
+  app.route('/admin', createAdminRouter({ db, adminEmails: config.adminEmails }));
 
   // Global error handler
   app.onError((err, c) => {

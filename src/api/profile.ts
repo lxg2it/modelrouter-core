@@ -21,11 +21,17 @@
 
 import { Hono } from 'hono';
 
-export function createProfileRouter(): Hono {
+export interface ProfileDeps {
+  adminEmails?: string[];
+}
+
+export function createProfileRouter(deps: ProfileDeps = {}): Hono {
   const router = new Hono();
+  const adminEmailsJson = JSON.stringify((deps.adminEmails ?? []).map((e) => e.toLowerCase()));
   router.get('/', (c) => {
     c.header('Content-Type', 'text/html; charset=utf-8');
-    return c.body(PROFILE_HTML);
+    // Inject admin email list for conditional admin link rendering
+    return c.body(PROFILE_HTML.replace('/* __ADMIN_EMAILS__ */', `const ADMIN_EMAILS = ${adminEmailsJson};`));
   });
   return router;
 }
@@ -329,6 +335,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 </div> <!-- /container -->
 
 <script>
+  /* __ADMIN_EMAILS__ */
   const BASE = '';
   let sessionToken = localStorage.getItem('mr_session') || '';
   let currentUsageTab = 30;
@@ -359,8 +366,12 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
   function showDashboard() {
     document.getElementById('authSection').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
+    const email = (profileData?.email ?? '').toLowerCase();
+    const adminLink = (typeof ADMIN_EMAILS !== 'undefined' && ADMIN_EMAILS.includes(email))
+      ? '<a href="/admin" class="btn btn-secondary" style="text-decoration:none">Admin ↗</a>'
+      : '';
     document.getElementById('headerActions').innerHTML =
-      '<button class="btn btn-secondary" onclick="doLogout()">Log out</button>';
+      adminLink + '<button class="btn btn-secondary" onclick="doLogout()">Log out</button>';
   }
 
   async function loadDashboard() {

@@ -174,7 +174,8 @@ const SHARED_STYLES = /* html */`
       font-size: 12px; font-weight: 600; color: var(--muted);
       text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px;
     }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 420px; }
     th {
       text-align: left; padding: 6px 10px;
       border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 500;
@@ -236,18 +237,20 @@ function renderModelsHtml(models: ModelInfo[]): string {
         <span class="badge ${badgeClass}">${tier}</span>
         &nbsp; ${description}
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Model</th>
-            <th>Provider</th>
-            <th>Input / 1M tokens</th>
-            <th>Output / 1M tokens</th>
-            <th>Context</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Provider</th>
+              <th>Input / 1M tokens</th>
+              <th>Output / 1M tokens</th>
+              <th>Context</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
     </div>`;
   }).join('\n');
 
