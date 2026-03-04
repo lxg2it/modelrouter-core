@@ -141,7 +141,7 @@ export class OpenAIAdapter implements ProviderAdapter {
             c.delta.role !== undefined ||
             c.delta.content !== undefined ||
             (c.delta.tool_calls?.length ?? 0) > 0 ||
-            c.finish_reason !== null,
+            c.finish_reason != null, // loose: catches both null and absent (undefined) finish_reason
         );
         if (!hasContent) continue;
 

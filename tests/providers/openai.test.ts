@@ -146,5 +146,33 @@ describe('OpenAIAdapter — empty chunk filtering', () => {
     const raw = await collectStream(adapter, [emptyChunk, emptyChunk]);
     expect(raw).toContain('data: [DONE]\n\n');
   });
+
+  it('filters out chunks where finish_reason key is absent (real grok-3-mini behaviour)', async () => {
+    // Grok-3-mini omits the finish_reason key entirely on reasoning-phase chunks.
+    // A naive check against null (===) passes these through; loose != null catches both.
+    const chunkWithAbsentFinishReason = {
+      id: 'chatcmpl-test',
+      object: 'chat.completion.chunk',
+      created: 1000,
+      model: 'grok-3-mini-beta',
+      choices: [{ index: 0, delta: {} }], // finish_reason key absent
+    } as unknown as FakeChunk;
+
+    const contentChunk: FakeChunk = {
+      id: 'chatcmpl-test',
+      object: 'chat.completion.chunk',
+      created: 1001,
+      model: 'grok-3-mini-beta',
+      choices: [{ index: 0, delta: { content: '1, 2, 3' }, finish_reason: null }],
+    };
+
+    const raw = await collectStream(adapter, [chunkWithAbsentFinishReason, chunkWithAbsentFinishReason, contentChunk]);
+    const parsed = raw
+      .filter((s) => s !== 'data: [DONE]\n\n')
+      .map((s) => JSON.parse(s.replace(/^data: /, '').trimEnd()));
+
+    expect(parsed).toHaveLength(1); // only the content chunk
+    expect(parsed[0].choices[0].delta.content).toBe('1, 2, 3');
+  });
 });
 
