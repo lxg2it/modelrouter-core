@@ -1,11 +1,15 @@
 /**
- * GET /admin — admin dashboard.
- * POST /admin/grant-credit — grant promotional credit to a user by email.
+ * GET /admin        — admin dashboard HTML shell (public, client-side rendered).
+ * GET /admin/stats  — admin stats JSON (session auth + admin email required).
+ * POST /admin/grant-credit — grant promotional credit (session auth + admin).
  *
- * Session-authenticated. Only accessible to users whose email is in the
- * ADMIN_EMAILS environment variable (comma-separated).
+ * The dashboard HTML is served without authentication so it can load in a
+ * browser. The page reads the session token from localStorage and fetches
+ * /admin/stats with an Authorization header. This mirrors the profile page
+ * pattern and avoids requiring programmatic header injection just to view the
+ * page.
  *
- * Returns aggregate stats across all users:
+ * Stats include aggregate data across all users:
  *   - Total user count and daily signups (last 30 days)
  *   - Total request count and daily requests (last 30 days)
  *   - Total revenue and top models
@@ -74,27 +78,36 @@ export interface RecentUser {
 export function createAdminRouter(deps: AdminDeps): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
 
+  /**
+   * GET /admin
+   * Public HTML shell. The page reads mr_session from localStorage and fetches
+   * /admin/stats client-side, so no auth is required to serve the shell.
+   */
   app.get('/', (c) => {
-    const user = c.get('user');
-    if (!user || !deps.adminEmails.includes(user.email.toLowerCase())) {
-      return c.json({
-        error: { message: 'Forbidden', type: 'forbidden', code: 'forbidden' },
-      }, 403);
+    c.header('Content-Type', 'text/html; charset=utf-8');
+    return c.body(ADMIN_SHELL_HTML);
+  });
+
+  /**
+   * GET /admin/stats
+   * Returns AdminStats JSON. Session token + admin email required.
+   * Reads the Authorization header directly so it works from both browser
+   * fetch() calls (with the token from localStorage) and direct API clients.
+   */
+  app.get('/stats', (c) => {
+    const authHeader = c.req.header('Authorization');
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) {
+      return c.json({ error: { message: 'Unauthorized', type: 'authentication_error', code: 'missing_session_token' } }, 401);
     }
-
-    const stats = queryAdminStats(deps.db);
-
-    const accept = c.req.header('Accept') ?? '';
-    const htmlIdx = accept.indexOf('text/html');
-    const jsonIdx = accept.indexOf('application/json');
-    const preferHtml = htmlIdx !== -1 && (jsonIdx === -1 || htmlIdx < jsonIdx);
-
-    if (preferHtml) {
-      c.header('Content-Type', 'text/html; charset=utf-8');
-      return c.body(renderAdminHtml(stats));
+    const user = deps.userStore.validateSession(token);
+    if (!user) {
+      return c.json({ error: { message: 'Invalid or expired session.', type: 'authentication_error', code: 'invalid_session_token' } }, 401);
     }
-
-    return c.json(stats);
+    if (!deps.adminEmails.includes(user.email.toLowerCase())) {
+      return c.json({ error: { message: 'Forbidden', type: 'forbidden', code: 'forbidden' } }, 403);
+    }
+    return c.json(queryAdminStats(deps.db));
   });
 
   /**
@@ -105,8 +118,16 @@ export function createAdminRouter(deps: AdminDeps): Hono<AuthEnv> {
    * with source='promotional' and amount_charged_cents=0.
    */
   app.post('/grant-credit', async (c) => {
-    const adminUser = c.get('user');
-    if (!adminUser || !deps.adminEmails.includes(adminUser.email.toLowerCase())) {
+    const authHeader = c.req.header('Authorization');
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) {
+      return c.json({ error: { message: 'Unauthorized', type: 'authentication_error', code: 'missing_session_token' } }, 401);
+    }
+    const adminUser = deps.userStore.validateSession(token);
+    if (!adminUser) {
+      return c.json({ error: { message: 'Invalid or expired session.', type: 'authentication_error', code: 'invalid_session_token' } }, 401);
+    }
+    if (!deps.adminEmails.includes(adminUser.email.toLowerCase())) {
       return c.json({
         error: { message: 'Forbidden', type: 'forbidden', code: 'forbidden' },
       }, 403);
@@ -340,39 +361,14 @@ ${bars}
 </svg>`;
 }
 
-// ─── HTML renderer ─────────────────────────────────────
 
-function cents(n: number): string {
-  return `$${(n / 100).toFixed(2)}`;
-}
+// ─── Admin shell HTML (client-side rendered) ───────────────────────────────
+//
+// Served publicly at GET /admin. The page reads the session token from
+// localStorage and fetches /admin/stats with an Authorization header.
+// All stats rendering happens in the browser — no server-side data embedding.
 
-function renderAdminHtml(s: AdminStats): string {
-  const userChart = svgBarChart(s.users.daily, {
-    color: '#3fb950',
-    valueFormatter: (v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v),
-  });
-  const requestChart = svgBarChart(s.requests.daily, {
-    color: '#58a6ff',
-    valueFormatter: (v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v),
-  });
-  const revenueChart = svgBarChart(
-    s.revenue.daily.map((r) => ({ day: r.day, count: r.cents })),
-    {
-      color: '#d2a8ff',
-      valueFormatter: (v) => `$${(v / 100).toFixed(0)}`,
-    },
-  );
-
-  const topModelRows = s.requests.topModels.length > 0
-    ? s.requests.topModels.map((m) => `
-      <tr>
-        <td><code>${m.model}</code></td>
-        <td>${m.provider}</td>
-        <td>${m.count.toLocaleString()}</td>
-      </tr>`).join('')
-    : `<tr><td colspan="3" style="color:var(--muted);text-align:center;padding:16px">No requests yet</td></tr>`;
-
-  return /* html */`<!DOCTYPE html>
+const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -383,7 +379,7 @@ function renderAdminHtml(s: AdminStats): string {
       --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
       --border: #30363d; --text: #e6edf3; --muted: #8b949e;
       --accent: #58a6ff; --accent2: #3fb950; --accent3: #d2a8ff;
-      --warn: #f0883e;
+      --warn: #f0883e; --red: #f85149;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -426,18 +422,27 @@ function renderAdminHtml(s: AdminStats): string {
     .green { color: var(--accent2); }
     .blue  { color: var(--accent); }
     .purple { color: var(--accent3); }
-    .chart-card {
-      background: var(--bg2); border: 1px solid var(--border);
-      border-radius: 10px; padding: 20px; margin-bottom: 16px;
-    }
-    .chart-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 14px; }
-    .chart-sub { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 500; }
     td { padding: 7px 10px; border-bottom: 1px solid var(--bg3); }
     tr:last-child td { border-bottom: none; }
     code { font-family: 'SFMono-Regular', Consolas, Menlo, monospace; font-size: 12px; background: var(--bg3); padding: 2px 5px; border-radius: 4px; }
     .back { margin-top: 24px; font-size: 13px; color: var(--muted); }
+    .status-msg { padding: 16px; border-radius: 8px; font-size: 14px; margin-bottom: 16px; }
+    .status-msg.error { background: rgba(248,81,73,0.1); border: 1px solid var(--red); color: var(--red); }
+    .status-msg.info  { background: rgba(88,166,255,0.1); border: 1px solid var(--accent); color: var(--accent); }
+    .btn {
+      padding: 8px 18px; border: none; border-radius: 6px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .btn-green { background: var(--accent2); color: #0d1117; }
+    .btn-small { font-size: 12px; padding: 3px 10px; background: var(--bg3); border: 1px solid var(--border); color: var(--accent); border-radius: 4px; cursor: pointer; }
+    input {
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 13px;
+    }
+    label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    #loading { color: var(--muted); font-size: 14px; padding: 40px 0; }
   </style>
 </head>
 <body>
@@ -450,155 +455,163 @@ function renderAdminHtml(s: AdminStats): string {
     <h1 class="page-title">Admin Dashboard</h1>
     <p class="page-sub">Platform metrics — refreshed on each page load.</p>
 
-    <div class="metric-grid">
-      <div class="metric">
-        <div class="metric-label">Total Users</div>
-        <div class="metric-value green">${s.users.total.toLocaleString()}</div>
-        <div class="metric-sub">+${s.users.last30Days} last 30d</div>
-      </div>
-      <div class="metric">
-        <div class="metric-label">Total Requests</div>
-        <div class="metric-value blue">${s.requests.total.toLocaleString()}</div>
-        <div class="metric-sub">${s.requests.last30Days.toLocaleString()} last 30d</div>
-      </div>
-      <div class="metric">
-        <div class="metric-label">Total Revenue</div>
-        <div class="metric-value purple">${cents(s.revenue.totalCents)}</div>
-        <div class="metric-sub">${cents(s.revenue.last30DaysCents)} last 30d</div>
-      </div>
-      <div class="metric">
-        <div class="metric-label">Credits Held</div>
-        <div class="metric-value">${cents(s.creditBalanceHeldCents)}</div>
-        <div class="metric-sub">across all users</div>
-      </div>
-    </div>
+    <div id="root"><div id="loading">Loading…</div></div>
 
-    <div class="chart-card">
-      <div class="chart-title">New Users — last 30 days</div>
-      ${userChart}
-    </div>
-
-    <div class="chart-card">
-      <div class="chart-title">Requests — last 30 days</div>
-      ${requestChart}
-    </div>
-
-    <div class="chart-card">
-      <div class="chart-title">Revenue (credits added) — last 30 days</div>
-      ${revenueChart}
-    </div>
-
-    <div class="card">
-      <div class="card-title">Top Models (last 30 days)</div>
-      <table>
-        <thead>
-          <tr><th>Model</th><th>Provider</th><th>Requests</th></tr>
-        </thead>
-        <tbody>
-          ${topModelRows}
-        </tbody>
-      </table>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Recent Users</div>
-      <table>
-        <thead>
-          <tr><th>Email</th><th>Balance</th><th>Signed Up</th><th>Action</th></tr>
-        </thead>
-        <tbody>
-          ${s.recentUsers.length > 0
-            ? s.recentUsers.map((u) => `
-          <tr>
-            <td>${u.email}</td>
-            <td>${cents(u.creditBalanceCents)}</td>
-            <td style="color:var(--muted);font-size:12px">${u.createdAt.slice(0, 16)}</td>
-            <td>
-              <button onclick="grantCredit('${u.email}')" style="font-size:12px;padding:3px 10px;background:var(--bg3);border:1px solid var(--border);color:var(--accent);border-radius:4px;cursor:pointer">
-                Grant Credit
-              </button>
-            </td>
-          </tr>`).join('')
-            : `<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:16px">No users yet</td></tr>`}
-        </tbody>
-      </table>
-    </div>
-
-    <div class="card" id="grant-card">
-      <div class="card-title">Grant Promotional Credit</div>
-      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Credit a user for free — amount_charged = $0, records a 'promotional' billing transaction.</p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-        <div>
-          <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Email</label>
-          <input id="grant-email" type="email" placeholder="user@example.com"
-            style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px;width:220px">
-        </div>
-        <div>
-          <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Amount (USD)</label>
-          <input id="grant-amount" type="number" min="1" step="1" value="20"
-            style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px;width:100px">
-        </div>
-        <div>
-          <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px">Note</label>
-          <input id="grant-note" type="text" placeholder="Launch promo"
-            style="background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px;width:160px">
-        </div>
-        <button onclick="doGrant()" style="padding:8px 18px;background:var(--accent2);border:none;color:#0d1117;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">
-          Grant
-        </button>
-      </div>
-      <div id="grant-result" style="margin-top:12px;font-size:13px"></div>
-    </div>
-
-    <div class="back">
-      <a href="/profile">← Back to profile</a>
-    </div>
+    <div class="back"><a href="/profile">← Back to profile</a></div>
   </div>
 
   <script>
+    const $ = id => document.getElementById(id);
+    const root = $('root');
+
+    function cents(n) {
+      return '$' + (n / 100).toFixed(2);
+    }
+
+    function metric(label, valueHtml, sub) {
+      return \`<div class="metric">
+        <div class="metric-label">\${label}</div>
+        <div class="metric-value">\${valueHtml}</div>
+        <div class="metric-sub">\${sub}</div>
+      </div>\`;
+    }
+
+    function modelRows(models) {
+      if (!models.length) return '<tr><td colspan="3" style="color:var(--muted);text-align:center;padding:16px">No requests yet</td></tr>';
+      return models.map(m => \`<tr>
+        <td><code>\${m.model}</code></td>
+        <td>\${m.provider}</td>
+        <td>\${m.count.toLocaleString()}</td>
+      </tr>\`).join('');
+    }
+
+    function userRows(users, token) {
+      if (!users.length) return '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:16px">No users yet</td></tr>';
+      return users.map(u => \`<tr>
+        <td>\${u.email}</td>
+        <td>\${cents(u.creditBalanceCents)}</td>
+        <td style="color:var(--muted);font-size:12px">\${u.createdAt.slice(0, 16)}</td>
+        <td><button class="btn-small" onclick="grantCredit('\${u.email}')">Grant Credit</button></td>
+      </tr>\`).join('');
+    }
+
+    function render(s, token) {
+      root.innerHTML = \`
+        <div class="metric-grid">
+          \${metric('Total Users', '<span class="green">' + s.users.total.toLocaleString() + '</span>', '+' + s.users.last30Days + ' last 30d')}
+          \${metric('Total Requests', '<span class="blue">' + s.requests.total.toLocaleString() + '</span>', s.requests.last30Days.toLocaleString() + ' last 30d')}
+          \${metric('Total Revenue', '<span class="purple">' + cents(s.revenue.totalCents) + '</span>', cents(s.revenue.last30DaysCents) + ' last 30d')}
+          \${metric('Credits Held', s.creditBalanceHeldCents > 0 ? cents(s.creditBalanceHeldCents) : '$0.00', 'across all users')}
+        </div>
+
+        <div class="card">
+          <div class="card-title">Top Models (last 30 days)</div>
+          <table>
+            <thead><tr><th>Model</th><th>Provider</th><th>Requests</th></tr></thead>
+            <tbody>\${modelRows(s.requests.topModels)}</tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Recent Users</div>
+          <table>
+            <thead><tr><th>Email</th><th>Balance</th><th>Signed Up</th><th>Action</th></tr></thead>
+            <tbody>\${userRows(s.recentUsers, token)}</tbody>
+          </table>
+        </div>
+
+        <div class="card" id="grant-card">
+          <div class="card-title">Grant Promotional Credit</div>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Credit a user for free — records a 'promotional' billing transaction.</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <div>
+              <label>Email</label>
+              <input id="grant-email" type="email" placeholder="user@example.com" style="width:220px">
+            </div>
+            <div>
+              <label>Amount (USD)</label>
+              <input id="grant-amount" type="number" min="1" step="1" value="20" style="width:100px">
+            </div>
+            <div>
+              <label>Note</label>
+              <input id="grant-note" type="text" placeholder="Launch promo" style="width:160px">
+            </div>
+            <button class="btn btn-green" onclick="doGrant()">Grant</button>
+          </div>
+          <div id="grant-result" style="margin-top:12px;font-size:13px"></div>
+        </div>
+      \`;
+
+      // Store token for grant-credit calls
+      window._adminToken = token;
+    }
+
     function grantCredit(email) {
-      document.getElementById('grant-email').value = email;
-      document.getElementById('grant-card').scrollIntoView({ behavior: 'smooth' });
-      document.getElementById('grant-email').focus();
+      const emailEl = document.getElementById('grant-email');
+      if (emailEl) emailEl.value = email;
+      document.getElementById('grant-card')?.scrollIntoView({ behavior: 'smooth' });
     }
 
     async function doGrant() {
-      const email = document.getElementById('grant-email').value.trim();
-      const amountDollars = parseFloat(document.getElementById('grant-amount').value);
-      const note = document.getElementById('grant-note').value.trim() || 'Launch promo';
+      const email = document.getElementById('grant-email')?.value?.trim();
+      const amountUsd = parseFloat(document.getElementById('grant-amount')?.value ?? '0');
+      const note = document.getElementById('grant-note')?.value?.trim() || 'Promotional credit';
       const resultEl = document.getElementById('grant-result');
 
-      if (!email || isNaN(amountDollars) || amountDollars <= 0) {
-        resultEl.style.color = 'var(--warn)';
-        resultEl.textContent = 'Please enter a valid email and amount.';
+      if (!email) { if (resultEl) resultEl.innerHTML = '<span style="color:var(--red)">Email is required.</span>'; return; }
+      if (!amountUsd || amountUsd <= 0) { if (resultEl) resultEl.innerHTML = '<span style="color:var(--red)">Amount must be positive.</span>'; return; }
+
+      const amountCents = Math.round(amountUsd * 100);
+      if (resultEl) resultEl.innerHTML = '<span style="color:var(--muted)">Granting…</span>';
+
+      try {
+        const res = await fetch('/admin/grant-credit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + window._adminToken },
+          body: JSON.stringify({ email, amountCents, note }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          if (resultEl) resultEl.innerHTML = '<span style="color:var(--accent2)">✓ Granted ' + cents(data.amountCents) + ' to ' + data.email + '. New balance: ' + cents(data.newBalanceCents) + '</span>';
+        } else {
+          if (resultEl) resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (data.error?.message ?? 'Unknown error') + '</span>';
+        }
+      } catch (e) {
+        if (resultEl) resultEl.innerHTML = '<span style="color:var(--red)">Network error.</span>';
+      }
+    }
+
+    async function load() {
+      const token = localStorage.getItem('mr_session');
+      if (!token) {
+        root.innerHTML = '<div class="status-msg info">No session found. <a href="/profile">Log in at your profile page</a> first, then return here.</div>';
         return;
       }
 
-      const amountCents = Math.round(amountDollars * 100);
-      resultEl.style.color = 'var(--muted)';
-      resultEl.textContent = 'Granting…';
-
       try {
-        const resp = await fetch('/admin/grant-credit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, amountCents, note }),
+        const res = await fetch('/admin/stats', {
+          headers: { 'Authorization': 'Bearer ' + token },
         });
-        const data = await resp.json();
-        if (resp.ok) {
-          resultEl.style.color = 'var(--accent2)';
-          resultEl.textContent = '✓ Granted $' + (data.amountCents / 100).toFixed(2) + ' to ' + data.email + '. New balance: $' + (data.newBalanceCents / 100).toFixed(2);
-          setTimeout(() => location.reload(), 1500);
-        } else {
-          resultEl.style.color = 'var(--warn)';
-          resultEl.textContent = '✗ ' + (data.error?.message ?? 'Unknown error');
+        if (res.status === 401) {
+          root.innerHTML = '<div class="status-msg error">Session expired. <a href="/profile">Log in again</a>.</div>';
+          return;
         }
+        if (res.status === 403) {
+          root.innerHTML = '<div class="status-msg error">Access denied. Your account does not have admin privileges.</div>';
+          return;
+        }
+        if (!res.ok) {
+          root.innerHTML = '<div class="status-msg error">Failed to load stats (HTTP ' + res.status + ').</div>';
+          return;
+        }
+        const stats = await res.json();
+        render(stats, token);
       } catch (e) {
-        resultEl.style.color = 'var(--warn)';
-        resultEl.textContent = '✗ Network error';
+        root.innerHTML = '<div class="status-msg error">Network error loading stats.</div>';
       }
     }
+
+    load();
   </script>
 </body>
 </html>`;
-}

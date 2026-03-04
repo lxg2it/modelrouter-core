@@ -1,22 +1,36 @@
 /**
- * Tests for GET /admin
+ * Tests for the admin router.
+ *
+ * Route structure (post-refactor):
+ *   GET  /        — public HTML shell, no auth required
+ *   GET  /stats   — JSON stats, session token + admin email required
+ *   POST /grant-credit — grant promotional credit, session token + admin email required
  *
  * Covers:
- *   - 403 when user is not in admin list
- *   - 200 with JSON stats when user is in admin list
- *   - 200 with HTML when Accept: text/html
- *   - Stats contain expected shape (users, requests, revenue, creditBalanceHeldCents)
+ *   - GET / returns the HTML shell without auth
+ *   - GET /stats returns 401 with no token
+ *   - GET /stats returns 401 with an invalid token
+ *   - GET /stats returns 403 when user is not in admin list
+ *   - GET /stats returns 200 JSON stats for admin user
+ *   - Stats shape: users, requests, revenue, creditBalanceHeldCents
  *   - Daily arrays are always 30 entries
+ *   - User counts, request counts, revenue sums
+ *   - Case-insensitive admin email check
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import Database from 'better-sqlite3';
 import { createAdminRouter } from '../../src/api/admin.js';
-import type { SessionEnv } from '../../src/auth/middleware.js';
+import type { AuthEnv } from '../../src/auth/middleware.js';
+import type { UserStore } from '../../src/auth/users.js';
 import type { User } from '../../src/types.js';
 
 // ─── Helpers ──────────────────────────────────────────────
+
+const ADMIN_TOKEN = 'test-admin-token';
+const OTHER_TOKEN = 'test-other-token';
+const INVALID_TOKEN = 'bogus-token';
 
 function fakeUser(overrides: Partial<User> = {}): User {
   return {
@@ -29,14 +43,26 @@ function fakeUser(overrides: Partial<User> = {}): User {
   };
 }
 
-function buildApp(db: Database.Database, adminEmails: string[], user: User): Hono<SessionEnv> {
-  const app = new Hono<SessionEnv>();
-  // Inject user into context (simulating session middleware)
-  app.use('*', async (c, next) => {
-    c.set('user', user);
-    await next();
-  });
-  app.route('/', createAdminRouter({ db, adminEmails }));
+/**
+ * Minimal mock UserStore that maps tokens to users.
+ * Only implements the methods used by the admin router.
+ */
+function fakeUserStore(tokenMap: Record<string, User>, emailMap: Record<string, User> = {}): UserStore {
+  return {
+    validateSession: (token: string) => tokenMap[token] ?? null,
+    findByEmail: (email: string) => emailMap[email.toLowerCase()] ?? null,
+    findById: (_id: string) => null,
+    addCredits: (_userId: string, _amountCents: number) => 0,
+  } as unknown as UserStore;
+}
+
+function buildApp(
+  db: Database.Database,
+  adminEmails: string[],
+  userStore: UserStore,
+): Hono<AuthEnv> {
+  const app = new Hono<AuthEnv>();
+  app.route('/', createAdminRouter({ db, adminEmails, userStore }));
   return app;
 }
 
@@ -44,7 +70,6 @@ function makeTestDb(): Database.Database {
   const db = new Database(':memory:');
   db.pragma('journal_mode = WAL');
 
-  // Minimal schema required by admin stats queries
   db.exec(`
     CREATE TABLE users (
       id TEXT PRIMARY KEY,
@@ -75,6 +100,7 @@ function makeTestDb(): Database.Database {
       amount_charged_cents INTEGER NOT NULL,
       credits_added_cents INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'stripe',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
@@ -82,19 +108,60 @@ function makeTestDb(): Database.Database {
   return db;
 }
 
-// ─── Tests ─────────────────────────────────────────────────
+// ─── GET / (HTML shell) ────────────────────────────────────
 
-describe('GET /admin', () => {
+describe('GET /admin (HTML shell)', () => {
+  it('returns 200 HTML without any auth token', async () => {
+    const db = makeTestDb();
+    const userStore = fakeUserStore({});
+    const app = buildApp(db, ['admin@example.com'], userStore);
+
+    const res = await app.request('/');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    const html = await res.text();
+    expect(html).toContain('Admin Dashboard');
+    expect(html).toContain('/admin/stats'); // fetches this endpoint
+  });
+});
+
+// ─── GET /stats ────────────────────────────────────────────
+
+describe('GET /admin/stats', () => {
   let db: Database.Database;
 
   beforeEach(() => {
     db = makeTestDb();
   });
 
+  it('returns 401 when no Authorization header', async () => {
+    const userStore = fakeUserStore({});
+    const app = buildApp(db, ['admin@example.com'], userStore);
+    const res = await app.request('/stats');
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error.code).toBe('missing_session_token');
+  });
+
+  it('returns 401 when token is invalid', async () => {
+    const userStore = fakeUserStore({});
+    const app = buildApp(db, ['admin@example.com'], userStore);
+    const res = await app.request('/stats', {
+      headers: { Authorization: `Bearer ${INVALID_TOKEN}` },
+    });
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error.code).toBe('invalid_session_token');
+  });
+
   it('returns 403 when user is not in admin list', async () => {
     const user = fakeUser({ email: 'notadmin@example.com' });
-    const app = buildApp(db, ['admin@example.com'], user);
-    const res = await app.request('/');
+    const userStore = fakeUserStore({ [OTHER_TOKEN]: user });
+    const app = buildApp(db, ['admin@example.com'], userStore);
+
+    const res = await app.request('/stats', {
+      headers: { Authorization: `Bearer ${OTHER_TOKEN}` },
+    });
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error.code).toBe('forbidden');
@@ -102,17 +169,22 @@ describe('GET /admin', () => {
 
   it('returns 403 when admin list is empty', async () => {
     const user = fakeUser({ email: 'admin@example.com' });
-    const app = buildApp(db, [], user);
-    const res = await app.request('/');
+    const userStore = fakeUserStore({ [ADMIN_TOKEN]: user });
+    const app = buildApp(db, [], userStore);
+
+    const res = await app.request('/stats', {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
     expect(res.status).toBe(403);
   });
 
   it('returns 200 JSON stats for admin user', async () => {
     const user = fakeUser({ email: 'admin@example.com' });
-    const app = buildApp(db, ['admin@example.com'], user);
+    const userStore = fakeUserStore({ [ADMIN_TOKEN]: user });
+    const app = buildApp(db, ['admin@example.com'], userStore);
 
-    const res = await app.request('/', {
-      headers: { Accept: 'application/json' },
+    const res = await app.request('/stats', {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
     });
     expect(res.status).toBe(200);
 
@@ -132,30 +204,17 @@ describe('GET /admin', () => {
     expect(stats.revenue.daily).toHaveLength(30);
   });
 
-  it('returns HTML when Accept: text/html', async () => {
-    const user = fakeUser({ email: 'admin@example.com' });
-    const app = buildApp(db, ['admin@example.com'], user);
-
-    const res = await app.request('/', {
-      headers: { Accept: 'text/html,application/xhtml+xml,*/*' },
-    });
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('text/html');
-    const html = await res.text();
-    expect(html).toContain('Admin Dashboard');
-    expect(html).toContain('Total Users');
-    expect(html).toContain('Total Requests');
-    expect(html).toContain('Total Revenue');
-  });
-
   it('counts users correctly', async () => {
     db.prepare(`INSERT INTO users (id, email, credit_balance_cents) VALUES (?, ?, ?)`).run('u1', 'a@x.com', 500);
     db.prepare(`INSERT INTO users (id, email, credit_balance_cents) VALUES (?, ?, ?)`).run('u2', 'b@x.com', 200);
 
     const user = fakeUser({ email: 'admin@example.com' });
-    const app = buildApp(db, ['admin@example.com'], user);
+    const userStore = fakeUserStore({ [ADMIN_TOKEN]: user });
+    const app = buildApp(db, ['admin@example.com'], userStore);
 
-    const res = await app.request('/', { headers: { Accept: 'application/json' } });
+    const res = await app.request('/stats', {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
     const stats = await res.json();
 
     expect(stats.users.total).toBe(2);
@@ -168,9 +227,12 @@ describe('GET /admin', () => {
     db.prepare(`INSERT INTO usage_log (key_id, provider, model, tier) VALUES (?, ?, ?, ?)`).run('k2', 'anthropic', 'claude-haiku', 'economy');
 
     const user = fakeUser({ email: 'admin@example.com' });
-    const app = buildApp(db, ['admin@example.com'], user);
+    const userStore = fakeUserStore({ [ADMIN_TOKEN]: user });
+    const app = buildApp(db, ['admin@example.com'], userStore);
 
-    const res = await app.request('/', { headers: { Accept: 'application/json' } });
+    const res = await app.request('/stats', {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
     const stats = await res.json();
 
     expect(stats.requests.total).toBe(3);
@@ -178,25 +240,31 @@ describe('GET /admin', () => {
     expect(stats.requests.topModels[0].count).toBe(2);
   });
 
-  it('sums revenue from succeeded billing transactions', async () => {
+  it('sums revenue from succeeded billing transactions only', async () => {
     db.prepare(`INSERT INTO billing_transactions (id, amount_charged_cents, credits_added_cents, status) VALUES (?, ?, ?, ?)`).run('tx1', 1000, 960, 'succeeded');
     db.prepare(`INSERT INTO billing_transactions (id, amount_charged_cents, credits_added_cents, status) VALUES (?, ?, ?, ?)`).run('tx2', 500, 480, 'succeeded');
-    db.prepare(`INSERT INTO billing_transactions (id, amount_charged_cents, credits_added_cents, status) VALUES (?, ?, ?, ?)`).run('tx3', 200, 100, 'failed'); // should not count
+    db.prepare(`INSERT INTO billing_transactions (id, amount_charged_cents, credits_added_cents, status) VALUES (?, ?, ?, ?)`).run('tx3', 200, 100, 'failed');
 
     const user = fakeUser({ email: 'admin@example.com' });
-    const app = buildApp(db, ['admin@example.com'], user);
+    const userStore = fakeUserStore({ [ADMIN_TOKEN]: user });
+    const app = buildApp(db, ['admin@example.com'], userStore);
 
-    const res = await app.request('/', { headers: { Accept: 'application/json' } });
+    const res = await app.request('/stats', {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
     const stats = await res.json();
 
-    expect(stats.revenue.totalCents).toBe(1440); // 960 + 480
+    expect(stats.revenue.totalCents).toBe(1440); // 960 + 480, not 100
   });
 
   it('is case-insensitive for admin email check', async () => {
     const user = fakeUser({ email: 'Admin@Example.COM' });
-    const app = buildApp(db, ['admin@example.com'], user);
+    const userStore = fakeUserStore({ [ADMIN_TOKEN]: user });
+    const app = buildApp(db, ['admin@example.com'], userStore);
 
-    const res = await app.request('/', { headers: { Accept: 'application/json' } });
+    const res = await app.request('/stats', {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
     expect(res.status).toBe(200);
   });
 });
