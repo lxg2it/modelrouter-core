@@ -12,6 +12,7 @@ services:
       - LOG_LEVEL=info
       - DEFAULT_TIER=standard
       - DEFAULT_OUTPUT_RATIO=0.33
+      - DB_PATH=/data/modelrouter.db
     volumes:
       - modelrouter-data:/data
     restart: unless-stopped
