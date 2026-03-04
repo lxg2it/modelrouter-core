@@ -46,6 +46,9 @@ export interface Config {
 
   // Admin access — comma-separated list of emails granted /admin access
   adminEmails: string[];
+
+  // Signup bonus credit (0 = disabled)
+  signupBonusCents: number;
 }
 
 export function loadConfig(): Config {
@@ -101,6 +104,8 @@ export function loadConfig(): Config {
       .split(',')
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean),
+
+    signupBonusCents: parseInt(env('SIGNUP_BONUS_CENTS', '0'), 10),
   };
 }
 

@@ -11,6 +11,9 @@
  *   - verify-code: valid code for new user → 201 with apiKey
  *   - verify-code: invalid/expired code → 401
  *   - verify-code: missing fields → 400
+ *   - verify-code: new account with signupBonusCents → credits added + tx recorded
+ *   - verify-code: new account with signupBonusCents=0 → no credits, no tx
+ *   - verify-code: existing account with signupBonusCents → no credits, no tx
  *   - logout: valid token → 200, calls userStore.logout
  *   - logout: empty body → 200, no crash
  */
@@ -22,6 +25,7 @@ import type { UserStore } from '../../src/auth/users.js';
 import type { KeyStore } from '../../src/auth/keys.js';
 import type { EmailSender } from '../../src/auth/email.js';
 import type { User, ApiKey } from '../../src/types.js';
+import type { BillingTransactionStore } from '../../src/billing/transactions.js';
 
 // ─── Helpers ───────────────────────────────────────────
 
@@ -94,12 +98,29 @@ function mockEmailSender(): EmailSender {
   };
 }
 
-function buildApp(userStore: UserStore, keyStore: KeyStore, email?: EmailSender): Hono {
+function mockBillingTxStore(overrides: Partial<BillingTransactionStore> = {}): BillingTransactionStore {
+  return {
+    record: vi.fn(),
+    listByUser: vi.fn().mockReturnValue([]),
+    listByKey: vi.fn().mockReturnValue([]),
+    ...overrides,
+  } as unknown as BillingTransactionStore;
+}
+
+function buildApp(
+  userStore: UserStore,
+  keyStore: KeyStore,
+  email?: EmailSender,
+  billingTxStore?: BillingTransactionStore,
+  signupBonusCents = 0,
+): Hono {
   const app = new Hono();
   app.route('/', createAuthRouter({
     userStore,
     keyStore,
     email: email ?? mockEmailSender(),
+    billingTxStore: billingTxStore ?? mockBillingTxStore(),
+    signupBonusCents,
   }));
   return app;
 }
@@ -243,6 +264,82 @@ describe('POST /verify-code', () => {
     expect(res.status).toBe(400);
     const body = await res.json() as any;
     expect(body.error.code).toBe('invalid_email');
+  });
+
+  it('grants signup bonus credit to new account when signupBonusCents > 0', async () => {
+    const user = fakeUser({ creditBalanceCents: 0 });
+    const userStore = mockUserStore({
+      verifyLoginCode: vi.fn().mockReturnValue({ user, sessionToken: 'mr_st_tok', isNewAccount: true }),
+      addCredits: vi.fn().mockReturnValue(100), // returns new balance
+    });
+    const billingTxStore = mockBillingTxStore();
+    const app = buildApp(userStore, mockKeyStore(), undefined, billingTxStore, 100);
+
+    const res = await app.request('/verify-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'alice@example.com', code: '123456' }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json() as any;
+
+    // Credits should be added
+    expect(userStore.addCredits).toHaveBeenCalledWith('user-123', 100);
+
+    // Transaction recorded as promotional
+    expect(billingTxStore.record).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'user-123',
+      amountChargedCents: 0,
+      creditsAddedCents: 100,
+      status: 'succeeded',
+      source: 'promotional',
+    }));
+
+    // Response reflects new balance
+    expect(body.account.creditBalanceCents).toBe(100);
+  });
+
+  it('does not grant signup bonus when signupBonusCents is 0', async () => {
+    const user = fakeUser();
+    const userStore = mockUserStore({
+      verifyLoginCode: vi.fn().mockReturnValue({ user, sessionToken: 'mr_st_tok', isNewAccount: true }),
+    });
+    const billingTxStore = mockBillingTxStore();
+    const app = buildApp(userStore, mockKeyStore(), undefined, billingTxStore, 0);
+
+    const res = await app.request('/verify-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'alice@example.com', code: '123456' }),
+    });
+
+    expect(res.status).toBe(201);
+
+    // No credits added, no transaction recorded
+    expect(userStore.addCredits).not.toHaveBeenCalled();
+    expect(billingTxStore.record).not.toHaveBeenCalled();
+  });
+
+  it('does not grant signup bonus to existing accounts', async () => {
+    const user = fakeUser();
+    const userStore = mockUserStore({
+      verifyLoginCode: vi.fn().mockReturnValue({ user, sessionToken: 'mr_st_tok', isNewAccount: false }),
+    });
+    const billingTxStore = mockBillingTxStore();
+    const app = buildApp(userStore, mockKeyStore(), undefined, billingTxStore, 100);
+
+    const res = await app.request('/verify-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'alice@example.com', code: '123456' }),
+    });
+
+    expect(res.status).toBe(200);
+
+    // No credits added to existing accounts
+    expect(userStore.addCredits).not.toHaveBeenCalled();
+    expect(billingTxStore.record).not.toHaveBeenCalled();
   });
 });
 

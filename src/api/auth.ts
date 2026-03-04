@@ -22,6 +22,7 @@ import { Hono } from 'hono';
 import type { UserStore } from '../auth/users.js';
 import type { KeyStore } from '../auth/keys.js';
 import type { EmailSender } from '../auth/email.js';
+import type { BillingTransactionStore } from '../billing/transactions.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -29,10 +30,12 @@ export interface AuthRouterDeps {
   userStore: UserStore;
   keyStore: KeyStore;
   email: EmailSender;
+  billingTxStore: BillingTransactionStore;
+  signupBonusCents: number;
 }
 
 export function createAuthRouter(deps: AuthRouterDeps): Hono {
-  const { userStore, keyStore, email } = deps;
+  const { userStore, keyStore, email, billingTxStore, signupBonusCents } = deps;
   const router = new Hono();
 
   // ─── POST /request-code ───────────────────────────────
@@ -145,6 +148,21 @@ export function createAuthRouter(deps: AuthRouterDeps): Hono {
         tier: keyRecord.tier,
         message: 'Save your API key — it will not be shown again.',
       };
+
+      // Grant signup bonus credit if configured
+      if (signupBonusCents > 0) {
+        const newBalance = userStore.addCredits(user.id, signupBonusCents);
+        billingTxStore.record({
+          userId: user.id,
+          keyId: null,
+          paymentIntentId: null,
+          amountChargedCents: 0,
+          creditsAddedCents: signupBonusCents,
+          status: 'succeeded',
+          source: 'promotional',
+        });
+        (response.account as Record<string, unknown>).creditBalanceCents = newBalance;
+      }
     }
 
     return c.json(response, isNewAccount ? 201 : 200);

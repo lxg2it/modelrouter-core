@@ -521,7 +521,9 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
         return;
       }
       tbody.innerHTML = data.transactions.map(t => {
-        const sourceLabel = t.source === 'auto_recharge'
+        const sourceLabel = t.source === 'promotional'
+          ? '<span class="badge badge-green" style="font-size:11px">bonus</span>'
+          : t.source === 'auto_recharge'
           ? '<span class="badge badge-blue" style="font-size:11px">auto</span>'
           : '<span class="badge badge-gray" style="font-size:11px">manual</span>';
         return '<tr>' +

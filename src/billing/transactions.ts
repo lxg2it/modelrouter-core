@@ -31,8 +31,8 @@ export interface BillingTransaction {
   amountChargedCents: number;
   creditsAddedCents: number;
   status: 'succeeded' | 'requires_action' | 'failed';
-  /** Whether this was triggered automatically (auto-recharge) or by the user (manual top-up). */
-  source: 'manual' | 'auto_recharge';
+  /** Whether this was triggered automatically (auto-recharge), by the user (manual top-up), or as a promotional bonus. */
+  source: 'manual' | 'auto_recharge' | 'promotional';
   createdAt: string;
 }
 
