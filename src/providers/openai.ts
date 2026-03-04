@@ -133,6 +133,18 @@ export class OpenAIAdapter implements ProviderAdapter {
           })),
         };
 
+        // Skip chunks that carry no useful data — reasoning models (e.g. grok-3-mini)
+        // emit hundreds of empty delta chunks during their internal reasoning phase.
+        // These are noise: no content, no tool calls, no finish_reason, no role.
+        const hasContent = translated.choices.some(
+          (c) =>
+            c.delta.role !== undefined ||
+            c.delta.content !== undefined ||
+            (c.delta.tool_calls?.length ?? 0) > 0 ||
+            c.finish_reason !== null,
+        );
+        if (!hasContent) continue;
+
         yield `data: ${JSON.stringify(translated)}\n\n`;
       }
 

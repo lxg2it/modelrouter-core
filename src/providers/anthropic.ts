@@ -3,6 +3,14 @@
  *
  * Translates between OpenAI-compatible format and Anthropic's Messages API.
  * Handles both streaming and non-streaming completions.
+ *
+ * Translation coverage:
+ * - messages: system → system param, user/assistant → MessageParam
+ * - tools: OpenAI { function: { parameters } } → Anthropic { input_schema }
+ * - tool_calls in assistant messages → Anthropic tool_use content blocks
+ * - role:'tool' messages → Anthropic tool_result content blocks
+ * - response tool_use blocks → OpenAI tool_calls
+ * - streaming tool_use blocks → OpenAI streaming tool_calls delta
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -11,6 +19,8 @@ import type {
   ChatCompletionResponse,
   ChatCompletionChunk,
   ChatMessage,
+  Tool,
+  ToolCall,
   UsageInfo,
   ProviderName,
 } from '../types.js';
@@ -37,12 +47,14 @@ export class AnthropicAdapter implements ProviderAdapter {
     if (!this.client) throw new Error('Anthropic adapter not configured');
 
     const { system, messages } = this.translateMessages(request.messages);
+    const tools = request.tools ? this.translateTools(request.tools) : undefined;
 
     const response = await this.client.messages.create({
       model,
       max_tokens: request.max_tokens ?? 4096,
       system: system ?? undefined,
       messages,
+      tools,
       temperature: request.temperature,
       top_p: request.top_p,
       stop_sequences: request.stop
@@ -51,10 +63,23 @@ export class AnthropicAdapter implements ProviderAdapter {
     });
 
     const completionId = `chatcmpl-${response.id}`;
-    const content = response.content
+
+    // Separate text blocks and tool_use blocks
+    const textContent = response.content
       .filter((block): block is Anthropic.TextBlock => block.type === 'text')
       .map((block) => block.text)
       .join('');
+
+    const toolCalls: ToolCall[] | undefined = response.content
+      .filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
+      .map((block) => ({
+        id: block.id,
+        type: 'function' as const,
+        function: {
+          name: block.name,
+          arguments: JSON.stringify(block.input),
+        },
+      }));
 
     const usage: UsageInfo = {
       prompt_tokens: response.usage.input_tokens,
@@ -70,7 +95,11 @@ export class AnthropicAdapter implements ProviderAdapter {
         model: response.model,
         choices: [{
           index: 0,
-          message: { role: 'assistant', content },
+          message: {
+            role: 'assistant',
+            content: textContent,
+            ...(toolCalls && toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+          },
           finish_reason: this.mapStopReason(response.stop_reason),
         }],
         usage,
@@ -86,12 +115,14 @@ export class AnthropicAdapter implements ProviderAdapter {
     if (!this.client) throw new Error('Anthropic adapter not configured');
 
     const { system, messages } = this.translateMessages(request.messages);
+    const tools = request.tools ? this.translateTools(request.tools) : undefined;
 
     const anthropicStream = this.client.messages.stream({
       model,
       max_tokens: request.max_tokens ?? 4096,
       system: system ?? undefined,
       messages,
+      tools,
       temperature: request.temperature,
       top_p: request.top_p,
       stop_sequences: request.stop
@@ -105,24 +136,78 @@ export class AnthropicAdapter implements ProviderAdapter {
     const self = this;
 
     async function* generateChunks(): AsyncIterable<string> {
+      // State for accumulating streaming tool_use blocks.
+      // Anthropic streams tool args as incremental partial_json deltas; we buffer
+      // them per-block and emit each chunk as an OpenAI tool_calls argument delta.
+      let activeToolCallIndex = -1;
+
       for await (const event of anthropicStream) {
-        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-          const chunk: ChatCompletionChunk = {
-            id: completionId,
-            object: 'chat.completion.chunk',
-            created: Math.floor(Date.now() / 1000),
-            model,
-            choices: [{
-              index: 0,
-              delta: { content: event.delta.text },
-              finish_reason: null,
-            }],
-          };
-          yield `data: ${JSON.stringify(chunk)}\n\n`;
+        // ── content_block_start ──────────────────────────────────
+        if (event.type === 'content_block_start') {
+          if (event.content_block.type === 'tool_use') {
+            // New tool call: emit the opening chunk with id + name
+            activeToolCallIndex++;
+            const openChunk: ChatCompletionChunk = {
+              id: completionId,
+              object: 'chat.completion.chunk',
+              created: Math.floor(Date.now() / 1000),
+              model,
+              choices: [{
+                index: 0,
+                delta: {
+                  tool_calls: [{
+                    id: event.content_block.id,
+                    type: 'function',
+                    function: { name: event.content_block.name, arguments: '' },
+                  }],
+                },
+                finish_reason: null,
+              }],
+            };
+            yield `data: ${JSON.stringify(openChunk)}\n\n`;
+          }
         }
 
+        // ── content_block_delta ──────────────────────────────────
+        if (event.type === 'content_block_delta') {
+          if (event.delta.type === 'text_delta') {
+            const chunk: ChatCompletionChunk = {
+              id: completionId,
+              object: 'chat.completion.chunk',
+              created: Math.floor(Date.now() / 1000),
+              model,
+              choices: [{
+                index: 0,
+                delta: { content: event.delta.text },
+                finish_reason: null,
+              }],
+            };
+            yield `data: ${JSON.stringify(chunk)}\n\n`;
+          } else if (event.delta.type === 'input_json_delta') {
+            // Incremental tool argument JSON
+            const argChunk: ChatCompletionChunk = {
+              id: completionId,
+              object: 'chat.completion.chunk',
+              created: Math.floor(Date.now() / 1000),
+              model,
+              choices: [{
+                index: 0,
+                delta: {
+                  tool_calls: [{
+                    id: '',   // id only in the opening chunk
+                    type: 'function',
+                    function: { name: '', arguments: event.delta.partial_json },
+                  }],
+                },
+                finish_reason: null,
+              }],
+            };
+            yield `data: ${JSON.stringify(argChunk)}\n\n`;
+          }
+        }
+
+        // ── message_delta — final chunk with stop reason ─────────
         if (event.type === 'message_delta') {
-          // Final chunk with finish reason
           const chunk: ChatCompletionChunk = {
             id: completionId,
             object: 'chat.completion.chunk',
@@ -138,13 +223,14 @@ export class AnthropicAdapter implements ProviderAdapter {
 
           if (event.usage) {
             finalUsage = {
-              prompt_tokens: 0, // Will be filled from message_start
+              prompt_tokens: 0, // Filled from message_start below
               completion_tokens: event.usage.output_tokens,
               total_tokens: event.usage.output_tokens,
             };
           }
         }
 
+        // ── message_start — captures input token count ───────────
         if (event.type === 'message_start' && event.message.usage) {
           finalUsage.prompt_tokens = event.message.usage.input_tokens;
           finalUsage.total_tokens = finalUsage.prompt_tokens + finalUsage.completion_tokens;
@@ -170,9 +256,35 @@ export class AnthropicAdapter implements ProviderAdapter {
     };
   }
 
+  // ─── Translation helpers ────────────────────────────────────
+
+  /**
+   * Translate OpenAI tools to Anthropic format.
+   *
+   * OpenAI: { type: 'function', function: { name, description?, parameters? } }
+   * Anthropic: { name, description?, input_schema: { type: 'object', ... } }
+   */
+  private translateTools(tools: Tool[]): Anthropic.Tool[] {
+    return tools.map((t) => ({
+      name: t.function.name,
+      description: t.function.description,
+      input_schema: (t.function.parameters ?? {
+        type: 'object',
+        properties: {},
+      }) as Anthropic.Tool['input_schema'],
+    }));
+  }
+
   /**
    * Translate OpenAI messages format to Anthropic format.
-   * Anthropic uses a separate `system` parameter and doesn't include system messages in the array.
+   *
+   * Handles:
+   * - system → extracted to top-level `system` string
+   * - user → Anthropic user message
+   * - assistant (with tool_calls) → Anthropic assistant message with tool_use blocks
+   * - assistant (without tool_calls) → Anthropic assistant message with text
+   * - tool (tool result) → Anthropic user message with tool_result block
+   *   Multiple consecutive tool results are merged into one user turn.
    */
   private translateMessages(messages: ChatMessage[]): {
     system: string | null;
@@ -183,13 +295,12 @@ export class AnthropicAdapter implements ProviderAdapter {
 
     for (const msg of messages) {
       if (msg.role === 'system') {
-        // Concatenate system messages
         const text = typeof msg.content === 'string' ? msg.content : '';
         system = system ? `${system}\n\n${text}` : text;
         continue;
       }
 
-      if (msg.role === 'user' || msg.role === 'assistant') {
+      if (msg.role === 'user') {
         const content = typeof msg.content === 'string'
           ? msg.content
           : msg.content?.map((part) => {
@@ -198,7 +309,66 @@ export class AnthropicAdapter implements ProviderAdapter {
               return { type: 'text' as const, text: '' };
             }) ?? '';
 
-        translated.push({ role: msg.role, content });
+        translated.push({ role: 'user', content });
+        continue;
+      }
+
+      if (msg.role === 'assistant') {
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+          // Build a content array: text first (if present), then tool_use blocks
+          const content: Array<Anthropic.TextBlockParam | Anthropic.ToolUseBlockParam> = [];
+
+          if (msg.content && typeof msg.content === 'string' && msg.content.length > 0) {
+            content.push({ type: 'text', text: msg.content });
+          }
+
+          for (const tc of msg.tool_calls) {
+            let input: Record<string, unknown> = {};
+            try {
+              input = JSON.parse(tc.function.arguments) as Record<string, unknown>;
+            } catch {
+              // Malformed arguments — pass empty object rather than throwing
+              input = {};
+            }
+            content.push({
+              type: 'tool_use',
+              id: tc.id,
+              name: tc.function.name,
+              input,
+            });
+          }
+
+          translated.push({ role: 'assistant', content });
+        } else {
+          const content = typeof msg.content === 'string'
+            ? msg.content
+            : msg.content?.map((part) => {
+                if (part.type === 'text') return { type: 'text' as const, text: part.text ?? '' };
+                return { type: 'text' as const, text: '' };
+              }) ?? '';
+          translated.push({ role: 'assistant', content });
+        }
+        continue;
+      }
+
+      if (msg.role === 'tool') {
+        // OpenAI tool result → Anthropic tool_result content block inside a user turn.
+        // Multiple consecutive tool messages (parallel tool calls) are merged into
+        // a single user turn, as Anthropic expects.
+        const toolResult: Anthropic.ToolResultBlockParam = {
+          type: 'tool_result',
+          tool_use_id: msg.tool_call_id ?? '',
+          content: typeof msg.content === 'string' ? msg.content : '',
+        };
+
+        // Merge into the previous user message if it already contains tool_result blocks
+        const last = translated[translated.length - 1];
+        if (last?.role === 'user' && Array.isArray(last.content)) {
+          (last.content as Anthropic.ToolResultBlockParam[]).push(toolResult);
+        } else {
+          translated.push({ role: 'user', content: [toolResult] });
+        }
+        continue;
       }
     }
 

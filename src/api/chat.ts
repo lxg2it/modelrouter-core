@@ -15,7 +15,7 @@ import { UsageLogger as UsageLoggerClass } from '../tracking/logger.js';
 import type { SatbillClient } from '../billing/satbill-client.js';
 import type { KeyStore } from '../auth/keys.js';
 import type { UserStore } from '../auth/users.js';
-import { TIERS, TIER_MAX_RESERVE_CENTS } from '../config.js';
+import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../config.js';
 import type { ApiKey, User, ChatCompletionRequest, ProviderName } from '../types.js';
 import type { StripeService } from '../billing/stripe.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
@@ -116,7 +116,8 @@ async function handleNonStreaming(
   }
 
   try {
-    const result = await adapter.complete(decision.model, request);
+    const effectiveRequest = applyThinkingTokenFloor(request, decision);
+    const result = await adapter.complete(decision.model, effectiveRequest);
 
     deps.router.recordSuccess(decision.provider, decision.model);
 
@@ -174,7 +175,8 @@ async function handleNonStreaming(
       const fallbackAdapter = deps.providers.get(fallback.provider);
       if (fallbackAdapter) {
         try {
-          const result = await fallbackAdapter.complete(fallback.model, request);
+          const effectiveFallbackRequest = applyThinkingTokenFloor(request, fallback);
+          const result = await fallbackAdapter.complete(fallback.model, effectiveFallbackRequest);
           deps.router.recordSuccess(fallback.provider, fallback.model);
 
           const modelConfig = findModelConfig(fallback.provider, fallback.model, fallback.tier);
@@ -294,7 +296,8 @@ async function handleStreaming(
   const primaryAdapter = deps.providers.get(decision.provider);
   if (primaryAdapter) {
     try {
-      completion = await primaryAdapter.stream(decision.model, request);
+      const primaryRequest = applyThinkingTokenFloor(request, decision);
+      completion = await primaryAdapter.stream(decision.model, primaryRequest);
     } catch {
       deps.router.recordFailure(decision.provider, decision.model);
     }
@@ -307,7 +310,8 @@ async function handleStreaming(
       const fallbackAdapter = deps.providers.get(fallback.provider);
       if (fallbackAdapter) {
         try {
-          completion = await fallbackAdapter.stream(fallback.model, request);
+          const fallbackRequest = applyThinkingTokenFloor(request, fallback);
+          completion = await fallbackAdapter.stream(fallback.model, fallbackRequest);
           activeDecision = fallback;
         } catch {
           deps.router.recordFailure(fallback.provider, fallback.model);
@@ -603,6 +607,33 @@ function fullRefundReservation(
     console.error('[Billing] Credit reservation refund failed (non-fatal):', err);
   }
 }
+
+/**
+ * Enforce a minimum max_tokens floor for thinking/reasoning models.
+ *
+ * These models consume tokens on internal chain-of-thought before producing
+ * visible output. If max_tokens is smaller than MIN_THINKING_OUTPUT_TOKENS,
+ * all tokens will be absorbed by reasoning and the response will be empty.
+ *
+ * When we bump the limit, we log a warning so it's visible in diagnostics.
+ * We do NOT silently patch without logging — silent changes to user parameters
+ * are worse than a clear log entry.
+ */
+function applyThinkingTokenFloor(
+  request: ChatCompletionRequest,
+  decision: RouteDecision,
+): ChatCompletionRequest {
+  if (!decision.isThinkingModel) return request;
+  if (!request.max_tokens || request.max_tokens >= MIN_THINKING_OUTPUT_TOKENS) return request;
+
+  console.warn(
+    `[Router] max_tokens=${request.max_tokens} is below the minimum for thinking model ` +
+    `${decision.model} (${decision.provider}). Bumping to ${MIN_THINKING_OUTPUT_TOKENS}. ` +
+    `Set max_tokens >= ${MIN_THINKING_OUTPUT_TOKENS} to silence this warning.`,
+  );
+  return { ...request, max_tokens: MIN_THINKING_OUTPUT_TOKENS };
+}
+
 
 /**
  * Look up model config from tier definitions for cost calculation.

@@ -20,6 +20,8 @@ export interface RouteDecision {
   tier: Tier;
   estimatedCostPer1M: number; // Blended cost estimate for logging
   prefer: 'balanced' | 'cheap' | 'fast' | 'quality'; // Preference mode used
+  /** True when the selected model has internal chain-of-thought (reasoning model). */
+  isThinkingModel: boolean;
 }
 
 export interface RoutingEngineConfig {
@@ -281,6 +283,7 @@ export class RoutingEngine {
       tier,
       estimatedCostPer1M: estimatedCost ?? (config.inputPer1M + config.outputPer1M * ratio),
       prefer,
+      isThinkingModel: config.isThinkingModel ?? false,
     };
   }
 }

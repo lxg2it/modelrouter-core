@@ -129,6 +129,14 @@ export interface ModelConfig {
   latencyMs: number; // Approximate time-to-first-token in ms (static estimate)
   maxContextTokens?: number;
   maxOutputTokens?: number;
+  /**
+   * Whether this model is a reasoning/thinking model that consumes tokens for
+   * internal chain-of-thought before producing visible output. When true, very
+   * small max_tokens values will be silently absorbed by the reasoning phase,
+   * returning empty content. The router enforces a minimum output token floor
+   * for these models. See MIN_THINKING_OUTPUT_TOKENS in config.ts.
+   */
+  isThinkingModel?: boolean;
 }
 
 export interface TierConfig {

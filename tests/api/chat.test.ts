@@ -878,3 +878,127 @@ describe('Auto-recharge — triggered when reservation fails', () => {
     expect(mockStripe.charge).not.toHaveBeenCalled();
   });
 });
+
+
+// ─── Tests: Thinking model token floor ─────────────────────────────────────
+
+describe('Thinking model token floor', () => {
+  /**
+   * Make an adapter that captures the request it was called with so we can
+   * assert on the effective max_tokens that reached the provider.
+   */
+  function makeCaptureAdapter(name: ProviderName): {
+    adapter: ProviderAdapter;
+    lastRequest: () => ChatCompletionRequest | undefined;
+  } {
+    let captured: ChatCompletionRequest | undefined;
+
+    const adapter: ProviderAdapter = {
+      name,
+      isConfigured: () => true,
+      complete: vi.fn(async (_model: string, req: ChatCompletionRequest) => {
+        captured = req;
+        return {
+          response: {
+            id: 'chatcmpl-cap',
+            object: 'chat.completion' as const,
+            created: 1234567890,
+            model: 'test-model',
+            choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          },
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        };
+      }),
+      stream: vi.fn(),
+    };
+
+    return { adapter, lastRequest: () => captured };
+  }
+
+  it('bumps max_tokens to MIN_THINKING_OUTPUT_TOKENS when below floor for a thinking model', async () => {
+    // grok-3-mini-beta is a thinking model (economy tier).
+    // Must use an economy API key so the engine routes there, not to grok-3-beta (standard).
+    const economyKey: ApiKey = { ...fakeApiKey, tier: 'economy' };
+    const { adapter, lastRequest } = makeCaptureAdapter('grok');
+    const providers = new Map<ProviderName, ProviderAdapter>([['grok', adapter]]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['grok']),
+      defaultTier: 'economy',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger(), { apiKey: economyKey });
+
+    await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // max_tokens way below the 1024 floor
+      body: JSON.stringify({ ...minimalRequest, max_tokens: 50 }),
+    }));
+
+    expect(lastRequest()?.max_tokens).toBe(1024);
+  });
+
+  it('leaves max_tokens unchanged when above the floor', async () => {
+    const economyKey: ApiKey = { ...fakeApiKey, tier: 'economy' };
+    const { adapter, lastRequest } = makeCaptureAdapter('grok');
+    const providers = new Map<ProviderName, ProviderAdapter>([['grok', adapter]]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['grok']),
+      defaultTier: 'economy',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger(), { apiKey: economyKey });
+
+    await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...minimalRequest, max_tokens: 2048 }),
+    }));
+
+    expect(lastRequest()?.max_tokens).toBe(2048);
+  });
+
+  it('does not modify max_tokens for non-thinking models', async () => {
+    // claude-sonnet-4-6 is not a thinking model (standard tier)
+    const { adapter, lastRequest } = makeCaptureAdapter('anthropic');
+    const providers = new Map<ProviderName, ProviderAdapter>([['anthropic', adapter]]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['anthropic']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...minimalRequest, max_tokens: 10 }),
+    }));
+
+    // Should not be bumped — claude-sonnet-4-6 is not a thinking model
+    expect(lastRequest()?.max_tokens).toBe(10);
+  });
+
+  it('leaves max_tokens undefined when not set (provider uses its own default)', async () => {
+    const { adapter, lastRequest } = makeCaptureAdapter('grok');
+    const providers = new Map<ProviderName, ProviderAdapter>([['grok', adapter]]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['grok']),
+      defaultTier: 'economy',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    // No max_tokens in the request at all
+    await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    // undefined passes through unchanged — provider will use its default
+    expect(lastRequest()?.max_tokens).toBeUndefined();
+  });
+});
+
