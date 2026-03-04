@@ -12,7 +12,7 @@
 
 import type { ModelConfig, Tier, ProviderName, ChatCompletionRequest, ChatMessage } from '../types.js';
 import { CircuitBreaker } from './circuit-breaker.js';
-import { getModelsForTier, getAllTiers, resolveTier } from './tiers.js';
+import { getModelsForTier, getAllTiers, resolveTier, findModelById } from './tiers.js';
 
 export interface RouteDecision {
   provider: ProviderName;
@@ -22,6 +22,8 @@ export interface RouteDecision {
   prefer: 'balanced' | 'cheap' | 'fast' | 'quality'; // Preference mode used
   /** True when the selected model has internal chain-of-thought (reasoning model). */
   isThinkingModel: boolean;
+  /** True when the client explicitly pinned a specific model ID, bypassing tier routing. */
+  pinned?: boolean;
 }
 
 export interface RoutingEngineConfig {
@@ -61,6 +63,20 @@ export class RoutingEngine {
   ): RouteDecision | null {
     const prefer = request.prefer ?? 'balanced';
     const estimatedTokens = this.estimateInputTokens(request.messages);
+
+    // ── model pinning: exact catalog model ID bypasses tier routing ──
+    // If the client passes a model ID that exists in our catalog (e.g. "gpt-4.1",
+    // "claude-sonnet-4-6"), route directly to that model. This takes priority
+    // over everything else (tier, prefer, key defaults).
+    if (request.model && request.model !== 'auto') {
+      const pinned = findModelById(request.model, this.config.availableProviders);
+      if (pinned) {
+        return {
+          ...this.toDecision(pinned.config, pinned.tier, undefined, prefer),
+          pinned: true,
+        };
+      }
+    }
 
     // ── quality mode: force premium tier regardless ──────────────
     if (prefer === 'quality') {

@@ -163,6 +163,7 @@ async function handleNonStreaming(
       provider: decision.provider,
       tier: decision.tier,
       latency_ms: Date.now() - startTime,
+      ...(decision.pinned && { pinned: true }),
     };
 
     return c.json(result.response);
@@ -219,7 +220,7 @@ async function handleNonStreaming(
             provider: fallback.provider,
             tier: fallback.tier,
             latency_ms: Date.now() - startTime,
-          };
+          }; // note: fallback is never pinned
 
           return c.json(result.response);
         } catch (fallbackErr) {

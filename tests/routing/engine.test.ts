@@ -715,3 +715,73 @@ describe('RoutingEngine', () => {
     });
   });
 });
+
+describe('model pinning', () => {
+  const allProviders = new Set(['anthropic', 'openai', 'google', 'grok'] as const);
+  const engine = new RoutingEngine({
+    availableProviders: allProviders,
+    defaultTier: 'economy',
+    defaultOutputRatio: 0.33,
+  });
+
+  it('pins directly to a specified model, bypassing tier cost ranking', () => {
+    // gpt-4.1-mini would never win economy on cost (grok-3-mini-beta is cheaper)
+    // but pinning should route there directly
+    const decision = engine.selectModel(req({ model: 'gpt-4.1-mini' }));
+    expect(decision).not.toBeNull();
+    expect(decision!.model).toBe('gpt-4.1-mini');
+    expect(decision!.provider).toBe('openai');
+    expect(decision!.tier).toBe('economy');
+    expect(decision!.pinned).toBe(true);
+  });
+
+  it('pins to a standard model even from economy default tier', () => {
+    const decision = engine.selectModel(req({ model: 'claude-sonnet-4-6' }));
+    expect(decision).not.toBeNull();
+    expect(decision!.model).toBe('claude-sonnet-4-6');
+    expect(decision!.provider).toBe('anthropic');
+    expect(decision!.tier).toBe('standard');
+    expect(decision!.pinned).toBe(true);
+  });
+
+  it('pins to a premium model', () => {
+    const decision = engine.selectModel(req({ model: 'claude-opus-4-6' }));
+    expect(decision).not.toBeNull();
+    expect(decision!.model).toBe('claude-opus-4-6');
+    expect(decision!.tier).toBe('premium');
+    expect(decision!.pinned).toBe(true);
+  });
+
+  it('falls through to normal routing when model is "auto"', () => {
+    const decision = engine.selectModel(req({ model: 'auto' }));
+    expect(decision).not.toBeNull();
+    expect(decision!.pinned).toBeUndefined();
+  });
+
+  it('falls through to normal routing for a tier alias', () => {
+    // "gpt-4o" is an alias → standard tier, not a pinned model
+    const decision = engine.selectModel(req({ model: 'gpt-4o' }));
+    expect(decision).not.toBeNull();
+    expect(decision!.pinned).toBeUndefined();
+    expect(decision!.tier).toBe('standard');
+  });
+
+  it('falls through to normal routing for an unknown model ID', () => {
+    const decision = engine.selectModel(req({ model: 'llama-3-70b' }));
+    expect(decision).not.toBeNull();
+    expect(decision!.pinned).toBeUndefined();
+  });
+
+  it('returns null when pinned model provider is not available', () => {
+    const noOpenAI = new RoutingEngine({
+      availableProviders: new Set(['anthropic', 'google', 'grok']),
+      defaultTier: 'economy',
+      defaultOutputRatio: 0.33,
+    });
+    // gpt-4.1-mini is openai — not available → should fall through to normal routing, not pin
+    const decision = noOpenAI.selectModel(req({ model: 'gpt-4.1-mini' }));
+    expect(decision).not.toBeNull();
+    expect(decision!.pinned).toBeUndefined(); // fell through to normal routing
+    expect(decision!.provider).not.toBe('openai');
+  });
+});

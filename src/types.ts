@@ -68,6 +68,8 @@ export interface ChatCompletionResponse {
     provider: string;
     tier: string;
     latency_ms: number;
+    /** Present and true when the client explicitly pinned a specific model ID. */
+    pinned?: boolean;
   };
 }
 

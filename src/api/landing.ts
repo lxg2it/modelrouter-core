@@ -350,6 +350,9 @@ curl -X POST https://api.lxg2it.com/v1/chat/completions \\
       Use tier aliases like <code class="inline">economy</code>, <code class="inline">standard</code>, <code class="inline">premium</code>,
       or <code class="inline">auto</code> for automatic selection. Familiar model names (e.g. <code class="inline">gpt-4o</code>,
       <code class="inline">claude-sonnet</code>) are mapped to the appropriate tier automatically.
+      You can also pin a specific model by passing its exact catalog ID (e.g. <code class="inline">gpt-4.1</code>,
+      <code class="inline">claude-sonnet-4-6</code>) — the router will go directly to that model, bypassing cost selection.
+      Pinned requests include <code class="inline">"pinned": true</code> in the <code class="inline">_router</code> response field.
     </p>
     <div class="tier-grid">
       <div class="tier-card">

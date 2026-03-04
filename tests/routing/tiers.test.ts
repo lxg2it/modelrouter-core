@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { resolveTier, getModelsForTier, getTierDescription, getAllTiers } from '../../src/routing/tiers.js';
+import { resolveTier, getModelsForTier, getTierDescription, getAllTiers, findModelById, getAllModels } from '../../src/routing/tiers.js';
 
 describe('resolveTier', () => {
   describe('direct tier names', () => {
@@ -180,5 +180,81 @@ describe('getAllTiers', () => {
     expect(tiers).toContain('standard');
     expect(tiers).toContain('premium');
     expect(tiers).toHaveLength(3);
+  });
+});
+
+describe('findModelById', () => {
+  const allProviders = new Set(['anthropic', 'openai', 'google', 'grok'] as const);
+
+  it('finds an economy model by exact ID', () => {
+    const result = findModelById('gpt-4.1-mini', allProviders);
+    expect(result).not.toBeUndefined();
+    expect(result!.config.model).toBe('gpt-4.1-mini');
+    expect(result!.config.provider).toBe('openai');
+    expect(result!.tier).toBe('economy');
+  });
+
+  it('finds a standard model by exact ID', () => {
+    const result = findModelById('claude-sonnet-4-6', allProviders);
+    expect(result).not.toBeUndefined();
+    expect(result!.config.model).toBe('claude-sonnet-4-6');
+    expect(result!.config.provider).toBe('anthropic');
+    expect(result!.tier).toBe('standard');
+  });
+
+  it('finds a premium model by exact ID', () => {
+    const result = findModelById('claude-opus-4-6', allProviders);
+    expect(result).not.toBeUndefined();
+    expect(result!.config.model).toBe('claude-opus-4-6');
+    expect(result!.config.provider).toBe('anthropic');
+    expect(result!.tier).toBe('premium');
+  });
+
+  it('is case-insensitive', () => {
+    const result = findModelById('GPT-4.1-MINI', allProviders);
+    expect(result).not.toBeUndefined();
+    expect(result!.config.model).toBe('gpt-4.1-mini');
+  });
+
+  it('returns undefined for a tier alias (not an exact model ID)', () => {
+    // "gpt-4o" is an alias, not a catalog model ID
+    const result = findModelById('gpt-4o', allProviders);
+    expect(result).toBeUndefined();
+  });
+
+  it('returns undefined for unknown model IDs', () => {
+    const result = findModelById('llama-3-70b', allProviders);
+    expect(result).toBeUndefined();
+  });
+
+  it('returns undefined when the model provider is not available', () => {
+    const noOpenAI = new Set(['anthropic', 'google', 'grok'] as const);
+    const result = findModelById('gpt-4.1-mini', noOpenAI);
+    expect(result).toBeUndefined();
+  });
+});
+
+describe('getAllModels', () => {
+  const allProviders = new Set(['anthropic', 'openai', 'google', 'grok'] as const);
+
+  it('returns models from all tiers', () => {
+    const models = getAllModels(allProviders);
+    const tiers = new Set(models.map(m => m.tier));
+    expect(tiers).toContain('economy');
+    expect(tiers).toContain('standard');
+    expect(tiers).toContain('premium');
+  });
+
+  it('filters out unavailable providers', () => {
+    const googleOnly = new Set(['google'] as const);
+    const models = getAllModels(googleOnly);
+    expect(models.every(m => m.config.provider === 'google')).toBe(true);
+    expect(models.length).toBeGreaterThan(0);
+  });
+
+  it('returns empty array when no providers available', () => {
+    const none = new Set<never>();
+    const models = getAllModels(none);
+    expect(models).toHaveLength(0);
   });
 });

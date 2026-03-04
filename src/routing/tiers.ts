@@ -65,3 +65,43 @@ export function getTierDescription(tier: Tier): string {
 export function getAllTiers(): Tier[] {
   return Object.keys(TIERS) as Tier[];
 }
+
+
+/**
+ * Find a specific model by exact model ID across all tiers.
+ *
+ * Used for model pinning — when a client passes an exact catalog model ID
+ * (e.g. "gpt-4.1", "claude-sonnet-4-6"), we route directly to that model
+ * without going through tier/cost selection.
+ *
+ * Returns the ModelConfig and its tier if found, or undefined.
+ */
+export function findModelById(
+  modelId: string,
+  availableProviders: Set<ProviderName>,
+): { config: ModelConfig; tier: Tier } | undefined {
+  const normalized = modelId.toLowerCase().trim();
+  for (const [tierName, tierConfig] of Object.entries(TIERS)) {
+    for (const m of tierConfig.models) {
+      if (m.model.toLowerCase() === normalized && availableProviders.has(m.provider)) {
+        return { config: m, tier: tierName as Tier };
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Get all models across all tiers, filtered by available providers.
+ */
+export function getAllModels(availableProviders: Set<ProviderName>): Array<{ config: ModelConfig; tier: Tier }> {
+  const results: Array<{ config: ModelConfig; tier: Tier }> = [];
+  for (const [tierName, tierConfig] of Object.entries(TIERS)) {
+    for (const m of tierConfig.models) {
+      if (availableProviders.has(m.provider)) {
+        results.push({ config: m, tier: tierName as Tier });
+      }
+    }
+  }
+  return results;
+}
