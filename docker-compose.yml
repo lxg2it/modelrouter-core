@@ -23,6 +23,10 @@ services:
       # Satbill billing (optional — Bitcoin payments)
       - SATBILL_BASE_URL=${SATBILL_BASE_URL:-}
       - SATBILL_API_SECRET=${SATBILL_API_SECRET:-}
+      # xAI / Grok
+      - GROK_API_KEY=${GROK_API_KEY:-}
+      # Admin access
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-}
     volumes:
       - modelrouter-data:/data
     restart: unless-stopped
