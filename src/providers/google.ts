@@ -2,7 +2,7 @@
  * Google Gemini provider adapter.
  *
  * Translates between OpenAI-compatible format and Google's Generative AI API.
- * Handles both streaming and non-streaming completions.
+ * Handles both streaming and non-streaming completions, including tool calls.
  *
  * Key differences from OpenAI/Anthropic:
  * - Role names: 'user' → 'user', 'assistant' → 'model'
@@ -10,13 +10,20 @@
  * - Content format: { parts: [{ text: '...' }] } instead of { content: '...' }
  * - Finish reason: 'STOP', 'MAX_TOKENS', etc. (uppercase)
  * - Safety settings: must configure to avoid over-blocking
+ * - Tool calls: uses functionDeclarations/functionCall/functionResponse pattern
+ *   instead of OpenAI's tools/tool_calls format
  */
 
 import {
   GoogleGenerativeAI,
   HarmBlockThreshold,
   HarmCategory,
+  FunctionCallingMode,
   type Content,
+  type Part,
+  type FunctionCallPart,
+  type FunctionDeclarationsTool,
+  type ToolConfig,
   type GenerateContentResult,
 } from '@google/generative-ai';
 import type {
@@ -24,6 +31,8 @@ import type {
   ChatCompletionResponse,
   ChatCompletionChunk,
   ChatMessage,
+  Tool,
+  ToolCall,
   UsageInfo,
   ProviderName,
 } from '../types.js';
@@ -59,6 +68,8 @@ export class GoogleAdapter implements ProviderAdapter {
     if (!this.client) throw new Error('Google adapter not configured');
 
     const { systemInstruction, history, lastMessage } = this.translateMessages(request.messages);
+    const googleTools = request.tools ? this.translateTools(request.tools) : undefined;
+    const toolConfig = request.tool_choice ? this.translateToolChoice(request.tool_choice) : undefined;
 
     const generativeModel = this.client.getGenerativeModel({
       model,
@@ -72,16 +83,39 @@ export class GoogleAdapter implements ProviderAdapter {
           : undefined,
       },
       safetySettings: SAFETY_SETTINGS,
+      ...(googleTools ? { tools: googleTools } : {}),
+      ...(toolConfig ? { toolConfig } : {}),
     });
 
     const chat = generativeModel.startChat({ history });
     const result: GenerateContentResult = await chat.sendMessage(lastMessage);
     const response = result.response;
 
-    const text = response.text();
-    const finishReason = this.mapFinishReason(
-      response.candidates?.[0]?.finishReason?.toString(),
-    );
+    const candidate = response.candidates?.[0];
+    const parts = candidate?.content?.parts ?? [];
+
+    // Extract text and function call parts
+    const textContent = parts
+      .filter((p): p is { text: string } => 'text' in p && typeof (p as { text: string }).text === 'string')
+      .map(p => p.text)
+      .join('');
+
+    const functionCallParts = parts.filter((p): p is FunctionCallPart => 'functionCall' in p);
+
+    const toolCalls: ToolCall[] | undefined = functionCallParts.length > 0
+      ? functionCallParts.map((p, i) => ({
+          id: `call_google_${Date.now()}_${i}`,
+          type: 'function' as const,
+          function: {
+            name: p.functionCall.name,
+            arguments: JSON.stringify(p.functionCall.args ?? {}),
+          },
+        }))
+      : undefined;
+
+    const finishReason = toolCalls && toolCalls.length > 0
+      ? 'tool_calls' as const
+      : this.mapFinishReason(candidate?.finishReason?.toString());
 
     const usage: UsageInfo = {
       prompt_tokens: response.usageMetadata?.promptTokenCount ?? 0,
@@ -99,7 +133,11 @@ export class GoogleAdapter implements ProviderAdapter {
         model,
         choices: [{
           index: 0,
-          message: { role: 'assistant', content: text },
+          message: {
+            role: 'assistant',
+            content: textContent || '',
+            ...(toolCalls ? { tool_calls: toolCalls } : {}),
+          },
           finish_reason: finishReason,
         }],
         usage,
@@ -115,6 +153,8 @@ export class GoogleAdapter implements ProviderAdapter {
     if (!this.client) throw new Error('Google adapter not configured');
 
     const { systemInstruction, history, lastMessage } = this.translateMessages(request.messages);
+    const googleTools = request.tools ? this.translateTools(request.tools) : undefined;
+    const toolConfig = request.tool_choice ? this.translateToolChoice(request.tool_choice) : undefined;
 
     const generativeModel = this.client.getGenerativeModel({
       model,
@@ -128,6 +168,8 @@ export class GoogleAdapter implements ProviderAdapter {
           : undefined,
       },
       safetySettings: SAFETY_SETTINGS,
+      ...(googleTools ? { tools: googleTools } : {}),
+      ...(toolConfig ? { toolConfig } : {}),
     });
 
     const chat = generativeModel.startChat({ history });
@@ -141,21 +183,33 @@ export class GoogleAdapter implements ProviderAdapter {
     const self = this;
 
     async function* generateChunks(): AsyncIterable<string> {
+      // Collect function call parts across all chunks (Gemini delivers them as complete objects)
+      const allFunctionCallParts: FunctionCallPart[] = [];
+
       for await (const chunk of streamResult.stream) {
-        const text = chunk.text();
-        if (text) {
-          const sseChunk: ChatCompletionChunk = {
-            id: completionId,
-            object: 'chat.completion.chunk',
-            created: Math.floor(Date.now() / 1000),
-            model,
-            choices: [{
-              index: 0,
-              delta: { content: text },
-              finish_reason: null,
-            }],
-          };
-          yield `data: ${JSON.stringify(sseChunk)}\n\n`;
+        const parts = chunk.candidates?.[0]?.content?.parts ?? [];
+        const functionCallParts = parts.filter((p): p is FunctionCallPart => 'functionCall' in p);
+
+        if (functionCallParts.length > 0) {
+          // Buffer tool calls — emit after stream ends
+          allFunctionCallParts.push(...functionCallParts);
+        } else {
+          // Normal text chunk
+          const text = chunk.text();
+          if (text) {
+            const sseChunk: ChatCompletionChunk = {
+              id: completionId,
+              object: 'chat.completion.chunk',
+              created: Math.floor(Date.now() / 1000),
+              model,
+              choices: [{
+                index: 0,
+                delta: { content: text },
+                finish_reason: null,
+              }],
+            };
+            yield `data: ${JSON.stringify(sseChunk)}\n\n`;
+          }
         }
 
         // Track finish reason from each chunk (last one wins)
@@ -174,6 +228,34 @@ export class GoogleAdapter implements ProviderAdapter {
         }
       }
       streamConsumed = true;
+
+      if (allFunctionCallParts.length > 0) {
+        // Emit tool calls as OpenAI-compatible streaming chunks
+        // First chunk: role + tool call openings
+        const toolCalls: ToolCall[] = allFunctionCallParts.map((p, i) => ({
+          id: `call_google_${Date.now()}_${i}`,
+          type: 'function' as const,
+          function: {
+            name: p.functionCall.name,
+            arguments: JSON.stringify(p.functionCall.args ?? {}),
+          },
+        }));
+
+        const toolChunk: ChatCompletionChunk = {
+          id: completionId,
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model,
+          choices: [{
+            index: 0,
+            delta: { role: 'assistant', tool_calls: toolCalls },
+            finish_reason: null,
+          }],
+        };
+        yield `data: ${JSON.stringify(toolChunk)}\n\n`;
+
+        lastFinishReason = 'tool_calls';
+      }
 
       // Final chunk with finish reason
       const finalChunk: ChatCompletionChunk = {
@@ -214,17 +296,19 @@ export class GoogleAdapter implements ProviderAdapter {
    * Translate OpenAI messages to Google's chat format.
    *
    * Google expects:
-   * - history: Content[] (all messages except the last user message)
+   * - history: Content[] (all messages except the last user/tool turn)
    * - lastMessage: string | Part[] (the final user message to send)
    * - systemInstruction: string (extracted from system messages)
    *
-   * Note: Google requires alternating user/model turns. We collapse consecutive
-   * messages of the same role to avoid API errors.
+   * Handles:
+   * - role:'tool' → functionResponse parts (user turn)
+   * - assistant tool_calls → functionCall parts (model turn)
+   * - Consecutive same-role collapsing (Google requires alternating turns)
    */
-  private translateMessages(messages: ChatMessage[]): {
+  translateMessages(messages: ChatMessage[]): {
     systemInstruction: string | undefined;
     history: Content[];
-    lastMessage: string;
+    lastMessage: string | Part[];
   } {
     // Extract system messages first
     const systemParts: string[] = [];
@@ -245,32 +329,153 @@ export class GoogleAdapter implements ProviderAdapter {
       return { systemInstruction, history: [], lastMessage: '' };
     }
 
-    // Collapse consecutive same-role messages (Google requires alternating turns)
-    const collapsed: Array<{ role: 'user' | 'model'; text: string }> = [];
+    // Build a map of tool_call_id → function name for resolving tool result messages
+    const toolCallNames = new Map<string, string>();
     for (const msg of conversationMessages) {
-      const role = msg.role === 'assistant' ? 'model' : 'user';
-      const text = typeof msg.content === 'string' ? msg.content : '';
-
-      const last = collapsed[collapsed.length - 1];
-      if (last && last.role === role) {
-        last.text = `${last.text}\n${text}`;
-      } else {
-        collapsed.push({ role, text });
+      if (msg.tool_calls) {
+        for (const tc of msg.tool_calls) {
+          toolCallNames.set(tc.id, tc.function.name);
+        }
       }
     }
 
-    // The last message must be from the user — that's what we "send"
-    const last = collapsed[collapsed.length - 1];
-    const lastMessage = last.role === 'user' ? last.text : '';
+    // Convert each message to a Google Content object
+    const contents: Content[] = [];
 
-    // Build history from all messages except the last user message
-    const historySlice = last.role === 'user' ? collapsed.slice(0, -1) : collapsed;
-    const history: Content[] = historySlice.map(({ role, text }) => ({
-      role,
-      parts: [{ text }],
-    }));
+    for (const msg of conversationMessages) {
+      const content = this.messageToContent(msg, toolCallNames);
+      if (content === null) continue;
 
-    return { systemInstruction, history, lastMessage };
+      // Collapse consecutive same-role messages (Google requires alternating turns)
+      const last = contents[contents.length - 1];
+      if (last && last.role === content.role) {
+        last.parts = [...last.parts, ...content.parts];
+      } else {
+        contents.push(content);
+      }
+    }
+
+    if (contents.length === 0) {
+      return { systemInstruction, history: [], lastMessage: '' };
+    }
+
+    // Last turn must be from user — split into history + lastMessage
+    const last = contents[contents.length - 1];
+
+    if (last.role === 'user') {
+      const history = contents.slice(0, -1);
+      // Simplify to string if it's a single text part
+      const parts = last.parts;
+      const lastMessage: string | Part[] =
+        parts.length === 1 && 'text' in parts[0]
+          ? (parts[0] as { text: string }).text
+          : parts;
+      return { systemInstruction, history, lastMessage };
+    }
+
+    // Last turn is from model — unusual, but handle gracefully
+    return { systemInstruction, history: contents, lastMessage: '' };
+  }
+
+  /**
+   * Convert a single OpenAI ChatMessage to a Google Content object.
+   * Returns null for messages that should be skipped.
+   */
+  private messageToContent(
+    msg: ChatMessage,
+    toolCallNames: Map<string, string>,
+  ): Content | null {
+    const text = typeof msg.content === 'string' ? msg.content : '';
+
+    switch (msg.role) {
+      case 'user':
+        return { role: 'user', parts: [{ text }] };
+
+      case 'assistant': {
+        const parts: Part[] = [];
+
+        if (text) {
+          parts.push({ text });
+        }
+
+        // Translate tool_calls → functionCall parts
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+          for (const tc of msg.tool_calls) {
+            let args: object;
+            try {
+              args = JSON.parse(tc.function.arguments);
+            } catch {
+              args = {};
+            }
+            parts.push({ functionCall: { name: tc.function.name, args } });
+          }
+        }
+
+        if (parts.length === 0) parts.push({ text: '' });
+        return { role: 'model', parts };
+      }
+
+      case 'tool': {
+        // Tool result — look up function name from the preceding tool_calls
+        const name = toolCallNames.get(msg.tool_call_id ?? '') ?? 'unknown';
+        return {
+          role: 'user',
+          parts: [{
+            functionResponse: {
+              name,
+              response: { output: text },
+            },
+          }],
+        };
+      }
+
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Translate OpenAI tools to Google's FunctionDeclarationsTool format.
+   *
+   * OpenAI: [{ type: 'function', function: { name, description?, parameters? } }]
+   * Google: [{ functionDeclarations: [{ name, description?, parameters? }] }]
+   */
+  translateTools(tools: Tool[]): FunctionDeclarationsTool[] {
+    return [{
+      functionDeclarations: tools.map(t => ({
+        name: t.function.name,
+        ...(t.function.description ? { description: t.function.description } : {}),
+        // Google's parameters format is compatible with JSON Schema — pass through directly
+        ...(t.function.parameters ? { parameters: t.function.parameters as ReturnType<typeof Object> } : {}),
+      })),
+    }];
+  }
+
+  /**
+   * Translate OpenAI tool_choice to Google's ToolConfig.
+   *
+   * OpenAI:  'none' | 'auto' | 'required' | { type: 'function', function: { name } }
+   * Google:  { functionCallingConfig: { mode: NONE | AUTO | ANY, allowedFunctionNames? } }
+   */
+  translateToolChoice(
+    toolChoice: ChatCompletionRequest['tool_choice'],
+  ): ToolConfig {
+    if (toolChoice === 'none') {
+      return { functionCallingConfig: { mode: FunctionCallingMode.NONE } };
+    }
+    if (toolChoice === 'required') {
+      return { functionCallingConfig: { mode: FunctionCallingMode.ANY } };
+    }
+    if (typeof toolChoice === 'object' && toolChoice.type === 'function') {
+      return {
+        functionCallingConfig: {
+          mode: FunctionCallingMode.ANY,
+          allowedFunctionNames: [toolChoice.function.name],
+        },
+      };
+    }
+    // 'auto' or undefined
+    return { functionCallingConfig: { mode: FunctionCallingMode.AUTO } };
   }
 
   private mapFinishReason(
