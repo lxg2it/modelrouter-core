@@ -32,10 +32,19 @@ export interface AuthRouterDeps {
   email: EmailSender;
   billingTxStore: BillingTransactionStore;
   signupBonusCents: number;
+  /** Maximum total signup bonus credits to award per UTC day (0 = no limit). */
+  signupBonusDailyLimitCents: number;
 }
 
 export function createAuthRouter(deps: AuthRouterDeps): Hono {
-  const { userStore, keyStore, email, billingTxStore, signupBonusCents } = deps;
+  const {
+    userStore,
+    keyStore,
+    email,
+    billingTxStore,
+    signupBonusCents,
+    signupBonusDailyLimitCents,
+  } = deps;
   const router = new Hono();
 
   // ─── POST /request-code ───────────────────────────────
@@ -149,19 +158,25 @@ export function createAuthRouter(deps: AuthRouterDeps): Hono {
         message: 'Save your API key — it will not be shown again.',
       };
 
-      // Grant signup bonus credit if configured
+      // Grant signup bonus credit if configured and daily cap not yet reached.
       if (signupBonusCents > 0) {
-        const newBalance = userStore.addCredits(user.id, signupBonusCents);
-        billingTxStore.record({
-          userId: user.id,
-          keyId: null,
-          paymentIntentId: null,
-          amountChargedCents: 0,
-          creditsAddedCents: signupBonusCents,
-          status: 'succeeded',
-          source: 'promotional',
-        });
-        (response.account as Record<string, unknown>).creditBalanceCents = newBalance;
+        const capReached =
+          signupBonusDailyLimitCents > 0 &&
+          billingTxStore.dailySignupBonusTotal() + signupBonusCents > signupBonusDailyLimitCents;
+
+        if (!capReached) {
+          const newBalance = userStore.addCredits(user.id, signupBonusCents);
+          billingTxStore.record({
+            userId: user.id,
+            keyId: null,
+            paymentIntentId: null,
+            amountChargedCents: 0,
+            creditsAddedCents: signupBonusCents,
+            status: 'succeeded',
+            source: 'promotional',
+          });
+          (response.account as Record<string, unknown>).creditBalanceCents = newBalance;
+        }
       }
     }
 

@@ -150,4 +150,32 @@ describe('BillingTransactionStore', () => {
       expect(txs).toHaveLength(3);
     });
   });
+
+  describe('dailySignupBonusTotal', () => {
+    let store: BillingTransactionStore;
+
+    beforeEach(() => {
+      store = new BillingTransactionStore(openMemoryDb());
+    });
+
+    it('returns 0 when no promotional bonuses have been issued', () => {
+      expect(store.dailySignupBonusTotal()).toBe(0);
+    });
+
+    it('sums only promotional source records created today', () => {
+      store.record({ userId: 'u1', keyId: null, paymentIntentId: null, amountChargedCents: 0, creditsAddedCents: 100, status: 'succeeded', source: 'promotional' });
+      store.record({ userId: 'u2', keyId: null, paymentIntentId: null, amountChargedCents: 0, creditsAddedCents: 100, status: 'succeeded', source: 'promotional' });
+      // Manual top-up — should not be counted
+      store.record({ userId: 'u3', keyId: null, paymentIntentId: 'pi_x', amountChargedCents: 500, creditsAddedCents: 480, status: 'succeeded', source: 'manual' });
+
+      expect(store.dailySignupBonusTotal()).toBe(200);
+    });
+
+    it('counts zero for failed promotional records (creditsAddedCents=0)', () => {
+      store.record({ userId: 'u1', keyId: null, paymentIntentId: null, amountChargedCents: 0, creditsAddedCents: 0, status: 'failed', source: 'promotional' });
+      store.record({ userId: 'u2', keyId: null, paymentIntentId: null, amountChargedCents: 0, creditsAddedCents: 100, status: 'succeeded', source: 'promotional' });
+
+      expect(store.dailySignupBonusTotal()).toBe(100);
+    });
+  });
 });

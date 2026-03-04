@@ -49,6 +49,8 @@ export interface Config {
 
   // Signup bonus credit (0 = disabled)
   signupBonusCents: number;
+  /** Maximum total signup bonus credits per UTC day (0 = no cap). */
+  signupBonusDailyLimitCents: number;
 }
 
 export function loadConfig(): Config {
@@ -106,6 +108,7 @@ export function loadConfig(): Config {
       .filter(Boolean),
 
     signupBonusCents: parseInt(env('SIGNUP_BONUS_CENTS', '0'), 10),
+    signupBonusDailyLimitCents: parseInt(process.env.SIGNUP_BONUS_DAILY_LIMIT_CENTS ?? '0', 10),
   };
 }
 

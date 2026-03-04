@@ -176,6 +176,22 @@ export class BillingTransactionStore {
     return rows.map(this.toTransaction);
   }
 
+
+  /**
+   * Sum of signup bonus credits issued today (UTC day).
+   * Used to enforce the daily cap on signup bonuses.
+   */
+  dailySignupBonusTotal(): number {
+    const row = this.db.prepare(`
+      SELECT COALESCE(SUM(credits_added_cents), 0) AS total
+      FROM billing_transactions
+      WHERE source = 'promotional'
+        AND date(created_at) = date('now')
+    `).get() as { total: number };
+    return row.total;
+  }
+
+
   private toTransaction(row: DbRow): BillingTransaction {
     return {
       id: row.id,

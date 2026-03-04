@@ -171,7 +171,14 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   // Mounted BEFORE the authenticated sub-routers so they are
   // reachable without credentials.
   //
-  app.route('/v1/auth', createAuthRouter({ userStore, keyStore, email: emailSender, billingTxStore, signupBonusCents: config.signupBonusCents }));
+  app.route('/v1/auth', createAuthRouter({
+    userStore,
+    keyStore,
+    email: emailSender,
+    billingTxStore,
+    signupBonusCents: config.signupBonusCents,
+    signupBonusDailyLimitCents: config.signupBonusDailyLimitCents,
+  }));
 
   // ─── API routes (API key auth) ────────────────────────────
   //

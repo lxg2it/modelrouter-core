@@ -98,11 +98,12 @@ function mockEmailSender(): EmailSender {
   };
 }
 
-function mockBillingTxStore(overrides: Partial<BillingTransactionStore> = {}): BillingTransactionStore {
+function mockBillingTxStore(dailyTotal = 0, overrides: Partial<BillingTransactionStore> = {}): BillingTransactionStore {
   return {
     record: vi.fn(),
     listByUser: vi.fn().mockReturnValue([]),
     listByKey: vi.fn().mockReturnValue([]),
+    dailySignupBonusTotal: vi.fn().mockReturnValue(dailyTotal),
     ...overrides,
   } as unknown as BillingTransactionStore;
 }
@@ -113,6 +114,7 @@ function buildApp(
   email?: EmailSender,
   billingTxStore?: BillingTransactionStore,
   signupBonusCents = 0,
+  signupBonusDailyLimitCents = 0,
 ): Hono {
   const app = new Hono();
   app.route('/', createAuthRouter({
@@ -121,6 +123,7 @@ function buildApp(
     email: email ?? mockEmailSender(),
     billingTxStore: billingTxStore ?? mockBillingTxStore(),
     signupBonusCents,
+    signupBonusDailyLimitCents,
   }));
   return app;
 }
@@ -342,6 +345,67 @@ describe('POST /verify-code', () => {
     expect(billingTxStore.record).not.toHaveBeenCalled();
   });
 });
+
+
+  it('skips bonus when daily cap is reached', async () => {
+    const user = fakeUser();
+    const userStore = mockUserStore({
+      verifyLoginCode: vi.fn().mockReturnValue({ user, sessionToken: 'mr_st_tok', isNewAccount: true }),
+    });
+    // Daily total already at cap
+    const billingTxStore = mockBillingTxStore(3000);
+    const app = buildApp(userStore, mockKeyStore(), undefined, billingTxStore, 100, 3000);
+
+    const res = await app.request('/verify-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'new@example.com', code: '123456' }),
+    });
+
+    expect(res.status).toBe(201); // Account still created
+    expect(userStore.addCredits).not.toHaveBeenCalled();
+    expect(billingTxStore.record).not.toHaveBeenCalled();
+  });
+
+  it('skips bonus when adding it would exceed daily cap', async () => {
+    const user = fakeUser();
+    const userStore = mockUserStore({
+      verifyLoginCode: vi.fn().mockReturnValue({ user, sessionToken: 'mr_st_tok', isNewAccount: true }),
+    });
+    // 2950 already issued, adding 100 would exceed 3000 cap
+    const billingTxStore = mockBillingTxStore(2950);
+    const app = buildApp(userStore, mockKeyStore(), undefined, billingTxStore, 100, 3000);
+
+    const res = await app.request('/verify-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'new@example.com', code: '123456' }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(userStore.addCredits).not.toHaveBeenCalled();
+  });
+
+  it('applies bonus when daily cap is 0 (no limit) regardless of daily total', async () => {
+    const user = fakeUser({ creditBalanceCents: 0 });
+    const userStore = mockUserStore({
+      verifyLoginCode: vi.fn().mockReturnValue({ user, sessionToken: 'mr_st_tok', isNewAccount: true }),
+      addCredits: vi.fn().mockReturnValue(100),
+    });
+    // Huge daily total but no cap (0 = unlimited)
+    const billingTxStore = mockBillingTxStore(999999);
+    const app = buildApp(userStore, mockKeyStore(), undefined, billingTxStore, 100, 0);
+
+    const res = await app.request('/verify-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'new@example.com', code: '123456' }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(userStore.addCredits).toHaveBeenCalledWith('user-123', 100);
+  });
+
 
 // ─── POST /logout ──────────────────────────────────────
 
