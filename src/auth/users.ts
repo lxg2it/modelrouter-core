@@ -117,6 +117,14 @@ export class UserStore {
         ALTER TABLE users ADD COLUMN auto_recharge_last_at TEXT;
       `);
     }
+
+    // Migration: add user daily spend limit column if not present (added in v0.4)
+    const userColsV3 = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>;
+    if (!userColsV3.some((c) => c.name === 'daily_spend_limit_cents')) {
+      this.db.exec(`
+        ALTER TABLE users ADD COLUMN daily_spend_limit_cents INTEGER NOT NULL DEFAULT 0;
+      `);
+    }
   }
 
   // ─── Passwordless auth ────────────────────────────────
@@ -464,7 +472,19 @@ export class UserStore {
       autoRechargeEnabled: row.auto_recharge_enabled === 1,
       autoRechargeAmountCents: row.auto_recharge_amount_cents ?? 1000,
       autoRechargeLastAt: row.auto_recharge_last_at ?? undefined,
+      dailySpendLimitCents: row.daily_spend_limit_cents ?? 0,
     };
+  }
+
+  /**
+   * Set the user's personal daily spend limit.
+   * Pass 0 to clear the limit (system default will apply).
+   * The value must be a non-negative integer (cents).
+   */
+  setDailySpendLimit(userId: string, limitCents: number): void {
+    this.db.prepare(
+      `UPDATE users SET daily_spend_limit_cents = ? WHERE id = ?`,
+    ).run(Math.max(0, Math.round(limitCents)), userId);
   }
 }
 
@@ -499,4 +519,5 @@ interface DbUserRow {
   auto_recharge_enabled: number;
   auto_recharge_amount_cents: number;
   auto_recharge_last_at: string | null;
+  daily_spend_limit_cents: number;
 }

@@ -170,6 +170,12 @@ export interface User {
   autoRechargeAmountCents: number;
   /** ISO timestamp of the last auto-recharge attempt (for debounce). */
   autoRechargeLastAt?: string;
+  /**
+   * User-configured daily spend limit in cents. 0 means "use the system default".
+   * When set, overrides the system-level MAX_DAILY_SPEND_CENTS for this user.
+   * This is a user-managed safety cap — use it to prevent accidental overspend.
+   */
+  dailySpendLimitCents: number;
 }
 
 export interface ApiKey {

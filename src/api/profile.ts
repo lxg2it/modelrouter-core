@@ -363,14 +363,31 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
     <!-- Settings -->
     <div class="card">
       <h2 class="text-base font-semibold text-gray-800 mb-4">Settings</h2>
-      <div class="flex flex-wrap gap-3 items-end">
+
+      <!-- Account name -->
+      <div class="flex flex-wrap gap-3 items-end mb-4">
         <div class="flex-1" style="min-width:160px;">
           <label class="text-sm text-gray-600 block mb-1">Account name</label>
           <input type="text" id="nameInput" placeholder="Your name or company" />
         </div>
         <button class="btn btn-secondary" onclick="saveName()">Save</button>
       </div>
-      <div id="nameMsg" class="text-sm mt-2 hidden"></div>
+      <div id="nameMsg" class="text-sm mb-4 hidden"></div>
+
+      <!-- Daily spend limit -->
+      <div style="border-top:1px solid #e5e7eb; padding-top:16px;">
+        <label class="text-sm font-medium text-gray-700 block mb-1">Daily spend limit</label>
+        <p class="text-sm text-gray-500 mb-3">Set a personal cap on how much you spend per day (resets at UTC midnight). Leave blank or set to 0 to use the system default. Use this as a safety guardrail — you control it.</p>
+        <div class="flex flex-wrap gap-3 items-end">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span class="text-sm text-gray-500">$</span>
+            <input type="number" id="spendLimitInput" min="0" max="500" step="1" placeholder="No limit set" style="width:120px;" />
+          </div>
+          <button class="btn btn-secondary" onclick="saveSpendLimit()">Save</button>
+          <button class="btn" style="background:#f3f4f6; color:#374151; border:1px solid #d1d5db;" onclick="clearSpendLimit()">Clear limit</button>
+        </div>
+        <div id="spendLimitMsg" class="text-sm mt-2 hidden"></div>
+      </div>
     </div>
 
   </div> <!-- /dashboard -->
@@ -460,6 +477,14 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       p.activeKeyCount + ' active / ' + p.keyCount + ' total';
     document.getElementById('creditBalance').textContent = p.creditBalanceUsd;
     document.getElementById('nameInput').value = p.name || '';
+
+    // Populate daily spend limit (convert cents → dollars, 0 = no limit)
+    const limitEl = document.getElementById('spendLimitInput');
+    if (limitEl) {
+      limitEl.value = p.dailySpendLimitCents > 0
+        ? String(Math.round(p.dailySpendLimitCents / 100))
+        : '';
+    }
 
     renderProviderToggles(p.blockedProviders || []);
     renderUsage(currentUsageTab);
@@ -1192,6 +1217,50 @@ async function loadAutoRecharge() {
       msgEl.classList.remove('hidden');
     } else {
       msgEl.textContent = data.error?.message || 'Failed to save';
+      msgEl.className = 'text-sm mt-2 error-msg';
+      msgEl.classList.remove('hidden');
+    }
+  }
+
+  async function saveSpendLimit() {
+    const msgEl = document.getElementById('spendLimitMsg');
+    msgEl.classList.add('hidden');
+    const raw = document.getElementById('spendLimitInput').value.trim();
+    const dollars = raw === '' ? 0 : parseFloat(raw);
+    if (isNaN(dollars) || dollars < 0 || dollars > 500) {
+      msgEl.textContent = 'Enter a value between 0 and 500, or leave blank to clear.';
+      msgEl.className = 'text-sm mt-2 error-msg';
+      msgEl.classList.remove('hidden');
+      return;
+    }
+    const limitCents = Math.round(dollars * 100);
+    const res = await apiFetch('PATCH', '/v1/account/settings', { dailySpendLimitCents: limitCents });
+    const data = await res.json();
+    if (res.ok) {
+      if (profileData) profileData.dailySpendLimitCents = limitCents;
+      msgEl.textContent = data.message || 'Saved.';
+      msgEl.className = 'text-sm mt-2 success-msg';
+      msgEl.classList.remove('hidden');
+    } else {
+      msgEl.textContent = data.error?.message || 'Failed to save';
+      msgEl.className = 'text-sm mt-2 error-msg';
+      msgEl.classList.remove('hidden');
+    }
+  }
+
+  async function clearSpendLimit() {
+    const msgEl = document.getElementById('spendLimitMsg');
+    msgEl.classList.add('hidden');
+    const res = await apiFetch('PATCH', '/v1/account/settings', { dailySpendLimitCents: 0 });
+    const data = await res.json();
+    if (res.ok) {
+      document.getElementById('spendLimitInput').value = '';
+      if (profileData) profileData.dailySpendLimitCents = 0;
+      msgEl.textContent = 'Limit cleared. System default applies.';
+      msgEl.className = 'text-sm mt-2 success-msg';
+      msgEl.classList.remove('hidden');
+    } else {
+      msgEl.textContent = data.error?.message || 'Failed to clear limit';
       msgEl.className = 'text-sm mt-2 error-msg';
       msgEl.classList.remove('hidden');
     }

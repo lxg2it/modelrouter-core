@@ -989,6 +989,94 @@ describe('Daily spending limit', () => {
     // getDailySpendCents should NOT have been called when limit is disabled
     expect(mockUserStore.getDailySpendCents).not.toHaveBeenCalled();
   });
+
+  it('respects user-configured spend limit when lower than system default', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Should not be called');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const engine = makeDailySpendEngine();
+
+    const mockUserStore = makeMockUserStore({
+      getDailySpendCents: vi.fn().mockReturnValue(500), // $5 spent today
+    });
+
+    // User has set a $5 personal daily limit — already hit it
+    const userWithLimit: User = { ...billedUser, dailySpendLimitCents: 500 };
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: billedKey,
+      user: userWithLimit,
+      userStore: mockUserStore,
+      maxDailySpendCents: 3000, // System default is $30 but user overrides to $5
+    });
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(429);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('daily_spend_limit_exceeded');
+    expect(body.error.dailySpendLimitCents).toBe(500);
+    expect(googleAdapter.complete).not.toHaveBeenCalled();
+  });
+
+  it('respects user-configured spend limit when higher than system default', async () => {
+    const googleAdapter = makeSuccessAdapter('google');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const engine = makeDailySpendEngine();
+
+    const mockUserStore = makeMockUserStore({
+      getDailySpendCents: vi.fn().mockReturnValue(2999), // Just under system default but under user limit
+    });
+
+    // User has set a $100 limit — $29.99 spent is well within it
+    const userWithLimit: User = { ...billedUser, dailySpendLimitCents: 10000 };
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: billedKey,
+      user: userWithLimit,
+      userStore: mockUserStore,
+      maxDailySpendCents: 3000, // System default is $30 but user raised it to $100
+    });
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(200);
+  });
+
+  it('falls back to system default when user limit is 0 (not set)', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Should not be called');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const engine = makeDailySpendEngine();
+
+    const mockUserStore = makeMockUserStore({
+      getDailySpendCents: vi.fn().mockReturnValue(3000), // At system default
+    });
+
+    // User has no personal limit set (dailySpendLimitCents = 0)
+    const userNoLimit: User = { ...billedUser, dailySpendLimitCents: 0 };
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: billedKey,
+      user: userNoLimit,
+      userStore: mockUserStore,
+      maxDailySpendCents: 3000,
+    });
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(429);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('daily_spend_limit_exceeded');
+    expect(body.error.dailySpendLimitCents).toBe(3000); // System default used
+  });
 });
 
 

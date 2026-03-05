@@ -485,7 +485,13 @@ async function reserveCreditsForRequest(
   // ── Daily spending cap ──────────────────────────────────────────────────
   // Reject requests that would push the user over their daily spend limit.
   // Checked before reservation so the error surfaces before touching their balance.
-  const maxDailySpend = deps.maxDailySpendCents ?? 3000;
+  //
+  // Priority: user-configured limit > system default.
+  // A user limit of 0 means "use system default". Users can set any positive
+  // value to override the system default (higher or lower).
+  const systemDefaultSpend = deps.maxDailySpendCents ?? 3000;
+  const userLimit = user.dailySpendLimitCents ?? 0;
+  const maxDailySpend = userLimit > 0 ? userLimit : systemDefaultSpend;
   if (maxDailySpend > 0) {
     const todaySpend = deps.userStore.getDailySpendCents(user.id);
     if (todaySpend >= maxDailySpend) {

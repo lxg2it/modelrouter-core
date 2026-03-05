@@ -68,6 +68,7 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
       creditBalanceUsd: formatUsd(user.creditBalanceCents),
       stripeEnabled: !!user.stripeCustomerId,
       blockedProviders: user.blockedProviders,
+      dailySpendLimitCents: user.dailySpendLimitCents,
       keyCount: keys.length,
       activeKeyCount: keys.filter((k) => k.active).length,
       usage: {
@@ -213,6 +214,50 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
       message: validated.length === 0
         ? 'All providers unblocked.'
         : `Blocked providers: ${validated.join(', ')}.`,
+    });
+  });
+
+  // ─── PATCH /v1/account/settings ───────────────────────────
+  //
+  // Update user-configurable account settings. Currently supports:
+  //   dailySpendLimitCents — personal daily spend cap. 0 = use system default.
+  //
+  // Body: { dailySpendLimitCents: number }
+  //   - Pass 0 to clear any user-set limit (system default applies).
+  //   - Any positive integer sets a per-user daily spend cap (in cents).
+  //   - Maximum allowed value: 50000 ($500.00) to prevent accidental runaway.
+  //
+  router.patch('/settings', async (c: Context<SessionEnv>) => {
+    const user = c.get('user');
+
+    let body: { dailySpendLimitCents?: unknown };
+    try {
+      body = await c.req.json() as { dailySpendLimitCents?: unknown };
+    } catch {
+      return c.json({ error: { message: 'Invalid JSON body', code: 'invalid_request' } }, 400);
+    }
+
+    if (!('dailySpendLimitCents' in body)) {
+      return c.json({ error: { message: 'No settings to update', code: 'invalid_request' } }, 400);
+    }
+
+    const raw = body.dailySpendLimitCents;
+    if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 0 || raw > 50000) {
+      return c.json({
+        error: {
+          message: 'dailySpendLimitCents must be a non-negative integer (0–50000)',
+          code: 'invalid_request',
+        },
+      }, 400);
+    }
+
+    userStore.setDailySpendLimit(user.id, raw);
+
+    return c.json({
+      dailySpendLimitCents: raw,
+      message: raw === 0
+        ? 'Daily spend limit cleared. System default applies.'
+        : `Daily spend limit set to $${(raw / 100).toFixed(2)}.`,
     });
   });
 
