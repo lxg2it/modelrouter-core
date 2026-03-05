@@ -118,6 +118,8 @@ export function loadConfig(): Config {
 // ─── Tier Definitions ──────────────────────────────────
 //
 // Pricing as of February 28, 2026 (USD per 1M tokens).
+// Quality scores derived from weighted benchmarks — see benchmarks.ts for
+// raw data, sources, and methodology.
 // This is the configuration that changes when we update models.
 // The rest of the system is model-agnostic.
 
@@ -140,29 +142,29 @@ export const TIERS: Record<string, TierConfig> = {
     models: [
       // latencyMs = approximate time-to-first-token in milliseconds (static estimates)
       // maxContextTokens = model's context window limit (filter applied before routing)
-      { provider: 'google',    model: 'gemini-2.5-flash',          quality: 0.70, inputPer1M: 0.30,  outputPer1M: 2.50,  latencyMs: 280,  maxContextTokens: 1_048_576, isThinkingModel: true },
-      { provider: 'openai',    model: 'gpt-4.1-mini',              quality: 0.72, inputPer1M: 0.40,  outputPer1M: 1.60,  latencyMs: 380,  maxContextTokens: 1_047_576 },
-      { provider: 'openai',    model: 'o4-mini',                   quality: 0.75, inputPer1M: 1.10,  outputPer1M: 4.40,  latencyMs: 2500, maxContextTokens: 200_000,   isThinkingModel: true },
-      { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', quality: 0.68, inputPer1M: 1.00,  outputPer1M: 5.00,  latencyMs: 320,  maxContextTokens: 200_000   },
-      { provider: 'grok',      model: 'grok-3-mini-beta',          quality: 0.71, inputPer1M: 0.30,  outputPer1M: 0.50,  latencyMs: 250,  maxContextTokens: 131_072,   isThinkingModel: true },
+      { provider: 'google',    model: 'gemini-2.5-flash',          quality: 0.67, inputPer1M: 0.30,  outputPer1M: 2.50,  latencyMs: 280,  maxContextTokens: 1_048_576, isThinkingModel: true },
+      { provider: 'openai',    model: 'gpt-4.1-mini',              quality: 0.58, inputPer1M: 0.40,  outputPer1M: 1.60,  latencyMs: 380,  maxContextTokens: 1_047_576 },
+      { provider: 'openai',    model: 'o4-mini',                   quality: 0.74, inputPer1M: 1.10,  outputPer1M: 4.40,  latencyMs: 2500, maxContextTokens: 200_000,   isThinkingModel: true },
+      { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', quality: 0.60, inputPer1M: 1.00,  outputPer1M: 5.00,  latencyMs: 320,  maxContextTokens: 200_000   },
+      { provider: 'grok',      model: 'grok-3-mini-beta',          quality: 0.50, inputPer1M: 0.30,  outputPer1M: 0.50,  latencyMs: 250,  maxContextTokens: 131_072,   isThinkingModel: true },
     ],
     description: 'Fast and cheap. Good for classification, extraction, simple generation.',
   },
   standard: {
     models: [
-      { provider: 'google',    model: 'gemini-2.5-pro',   quality: 0.88, inputPer1M: 1.25,  outputPer1M: 10.00, latencyMs: 600,  maxContextTokens: 1_048_576, isThinkingModel: true },
-      { provider: 'openai',    model: 'gpt-4.1',          quality: 0.87, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 750,  maxContextTokens: 1_047_576 },
-      { provider: 'openai',    model: 'o3',               quality: 0.90, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 3500, maxContextTokens: 200_000,   isThinkingModel: true },
-      { provider: 'anthropic', model: 'claude-sonnet-4-6', quality: 0.92, inputPer1M: 3.00, outputPer1M: 15.00, latencyMs: 650,  maxContextTokens: 200_000   },
-      { provider: 'grok',      model: 'grok-3-beta',       quality: 0.89, inputPer1M: 3.00, outputPer1M: 15.00, latencyMs: 580,  maxContextTokens: 131_072   },
+      { provider: 'google',    model: 'gemini-2.5-pro',   quality: 0.87, inputPer1M: 1.25,  outputPer1M: 10.00, latencyMs: 600,  maxContextTokens: 1_048_576, isThinkingModel: true },
+      { provider: 'openai',    model: 'gpt-4.1',          quality: 0.79, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 750,  maxContextTokens: 1_047_576 },
+      { provider: 'openai',    model: 'o3',               quality: 0.85, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 3500, maxContextTokens: 200_000,   isThinkingModel: true },
+      { provider: 'anthropic', model: 'claude-sonnet-4-6', quality: 0.85, inputPer1M: 3.00, outputPer1M: 15.00, latencyMs: 650,  maxContextTokens: 200_000   },
+      { provider: 'grok',      model: 'grok-3-beta',       quality: 0.74, inputPer1M: 3.00, outputPer1M: 15.00, latencyMs: 580,  maxContextTokens: 131_072   },
     ],
     description: 'Balanced quality and cost. The default for most applications.',
   },
   premium: {
     models: [
-      { provider: 'google',    model: 'gemini-3.1-pro-preview', quality: 0.95, inputPer1M: 2.00,  outputPer1M: 12.00, latencyMs: 900,  maxContextTokens: 1_048_576 },
+      { provider: 'google',    model: 'gemini-3.1-pro-preview', quality: 1.00, inputPer1M: 2.00,  outputPer1M: 12.00, latencyMs: 900,  maxContextTokens: 1_048_576 },
       { provider: 'anthropic', model: 'claude-opus-4-6', quality: 1.00, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 200_000   },
-      { provider: 'openai',    model: 'gpt-5.2',         quality: 0.98, inputPer1M: 10.00, outputPer1M: 30.00, latencyMs: 1000, maxContextTokens: 200_000   },
+      { provider: 'openai',    model: 'gpt-5.2',         quality: 0.93, inputPer1M: 10.00, outputPer1M: 30.00, latencyMs: 1000, maxContextTokens: 200_000   },
     ],
     description: 'Maximum capability. For complex reasoning, creative work, difficult tasks.',
   },

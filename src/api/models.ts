@@ -14,7 +14,8 @@ import { Hono } from 'hono';
 import type { AuthEnv } from '../auth/middleware.js';
 import { TIERS, MODEL_ALIASES } from '../config.js';
 import type { UsageStore } from '../tracking/store.js';
-import type { ModelsListResponse, ModelInfo } from '../types.js';
+import type { ModelsListResponse, ModelInfo, ModelConfig } from '../types.js';
+import { BENCHMARK_LABELS, BENCHMARK_WEIGHTS } from '../benchmarks.js';
 
 interface ModelsDeps {
   usageStore: UsageStore;
@@ -147,16 +148,21 @@ const MODELS_STYLES = /* html */`
     .page-wide { max-width: 860px; }
     .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     table { min-width: 420px; }
-    .badge-economy  { background: #1a2e1a; color: #4a9; }
-    .badge-standard { background: #1a1a2e; color: #58a6ff; }
-    .badge-premium  { background: #2a1a2e; color: #c084fc; }
     .page-sub { color: var(--muted); margin-bottom: 28px; }
+    .grid-table { font-size: 13px; }
+    .grid-table th, .grid-table td { text-align: center; padding: 10px 12px; }
+    .grid-corner { text-align: left !important; color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .grid-prefer { text-align: left !important; font-family: var(--mono); font-size: 12px; color: var(--accent); }
+    .grid-table code { font-size: 11px; white-space: nowrap; }
+    .tier-economy { color: #4a9; }
+    .tier-standard { color: #58a6ff; }
+    .tier-premium { color: #c084fc; }
   </style>
 `;
 
 interface TierModelEntry {
   tier: string;
-  models: Array<{ provider: string; model: string; quality: number; inputPer1M: number; outputPer1M: number; maxContextTokens?: number }>;
+  models: ModelConfig[];
   description: string;
 }
 
@@ -164,6 +170,96 @@ function formatContext(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(0)}M`;
   if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(0)}k`;
   return String(tokens);
+}
+
+/** Strip date suffixes from model IDs for display. */
+function displayModel(id: string): string {
+  return id.replace(/-\d{8}$/, '');
+}
+
+/** Simulate routing selection for a tier×prefer combination. */
+function selectForGrid(models: ModelConfig[], prefer: string, ratio = 1): ModelConfig {
+  if (prefer === 'quality') {
+    const sorted = [...models].sort((a, b) =>
+      b.quality - a.quality
+      || (a.inputPer1M + a.outputPer1M * ratio) - (b.inputPer1M + b.outputPer1M * ratio),
+    );
+    return sorted[0];
+  }
+  if (prefer === 'fast') {
+    const sorted = [...models].sort((a, b) =>
+      a.latencyMs - b.latencyMs || b.quality - a.quality,
+    );
+    return sorted[0];
+  }
+  // cheap / balanced
+  const scored = models.map((m) => ({
+    config: m,
+    cost: m.inputPer1M + m.outputPer1M * ratio,
+  }));
+  scored.sort((a, b) => a.cost - b.cost || b.config.quality - a.config.quality);
+  return scored[0].config;
+}
+
+/** Build the tier×prefer grid HTML showing which model is selected for each combo. */
+function renderSelectionGrid(): string {
+  const tiers = Object.keys(TIERS);
+  const prefers = ['cheap', 'fast', 'balanced', 'quality'];
+
+  const headerCells = tiers.map((t) =>
+    `<th class="grid-tier tier-${t}">${t}</th>`).join('');
+
+  const rows = prefers.map((p) => {
+    const cells = tiers.map((t) => {
+      const selected = selectForGrid(TIERS[t].models, p);
+      return `<td><code>${displayModel(selected.model)}</code></td>`;
+    }).join('');
+    return `<tr><td class="grid-prefer">${p}</td>${cells}</tr>`;
+  }).join('\n      ');
+
+  return `
+  <div class="table-scroll">
+    <table class="grid-table">
+      <thead>
+        <tr>
+          <th class="grid-corner">prefer ↓ &nbsp; tier →</th>
+          ${headerCells}
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/** Build the scoring methodology section. */
+function renderMethodology(): string {
+  const benchmarkRows = (Object.keys(BENCHMARK_WEIGHTS) as (keyof typeof BENCHMARK_WEIGHTS)[])
+    .map((key) => {
+      const pct = (BENCHMARK_WEIGHTS[key] * 100).toFixed(0);
+      return `<tr><td>${BENCHMARK_LABELS[key]}</td><td>${pct}%</td></tr>`;
+    }).join('\n      ');
+
+  return `
+  <p style="font-size:13px; color:var(--muted); margin-bottom:16px;">
+    Quality scores are derived from a weighted composite of public benchmarks.
+    Each benchmark is normalised across our model catalogue, then combined.
+    The best model scores 1.00; the floor is 0.50.
+  </p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Benchmark</th><th>Weight</th></tr></thead>
+      <tbody>
+        ${benchmarkRows}
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:12px; color:var(--muted); margin-top:12px;">
+    Sources: <a href="https://arena.ai/leaderboard">Chatbot Arena</a>,
+    <a href="https://lmcouncil.ai/benchmarks">LM Council</a>.
+    Last updated March 2026.
+  </p>`;
 }
 
 function renderModelsHtml(models: ModelInfo[]): string {
@@ -175,36 +271,37 @@ function renderModelsHtml(models: ModelInfo[]): string {
   }));
 
   const tierSections = tierEntries.map(({ tier, models: tierModels, description }) => {
-    const badgeClass = `badge-${tier}`;
-    const rows = tierModels.map((m) => `
+    const rows = tierModels.map((m) => {
+      const qualityPct = (m.quality * 100).toFixed(0);
+      return `
       <tr>
-        <td><code>${m.model}</code></td>
+        <td><code>${displayModel(m.model)}</code></td>
         <td>${m.provider}</td>
+        <td>${qualityPct}</td>
         <td>$${m.inputPer1M.toFixed(2)}</td>
         <td>$${m.outputPer1M.toFixed(2)}</td>
+        <td>${m.latencyMs.toLocaleString()}ms</td>
         <td>${m.maxContextTokens !== undefined ? formatContext(m.maxContextTokens) : '—'}</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
 
     return `
-    <div class="card">
-      <div class="card-title">
-        <span class="badge ${badgeClass}">${tier}</span>
-        &nbsp; ${description}
-      </div>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Model</th>
-              <th>Provider</th>
-              <th>Input / 1M tokens</th>
-              <th>Output / 1M tokens</th>
-              <th>Context</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
+    <div class="section-head">${tier} <span style="font-weight:400; text-transform:none; letter-spacing:0;">— ${description}</span></div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Provider</th>
+            <th>Quality</th>
+            <th>Input / 1M</th>
+            <th>Output / 1M</th>
+            <th>Latency</th>
+            <th>Context</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
     </div>`;
   }).join('\n');
 
@@ -215,7 +312,7 @@ function renderModelsHtml(models: ModelInfo[]): string {
 <html lang="en">
 <head>
   ${SHARED_HEAD}
-  <title>Models — Model Router</title>
+  <title>Models — model-router</title>
   ${MODELS_STYLES}
 </head>
 <body>
@@ -225,29 +322,33 @@ function renderModelsHtml(models: ModelInfo[]): string {
         <div class="title"><a href="/">model-router</a></div>
         <a href="/profile" class="nav-link">profile →</a>
       </div>
+      <p class="subtitle">
+        Route by tier or use a familiar model name — we map ${aliasCount} common aliases automatically.
+      </p>
     </div>
 
-    <h1>Available Models</h1>
-    <p class="page-sub">
-      Route to any model by tier, or use a familiar model name — we map it automatically.
-      Also accepts ${aliasCount} common aliases (gpt-4o, claude-sonnet, gemini-pro, …).
-      See the <a href="/">full API docs</a>.
+    <div class="section-head">Routing Grid</div>
+    <p style="font-size:13px; color:var(--muted); margin-bottom:16px;">
+      Which model you get for each <code>model</code> (tier) × <code>prefer</code> combination.
+      All providers healthy, default output ratio.
     </p>
+    ${renderSelectionGrid()}
 
     ${tierSections}
 
-    <div class="card">
-      <div class="card-title">Usage</div>
-      <p style="font-size:13px;color:var(--muted);margin-bottom:10px;">
-        Pass a tier name or any alias as the <code>model</code> field in your request.
-        The router picks the best available provider based on your <code>prefer</code> setting.
-      </p>
-      <code style="display:block;background:var(--code-bg);padding:12px 14px;font-size:12px;line-height:1.8;">
-        curl https://api.lxg2it.com/v1/chat/completions \\<br>
-        &nbsp;&nbsp;-H "Authorization: Bearer YOUR_API_KEY" \\<br>
-        &nbsp;&nbsp;-d '{"model":"standard","messages":[...]}'
-      </code>
-    </div>
+    <div class="section-head">Quality Scoring</div>
+    ${renderMethodology()}
+
+    <div class="section-head">Usage</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:10px;">
+      Pass a tier name or any alias as the <code>model</code> field in your request.
+      The router picks the best available provider based on your <code>prefer</code> setting.
+    </p>
+    <code style="display:block;background:var(--code-bg);padding:12px 14px;font-size:12px;line-height:1.8;">
+      curl https://api.lxg2it.com/v1/chat/completions \\<br>
+      &nbsp;&nbsp;-H "Authorization: Bearer YOUR_API_KEY" \\<br>
+      &nbsp;&nbsp;-d '{"model":"standard","messages":[...]}'
+    </code>
 
     ${pageFooter('models')}
   </div>

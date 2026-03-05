@@ -446,8 +446,8 @@ describe('RoutingEngine', () => {
         });
 
         const decision = engine.selectModel(req({ prefer: 'quality' }))!;
-        // claude-opus-4-6 has quality: 1.00 — the highest in premium
-        expect(decision.model).toBe('claude-opus-4-6');
+        // gemini-3.1-pro-preview and claude-opus-4-6 tie at 1.00; gemini wins on cost
+        expect(decision.model).toBe('gemini-3.1-pro-preview');
         expect(decision.tier).toBe('premium');
       });
 
@@ -460,8 +460,8 @@ describe('RoutingEngine', () => {
         });
 
         const decision = engine.selectModel(req({ tier: 'standard', prefer: 'quality' }))!;
-        // claude-sonnet-4-6 has quality: 0.92 — the highest in standard
-        expect(decision.model).toBe('claude-sonnet-4-6');
+        // gemini-2.5-pro has quality: 0.87 — the highest in standard
+        expect(decision.model).toBe('gemini-2.5-pro');
         expect(decision.tier).toBe('standard');
         expect(decision.prefer).toBe('quality');
       });
