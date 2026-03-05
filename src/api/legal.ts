@@ -3,11 +3,10 @@
  * GET /terms   — Terms of Service
  *
  * Short, honest, developer-focused. Written plainly, not in legalese.
- * If we ever grow to the point of needing formal legal review, these
- * will need to be reviewed — but they should stay readable.
  */
 
 import { Hono } from 'hono';
+import { SHARED_CSS, SHARED_HEAD, pageFooter } from './shared-styles.js';
 
 export function createLegalRouter(): Hono {
   const router = new Hono();
@@ -25,69 +24,28 @@ export function createLegalRouter(): Hono {
   return router;
 }
 
-const SHARED_STYLES = /* html */`
-<style>
-  :root {
-    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
-    --border: #30363d; --text: #e6edf3; --muted: #8b949e;
-    --accent: #58a6ff; --accent2: #3fb950;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: var(--bg); color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-    font-size: 15px; line-height: 1.75; min-height: 100vh;
-  }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .container { max-width: 720px; margin: 0 auto; padding: 48px 24px; }
-  .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 40px; }
-  .logo-icon {
-    width: 32px; height: 32px;
-    background: linear-gradient(135deg, #58a6ff, #3fb950);
-    border-radius: 8px; display: flex; align-items: center;
-    justify-content: center; font-size: 16px; font-weight: 700; color: #0d1117;
-  }
-  .logo-name { font-size: 18px; font-weight: 700; }
-  h1 { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
-  .effective { font-size: 13px; color: var(--muted); margin-bottom: 32px; }
-  h2 { font-size: 16px; font-weight: 600; color: var(--text); margin: 28px 0 8px; }
-  p { color: var(--muted); margin-bottom: 12px; }
-  p strong { color: var(--text); }
-  ul { color: var(--muted); padding-left: 20px; margin-bottom: 12px; }
-  li { margin-bottom: 4px; }
-  li strong { color: var(--text); }
-  .highlight {
-    background: var(--bg2); border: 1px solid var(--border);
-    border-radius: 8px; padding: 16px 20px; margin: 20px 0;
-  }
-  .highlight p { margin-bottom: 0; }
-  .footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
-  .footer a { color: var(--muted); margin-right: 16px; }
-  .footer a:hover { color: var(--text); }
-  code { font-family: 'SFMono-Regular', Consolas, Menlo, monospace; font-size: 13px; background: var(--bg3); padding: 1px 5px; border-radius: 3px; color: var(--text); }
-</style>
-`;
-
 const PRIVACY_HTML = /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  ${SHARED_HEAD}
   <title>Privacy Policy — Model Router</title>
-  ${SHARED_STYLES}
+  <style>${SHARED_CSS}
+    .effective { font-size: 13px; color: var(--muted); margin-bottom: 32px; }
+  </style>
 </head>
 <body>
-  <div class="container">
-    <div class="logo">
-      <div class="logo-icon">M</div>
-      <a href="/" class="logo-name">Model Router</a>
+  <div class="page">
+    <div class="header">
+      <div class="header-top">
+        <div class="title"><a href="/">model-router</a></div>
+        <a href="/profile" class="nav-link">profile →</a>
+      </div>
     </div>
 
     <h1>Privacy Policy</h1>
     <p class="effective">Effective 3 March 2026 · <a href="mailto:privacy@lxg2it.com">privacy@lxg2it.com</a></p>
 
-    <div class="highlight">
+    <div class="callout">
       <p>
         <strong>Short version:</strong> We don't read or store your message content.
         We store the minimum needed to run the service: your email, usage statistics (token counts, costs),
@@ -156,14 +114,7 @@ const PRIVACY_HTML = /* html */`<!DOCTYPE html>
       to how we handle data.
     </p>
 
-    <div class="footer">
-      <a href="/">Home</a>
-      <a href="/terms">Terms</a>
-      <a href="/health">Health</a>
-      <a href="/v1/models">Models</a>
-      <br><br>
-      <span>© 2026 lxg2it (ABN 64 933 166 844)</span>
-    </div>
+    ${pageFooter('privacy')}
   </div>
 </body>
 </html>`;
@@ -171,22 +122,25 @@ const PRIVACY_HTML = /* html */`<!DOCTYPE html>
 const TERMS_HTML = /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  ${SHARED_HEAD}
   <title>Terms of Service — Model Router</title>
-  ${SHARED_STYLES}
+  <style>${SHARED_CSS}
+    .effective { font-size: 13px; color: var(--muted); margin-bottom: 32px; }
+  </style>
 </head>
 <body>
-  <div class="container">
-    <div class="logo">
-      <div class="logo-icon">M</div>
-      <a href="/" class="logo-name">Model Router</a>
+  <div class="page">
+    <div class="header">
+      <div class="header-top">
+        <div class="title"><a href="/">model-router</a></div>
+        <a href="/profile" class="nav-link">profile →</a>
+      </div>
     </div>
 
     <h1>Terms of Service</h1>
     <p class="effective">Effective 3 March 2026 · <a href="mailto:support@lxg2it.com">support@lxg2it.com</a></p>
 
-    <div class="highlight">
+    <div class="callout">
       <p>
         <strong>Plain English:</strong> Pay as you go, don't abuse the service, don't do anything illegal.
         If something goes wrong, we'll do our best to fix it — but we're a small operation and can't
@@ -204,7 +158,7 @@ const TERMS_HTML = /* html */`<!DOCTYPE html>
     <h2>Account and billing</h2>
     <ul>
       <li><strong>Prepaid credits:</strong> you add credits via Stripe before using the service. We deduct the cost of each request. There is no monthly subscription — you only pay when you use it.</li>
-      <li><strong>Pricing:</strong> we charge a 4% routing fee on top of provider costs. Current pricing is shown on the <a href="/v1/models">models page</a>.</li>
+      <li><strong>Pricing:</strong> a 4% fee is applied when you deposit credits. Requests are then charged at actual provider rates — no per-request markup. Current pricing is shown on the <a href="/v1/models">models page</a>.</li>
       <li><strong>No refunds on used credits:</strong> credits that have been used to make API calls are non-refundable. Unused credits may be refunded by contacting us.</li>
       <li><strong>We reserve the right to adjust pricing</strong> with 14 days notice to registered users.</li>
     </ul>
@@ -264,14 +218,7 @@ const TERMS_HTML = /* html */`<!DOCTYPE html>
       Victorian courts.
     </p>
 
-    <div class="footer">
-      <a href="/">Home</a>
-      <a href="/privacy">Privacy</a>
-      <a href="/health">Health</a>
-      <a href="/v1/models">Models</a>
-      <br><br>
-      <span>© 2026 lxg2it (ABN 64 933 166 844)</span>
-    </div>
+    ${pageFooter('terms')}
   </div>
 </body>
 </html>`;

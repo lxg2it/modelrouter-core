@@ -159,11 +159,10 @@ describe('GET /profile', () => {
     expect(html).toContain('id="usageDailyChart"');
   });
 
-  it('HTML loads required external scripts (Tailwind, Chart.js, Stripe)', async () => {
+  it('HTML loads required external scripts (Chart.js, Stripe)', async () => {
     const app = buildApp();
     const res = await app.request('/profile');
     const html = await res.text();
-    expect(html).toContain('cdn.tailwindcss.com');
     expect(html).toContain('chart.js');
     expect(html).toContain('js.stripe.com');
   });

@@ -57,8 +57,8 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     .header { margin-bottom: 48px; }
     .header-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
     .title { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: -0.5px; }
-    .sign-in { font-size: 13px; color: var(--muted); font-family: var(--mono); }
-    .sign-in:hover { color: var(--accent); }
+    .sign-in { font-size: 13px; color: var(--accent); font-family: var(--mono); }
+    .sign-in:hover { opacity: 0.8; }
     .subtitle { font-size: 15px; color: var(--muted); margin-bottom: 16px; max-width: 480px; }
     .status { display: flex; align-items: center; gap: 8px; }
     .dot {
@@ -185,10 +185,9 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border);
       display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
     }
-    .footer-links { display: flex; gap: 20px; }
+    .footer-links { display: flex; gap: 16px; flex-wrap: wrap; }
     .footer-links a { font-size: 12px; color: var(--muted); font-family: var(--mono); }
     .footer-links a:hover { color: var(--accent); }
-    .footer-note { font-size: 12px; color: var(--muted); font-family: var(--mono); }
 
     /* ── Mobile ── */
     @media (max-width: 600px) {
@@ -401,7 +400,6 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       <a href="/privacy">privacy</a>
       <a href="/terms">terms</a>
     </div>
-    <div class="footer-note">api.lxg2it.com</div>
   </div>
 
 </div>

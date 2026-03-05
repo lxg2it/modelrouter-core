@@ -139,64 +139,18 @@ function parsePeriod(period: string): number {
 
 // ─── HTML templates ───────────────────────────────────────
 
-const SHARED_STYLES = /* html */`
+import { SHARED_CSS, SHARED_HEAD, pageFooter } from './shared-styles.js';
+
+const MODELS_STYLES = /* html */`
   <style>
-    :root {
-      --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
-      --border: #30363d; --text: #e6edf3; --muted: #8b949e;
-      --accent: #58a6ff; --accent2: #3fb950; --accent3: #d2a8ff;
-      --warn: #f0883e;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: var(--bg); color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-      font-size: 15px; line-height: 1.6; min-height: 100vh;
-    }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .container { max-width: 860px; margin: 0 auto; padding: 48px 24px; }
-    .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-    .logo-icon {
-      width: 32px; height: 32px;
-      background: linear-gradient(135deg, #58a6ff, #3fb950);
-      border-radius: 8px; display: flex; align-items: center;
-      justify-content: center; font-size: 16px; font-weight: 700; color: #0d1117;
-    }
-    .logo-name { font-size: 18px; font-weight: 700; }
-    .page-title { font-size: 24px; font-weight: 700; margin: 28px 0 8px; }
-    .page-sub { color: var(--muted); margin-bottom: 28px; }
-    .card {
-      background: var(--bg2); border: 1px solid var(--border);
-      border-radius: 10px; padding: 20px; margin-bottom: 16px;
-    }
-    .card-title {
-      font-size: 12px; font-weight: 600; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px;
-    }
+    ${SHARED_CSS}
+    .page-wide { max-width: 860px; }
     .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 420px; }
-    th {
-      text-align: left; padding: 6px 10px;
-      border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 500;
-    }
-    td { padding: 7px 10px; border-bottom: 1px solid var(--bg3); }
-    tr:last-child td { border-bottom: none; }
-    code {
-      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-      font-size: 12px; background: var(--bg3); padding: 2px 5px; border-radius: 4px;
-    }
-    .badge {
-      display: inline-block; padding: 2px 8px; border-radius: 4px;
-      font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
-    }
-    .badge-economy  { background: #1a3a2a; color: #3fb950; }
-    .badge-standard { background: #1a2a3a; color: #58a6ff; }
-    .badge-premium  { background: #2a1a3a; color: #d2a8ff; }
-    .badge-ok      { background: #1a3a2a; color: #3fb950; }
-    .badge-warn    { background: #3a2a10; color: var(--warn); }
-    .badge-error   { background: #3a1a1a; color: #f85149; }
-    .back { margin-top: 32px; font-size: 13px; color: var(--muted); }
+    table { min-width: 420px; }
+    .badge-economy  { background: #1a2e1a; color: #4a9; }
+    .badge-standard { background: #1a1a2e; color: #58a6ff; }
+    .badge-premium  { background: #2a1a2e; color: #c084fc; }
+    .page-sub { color: var(--muted); margin-bottom: 28px; }
   </style>
 `;
 
@@ -260,19 +214,20 @@ function renderModelsHtml(models: ModelInfo[]): string {
   return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  ${SHARED_HEAD}
   <title>Models — Model Router</title>
-  ${SHARED_STYLES}
+  ${MODELS_STYLES}
 </head>
 <body>
-  <div class="container">
-    <div class="logo">
-      <div class="logo-icon">M</div>
-      <a href="/" class="logo-name">Model Router</a>
+  <div class="page-wide">
+    <div class="header">
+      <div class="header-top">
+        <div class="title"><a href="/">model-router</a></div>
+        <a href="/profile" class="nav-link">profile →</a>
+      </div>
     </div>
 
-    <h1 class="page-title">Available Models</h1>
+    <h1>Available Models</h1>
     <p class="page-sub">
       Route to any model by tier, or use a familiar model name — we map it automatically.
       Also accepts ${aliasCount} common aliases (gpt-4o, claude-sonnet, gemini-pro, …).
@@ -287,14 +242,14 @@ function renderModelsHtml(models: ModelInfo[]): string {
         Pass a tier name or any alias as the <code>model</code> field in your request.
         The router picks the best available provider based on your <code>prefer</code> setting.
       </p>
-      <code style="display:block;background:var(--bg3);padding:12px 14px;border-radius:6px;font-size:12px;line-height:1.8;">
+      <code style="display:block;background:var(--code-bg);padding:12px 14px;font-size:12px;line-height:1.8;">
         curl https://api.lxg2it.com/v1/chat/completions \\<br>
         &nbsp;&nbsp;-H "Authorization: Bearer YOUR_API_KEY" \\<br>
         &nbsp;&nbsp;-d '{"model":"standard","messages":[...]}'
       </code>
     </div>
 
-    <div class="back"><a href="/">← Back to home</a></div>
+    ${pageFooter('models')}
   </div>
 </body>
 </html>`;
