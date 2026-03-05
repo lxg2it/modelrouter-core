@@ -391,6 +391,13 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
     .status-msg.error { border-left-color: var(--red); color: var(--red); }
     .status-msg.info  { border-left-color: var(--accent); color: var(--accent); }
     .btn-grant { background: var(--accent); color: #111; }
+    .user-list { display: flex; flex-direction: column; gap: 1px; }
+    .user-card { padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .user-card:last-child { border-bottom: none; }
+    .user-email { font-family: var(--mono); font-size: 13px; margin-bottom: 4px; word-break: break-all; }
+    .user-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .user-balance { font-family: var(--mono); font-size: 13px; color: var(--green); }
+    .user-date { font-family: var(--mono); font-size: 12px; color: var(--muted); }
     .btn-small { font-size: 12px; padding: 3px 10px; background: var(--code-bg); border: 1px solid var(--border); color: var(--accent); cursor: pointer; font-family: var(--mono); }
     .btn-small:hover { border-color: var(--accent); }
     label { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -437,14 +444,16 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
       </tr>\`).join('');
     }
 
-    function userRows(users, token) {
-      if (!users.length) return '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:16px">No users yet</td></tr>';
-      return users.map(u => \`<tr>
-        <td>\${u.email}</td>
-        <td>\${cents(u.creditBalanceCents)}</td>
-        <td style="color:var(--muted);font-size:12px">\${u.createdAt.slice(0, 16)}</td>
-        <td><button class="btn-small" onclick="grantCredit('\${u.email}')">Grant Credit</button></td>
-      </tr>\`).join('');
+    function userCards(users) {
+      if (!users.length) return '<p style="color:var(--muted);padding:16px 0">No users yet.</p>';
+      return users.map(u => \`<div class="user-card">
+        <div class="user-email">\${u.email}</div>
+        <div class="user-meta">
+          <span class="user-balance">\${cents(u.creditBalanceCents)}</span>
+          <span class="user-date">\${u.createdAt.slice(0, 10)}</span>
+          <button class="btn-small" onclick="grantCredit('\${u.email}')">grant credit</button>
+        </div>
+      </div>\`).join('');
     }
 
     function render(s, token) {
@@ -457,16 +466,15 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
         </div>
 
         <div class="section-head">Top Models (last 30 days)</div>
+        <div style="overflow-x:auto">
         <table>
           <thead><tr><th>Model</th><th>Provider</th><th>Requests</th></tr></thead>
           <tbody>\${modelRows(s.requests.topModels)}</tbody>
         </table>
+        </div>
 
         <div class="section-head">Recent Users</div>
-        <table>
-          <thead><tr><th>Email</th><th>Balance</th><th>Signed Up</th><th>Action</th></tr></thead>
-          <tbody>\${userRows(s.recentUsers, token)}</tbody>
-        </table>
+        <div class="user-list">\${userCards(s.recentUsers)}</div>
 
         <div class="section-head" id="grant-card">Grant Promotional Credit</div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Credit a user for free — records a 'promotional' billing transaction.</p>
