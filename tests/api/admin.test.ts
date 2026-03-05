@@ -120,7 +120,7 @@ describe('GET /admin (HTML shell)', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/html');
     const html = await res.text();
-    expect(html).toContain('Admin Dashboard');
+    expect(html).toContain('Admin dashboard');
     expect(html).toContain('/admin/stats'); // fetches this endpoint
   });
 });

@@ -21,6 +21,7 @@ import { randomBytes } from 'crypto';
 import Database from 'better-sqlite3';
 import type { AuthEnv } from '../auth/middleware.js';
 import type { UserStore } from '../auth/users.js';
+import { SHARED_HEAD, SHARED_CSS, pageFooter } from './shared-styles.js';
 
 // ─── Public interface ──────────────────────────────────
 
@@ -315,7 +316,7 @@ interface BarChartOptions {
 }
 
 function svgBarChart(data: DayStat[], options: BarChartOptions = {}): string {
-  const color = options.color ?? '#58a6ff';
+  const color = options.color ?? '#ff6b35';
   const vf = options.valueFormatter ?? ((v: number) => String(v));
 
   const W = 600;
@@ -336,8 +337,8 @@ function svgBarChart(data: DayStat[], options: BarChartOptions = {}): string {
     const y = MT + chartH * (1 - frac);
     const val = maxVal * frac;
     const labelStr = vf(Math.round(val));
-    return `<line x1="${ML}" y1="${y.toFixed(1)}" x2="${W - MR}" y2="${y.toFixed(1)}" stroke="#30363d" stroke-width="1"/>
-<text x="${(ML - 4).toFixed(0)}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#8b949e" font-size="10">${labelStr}</text>`;
+    return `<line x1="${ML}" y1="${y.toFixed(1)}" x2="${W - MR}" y2="${y.toFixed(1)}" stroke="#2a2a2a" stroke-width="1"/>
+<text x="${(ML - 4).toFixed(0)}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#777" font-size="10">${labelStr}</text>`;
   }).join('\n');
 
   // Show every Nth x-axis label to avoid crowding
@@ -349,7 +350,7 @@ function svgBarChart(data: DayStat[], options: BarChartOptions = {}): string {
     const y = MT + chartH - barH;
     const showLabel = i % labelEvery === 0 || i === data.length - 1;
     const label = showLabel
-      ? `<text x="${(x + barW / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle" fill="#8b949e" font-size="9">${d.day.slice(5)}</text>`
+      ? `<text x="${(x + barW / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle" fill="#777" font-size="9">${d.day.slice(5)}</text>`
       : '';
     return `<rect x="${(x + 1).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${color}" rx="2"/>
 ${label}`;
@@ -371,94 +372,45 @@ ${bars}
 const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin — Model Router</title>
+  ${SHARED_HEAD}
+  <title>Admin — model-router</title>
   <style>
-    :root {
-      --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
-      --border: #30363d; --text: #e6edf3; --muted: #8b949e;
-      --accent: #58a6ff; --accent2: #3fb950; --accent3: #d2a8ff;
-      --warn: #f0883e; --red: #f85149;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: var(--bg); color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-      font-size: 15px; line-height: 1.6; min-height: 100vh;
-    }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
-    .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-    .logo-icon {
-      width: 32px; height: 32px;
-      background: linear-gradient(135deg, #58a6ff, #3fb950);
-      border-radius: 8px; display: flex; align-items: center;
-      justify-content: center; font-size: 16px; font-weight: 700; color: #0d1117;
-    }
-    .logo-name { font-size: 18px; font-weight: 700; }
-    .page-title { font-size: 22px; font-weight: 700; margin: 24px 0 4px; }
-    .page-sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
-    .card {
-      background: var(--bg2); border: 1px solid var(--border);
-      border-radius: 10px; padding: 20px; margin-bottom: 16px;
-    }
-    .card-title {
-      font-size: 12px; font-weight: 600; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px;
-    }
+    ${SHARED_CSS}
+    :root { --red: #f44; }
     .metric-grid {
       display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-      gap: 12px; margin-bottom: 16px;
+      gap: 12px; margin-bottom: 24px;
     }
-    .metric {
-      background: var(--bg2); border: 1px solid var(--border);
-      border-radius: 8px; padding: 16px;
-    }
-    .metric-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
-    .metric-value { font-size: 26px; font-weight: 700; line-height: 1; }
+    .metric { padding: 16px; }
+    .metric-label { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+    .metric-value { font-size: 26px; font-weight: 700; line-height: 1; font-family: var(--mono); }
     .metric-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
-    .green { color: var(--accent2); }
-    .blue  { color: var(--accent); }
-    .purple { color: var(--accent3); }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 500; }
-    td { padding: 7px 10px; border-bottom: 1px solid var(--bg3); }
-    tr:last-child td { border-bottom: none; }
-    code { font-family: 'SFMono-Regular', Consolas, Menlo, monospace; font-size: 12px; background: var(--bg3); padding: 2px 5px; border-radius: 4px; }
-    .back { margin-top: 24px; font-size: 13px; color: var(--muted); }
-    .status-msg { padding: 16px; border-radius: 8px; font-size: 14px; margin-bottom: 16px; }
-    .status-msg.error { background: rgba(248,81,73,0.1); border: 1px solid var(--red); color: var(--red); }
-    .status-msg.info  { background: rgba(88,166,255,0.1); border: 1px solid var(--accent); color: var(--accent); }
-    .btn {
-      padding: 8px 18px; border: none; border-radius: 6px;
-      font-size: 13px; font-weight: 600; cursor: pointer;
-    }
-    .btn-green { background: var(--accent2); color: #0d1117; }
-    .btn-small { font-size: 12px; padding: 3px 10px; background: var(--bg3); border: 1px solid var(--border); color: var(--accent); border-radius: 4px; cursor: pointer; }
-    input {
-      background: var(--bg3); border: 1px solid var(--border);
-      color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 13px;
-    }
-    label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .accent { color: var(--accent); }
+    .green { color: var(--green); }
+    .status-msg { padding: 16px; font-size: 14px; margin-bottom: 16px; border-left: 3px solid var(--border); background: var(--surface); }
+    .status-msg.error { border-left-color: var(--red); color: var(--red); }
+    .status-msg.info  { border-left-color: var(--accent); color: var(--accent); }
+    .btn-grant { background: var(--accent); color: #111; }
+    .btn-small { font-size: 12px; padding: 3px 10px; background: var(--code-bg); border: 1px solid var(--border); color: var(--accent); cursor: pointer; font-family: var(--mono); }
+    .btn-small:hover { border-color: var(--accent); }
+    label { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
     #loading { color: var(--muted); font-size: 14px; padding: 40px 0; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="logo">
-      <div class="logo-icon">M</div>
-      <a href="/" class="logo-name">Model Router</a>
+<div class="page-wide">
+
+  <div class="header">
+    <div class="header-top">
+      <div class="title"><a href="/">model-router</a></div>
+      <a href="/profile" class="nav-link">profile →</a>
     </div>
-
-    <h1 class="page-title">Admin Dashboard</h1>
-    <p class="page-sub">Platform metrics — refreshed on each page load.</p>
-
-    <div id="root"><div id="loading">Loading…</div></div>
-
-    <div class="back"><a href="/profile">← Back to profile</a></div>
+    <p class="subtitle">Admin dashboard. Platform metrics refreshed on each page load.</p>
   </div>
+
+  <div id="root"><div id="loading">Loading…</div></div>
+
+  ${pageFooter()}
 
   <script>
     const $ = id => document.getElementById(id);
@@ -499,47 +451,41 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
       root.innerHTML = \`
         <div class="metric-grid">
           \${metric('Total Users', '<span class="green">' + s.users.total.toLocaleString() + '</span>', '+' + s.users.last30Days + ' last 30d')}
-          \${metric('Total Requests', '<span class="blue">' + s.requests.total.toLocaleString() + '</span>', s.requests.last30Days.toLocaleString() + ' last 30d')}
-          \${metric('Total Revenue', '<span class="purple">' + cents(s.revenue.totalCents) + '</span>', cents(s.revenue.last30DaysCents) + ' last 30d')}
+          \${metric('Total Requests', '<span class="accent">' + s.requests.total.toLocaleString() + '</span>', s.requests.last30Days.toLocaleString() + ' last 30d')}
+          \${metric('Total Revenue', '<span class="accent">' + cents(s.revenue.totalCents) + '</span>', cents(s.revenue.last30DaysCents) + ' last 30d')}
           \${metric('Credits Held', s.creditBalanceHeldCents > 0 ? cents(s.creditBalanceHeldCents) : '$0.00', 'across all users')}
         </div>
 
-        <div class="card">
-          <div class="card-title">Top Models (last 30 days)</div>
-          <table>
-            <thead><tr><th>Model</th><th>Provider</th><th>Requests</th></tr></thead>
-            <tbody>\${modelRows(s.requests.topModels)}</tbody>
-          </table>
-        </div>
+        <div class="section-head">Top Models (last 30 days)</div>
+        <table>
+          <thead><tr><th>Model</th><th>Provider</th><th>Requests</th></tr></thead>
+          <tbody>\${modelRows(s.requests.topModels)}</tbody>
+        </table>
 
-        <div class="card">
-          <div class="card-title">Recent Users</div>
-          <table>
-            <thead><tr><th>Email</th><th>Balance</th><th>Signed Up</th><th>Action</th></tr></thead>
-            <tbody>\${userRows(s.recentUsers, token)}</tbody>
-          </table>
-        </div>
+        <div class="section-head">Recent Users</div>
+        <table>
+          <thead><tr><th>Email</th><th>Balance</th><th>Signed Up</th><th>Action</th></tr></thead>
+          <tbody>\${userRows(s.recentUsers, token)}</tbody>
+        </table>
 
-        <div class="card" id="grant-card">
-          <div class="card-title">Grant Promotional Credit</div>
-          <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Credit a user for free — records a 'promotional' billing transaction.</p>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-            <div>
-              <label>Email</label>
-              <input id="grant-email" type="email" placeholder="user@example.com" style="width:220px">
-            </div>
-            <div>
-              <label>Amount (USD)</label>
-              <input id="grant-amount" type="number" min="1" step="1" value="20" style="width:100px">
-            </div>
-            <div>
-              <label>Note</label>
-              <input id="grant-note" type="text" placeholder="Launch promo" style="width:160px">
-            </div>
-            <button class="btn btn-green" onclick="doGrant()">Grant</button>
+        <div class="section-head" id="grant-card">Grant Promotional Credit</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Credit a user for free — records a 'promotional' billing transaction.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <label>Email</label>
+            <input id="grant-email" type="email" placeholder="user@example.com" style="width:220px">
           </div>
-          <div id="grant-result" style="margin-top:12px;font-size:13px"></div>
+          <div>
+            <label>Amount (USD)</label>
+            <input id="grant-amount" type="number" min="1" step="1" value="20" style="width:100px">
+          </div>
+          <div>
+            <label>Note</label>
+            <input id="grant-note" type="text" placeholder="Launch promo" style="width:160px">
+          </div>
+          <button class="btn btn-primary" onclick="doGrant()">Grant</button>
         </div>
+        <div id="grant-result" style="margin-top:12px;font-size:13px"></div>
       \`;
 
       // Store token for grant-credit calls
@@ -572,7 +518,7 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
         });
         const data = await res.json();
         if (res.ok) {
-          if (resultEl) resultEl.innerHTML = '<span style="color:var(--accent2)">✓ Granted ' + cents(data.amountCents) + ' to ' + data.email + '. New balance: ' + cents(data.newBalanceCents) + '</span>';
+          if (resultEl) resultEl.innerHTML = '<span style="color:var(--green)">✓ Granted ' + cents(data.amountCents) + ' to ' + data.email + '. New balance: ' + cents(data.newBalanceCents) + '</span>';
         } else {
           if (resultEl) resultEl.innerHTML = '<span style="color:var(--red)">Error: ' + (data.error?.message ?? 'Unknown error') + '</span>';
         }
