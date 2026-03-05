@@ -199,6 +199,8 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       .tier-name { display: block; width: auto; margin-bottom: 2px; }
       .tier-models { display: block; }
       .ep-table td { font-size: 12px; }
+      .ep-desc { display: none; }
+      .ep-path::after { content: attr(data-desc); display: block; font-family: var(--body); color: var(--muted); font-size: 11px; white-space: normal; margin-top: 2px; }
     }
   </style>
 </head>
@@ -345,47 +347,47 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
   <table class="ep-table">
     <tr>
       <td class="ep-method post">POST</td>
-      <td class="ep-path">/v1/auth/request-code</td>
+      <td class="ep-path" data-desc="Send a login code to your email">/v1/auth/request-code</td>
       <td class="ep-desc">Send a login code to your email</td>
     </tr>
     <tr>
       <td class="ep-method post">POST</td>
-      <td class="ep-path">/v1/auth/verify-code</td>
+      <td class="ep-path" data-desc="Verify code → session + API key">/v1/auth/verify-code</td>
       <td class="ep-desc">Verify code → session + API key</td>
     </tr>
     <tr>
       <td class="ep-method post">POST</td>
-      <td class="ep-path">/v1/chat/completions<span class="ep-auth">auth</span></td>
+      <td class="ep-path" data-desc="Chat completions with routing">/v1/chat/completions<span class="ep-auth">auth</span></td>
       <td class="ep-desc">Chat completions with routing</td>
     </tr>
     <tr>
       <td class="ep-method">GET</td>
-      <td class="ep-path">/v1/models<span class="ep-auth">auth</span></td>
+      <td class="ep-path" data-desc="Available models and aliases">/v1/models<span class="ep-auth">auth</span></td>
       <td class="ep-desc">Available models and aliases</td>
     </tr>
     <tr>
       <td class="ep-method">GET</td>
-      <td class="ep-path">/v1/usage<span class="ep-auth">auth</span></td>
+      <td class="ep-path" data-desc="Token and cost summary">/v1/usage<span class="ep-auth">auth</span></td>
       <td class="ep-desc">Token and cost summary</td>
     </tr>
     <tr>
       <td class="ep-method">GET</td>
-      <td class="ep-path">/v1/account<span class="ep-auth">session</span></td>
+      <td class="ep-path" data-desc="Account info, balance, blocked providers">/v1/account<span class="ep-auth">session</span></td>
       <td class="ep-desc">Account info, balance, blocked providers</td>
     </tr>
     <tr>
       <td class="ep-method patch">PATCH</td>
-      <td class="ep-path">/v1/account/providers<span class="ep-auth">session</span></td>
+      <td class="ep-path" data-desc="Update blocked providers">/v1/account/providers<span class="ep-auth">session</span></td>
       <td class="ep-desc">Update blocked providers</td>
     </tr>
     <tr>
       <td class="ep-method patch">PATCH</td>
-      <td class="ep-path">/v1/account/settings<span class="ep-auth">session</span></td>
+      <td class="ep-path" data-desc="Update daily spend limit, defaults">/v1/account/settings<span class="ep-auth">session</span></td>
       <td class="ep-desc">Update daily spend limit, defaults</td>
     </tr>
     <tr>
       <td class="ep-method">GET</td>
-      <td class="ep-path">/health</td>
+      <td class="ep-path" data-desc="Provider health, circuit breakers">/health</td>
       <td class="ep-desc">Provider health, circuit breakers</td>
     </tr>
   </table>
