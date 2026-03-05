@@ -244,7 +244,12 @@ describe('POST /v1/chat/completions — non-streaming', () => {
     expect(res.status).toBe(200);
     const body = await res.json() as any;
     expect(body.choices[0].message.content).toBe('Test response');
-    expect(body._router).toBeDefined();
+    // Routing transparency: headers tell the client what model and provider served the request
+    expect(res.headers.get('X-Model-Router-Provider')).toBe('google');
+    expect(res.headers.get('X-Model-Router-Model')).toBeTruthy();
+    expect(res.headers.get('X-Model-Router-Tier')).toBeTruthy();
+    // Response body should NOT contain _router (non-standard field would pollute OpenAI compat)
+    expect((body as any)._router).toBeUndefined();
     expect(googleAdapter.complete).toHaveBeenCalledOnce();
   });
 
@@ -322,7 +327,7 @@ describe('POST /v1/chat/completions — streaming', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toContain('text/event-stream');
-    expect(res.headers.get('X-Router-Provider')).toBe('google');
+    expect(res.headers.get('X-Model-Router-Provider')).toBe('google');
 
     const events = await collectSSE(res);
     expect(events.some((e) => e.includes('[DONE]'))).toBe(true);
@@ -356,7 +361,7 @@ describe('POST /v1/chat/completions — streaming', () => {
     expect(res.headers.get('Content-Type')).toContain('text/event-stream');
 
     // Headers should reflect the actual provider used (fallback)
-    expect(res.headers.get('X-Router-Provider')).toBe('openai');
+    expect(res.headers.get('X-Model-Router-Provider')).toBe('openai');
 
     const events = await collectSSE(res);
     expect(events.some((e) => e.includes('[DONE]'))).toBe(true);

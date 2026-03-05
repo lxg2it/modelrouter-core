@@ -253,8 +253,8 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       </div>
       <div class="feature-item">
         <div class="feature-icon">💰</div>
-        <div class="feature-name">4% flat fee</div>
-        <div class="feature-desc">Pay-as-you-go. No subscription, no seat licenses. All prices in USD. Cheaper than the alternatives.</div>
+        <div class="feature-name">4% flat fee, pay for what you use</div>
+        <div class="feature-desc">You're billed for the exact model that served your request — at that model's real provider rate plus 4%. No premium for tier selection. Response headers tell you exactly what ran: <code class="inline">X-Model-Router-Model</code>, <code class="inline">X-Model-Router-Provider</code>. All prices in USD.</div>
       </div>
     </div>
   </div>

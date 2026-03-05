@@ -164,13 +164,12 @@ async function handleNonStreaming(
     // Settle the reservation to the actual cost, or deduct for legacy keys.
     settleStripeCredits(deps, apiKey, reservedCents, costCents, user);
 
-    // Add router metadata
-    result.response._router = {
-      provider: decision.provider,
-      tier: decision.tier,
-      latency_ms: Date.now() - startTime,
-      ...(decision.pinned && { pinned: true }),
-    };
+    // Add routing transparency headers — tells the client exactly which provider
+    // and model served the request, and therefore what they were billed for.
+    c.header('X-Model-Router-Provider', decision.provider);
+    c.header('X-Model-Router-Model', decision.model);
+    c.header('X-Model-Router-Tier', decision.tier);
+    c.header('X-Model-Router-Latency-Ms', String(Date.now() - startTime));
 
     return c.json(result.response);
   } catch (err) {
@@ -222,11 +221,10 @@ async function handleNonStreaming(
           // Settle reservation for fallback path
           settleStripeCredits(deps, apiKey, reservedCents, costCents, user);
 
-          result.response._router = {
-            provider: fallback.provider,
-            tier: fallback.tier,
-            latency_ms: Date.now() - startTime,
-          }; // note: fallback is never pinned
+          c.header('X-Model-Router-Provider', fallback.provider);
+          c.header('X-Model-Router-Model', fallback.model);
+          c.header('X-Model-Router-Tier', fallback.tier);
+          c.header('X-Model-Router-Latency-Ms', String(Date.now() - startTime));
 
           return c.json(result.response);
         } catch (fallbackErr) {
@@ -355,9 +353,9 @@ async function handleStreaming(
   c.header('Content-Type', 'text/event-stream');
   c.header('Cache-Control', 'no-cache');
   c.header('Connection', 'keep-alive');
-  c.header('X-Router-Provider', activeDecision.provider);
-  c.header('X-Router-Model', activeDecision.model);
-  c.header('X-Router-Tier', activeDecision.tier);
+  c.header('X-Model-Router-Provider', activeDecision.provider);
+  c.header('X-Model-Router-Model', activeDecision.model);
+  c.header('X-Model-Router-Tier', activeDecision.tier);
 
   const streamCompletion = completion;
 
