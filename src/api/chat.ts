@@ -46,6 +46,12 @@ interface ChatDeps {
    * Billing transaction store for recording auto-recharge events.
    */
   billingTxStore?: BillingTransactionStore;
+  /**
+   * Maximum credit spend per user per UTC day, in cents.
+   * Requests that would exceed this limit are rejected with 429.
+   * 0 means no limit. Defaults to 3000 ($30.00) if not specified.
+   */
+  maxDailySpendCents?: number;
 }
 
 export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
@@ -475,6 +481,27 @@ async function reserveCreditsForRequest(
     // No user billing configured — no reservation needed
     return 0;
   }
+
+  // ── Daily spending cap ──────────────────────────────────────────────────
+  // Reject requests that would push the user over their daily spend limit.
+  // Checked before reservation so the error surfaces before touching their balance.
+  const maxDailySpend = deps.maxDailySpendCents ?? 3000;
+  if (maxDailySpend > 0) {
+    const todaySpend = deps.userStore.getDailySpendCents(user.id);
+    if (todaySpend >= maxDailySpend) {
+      c.res = c.json({
+        error: {
+          message: `Daily spending limit of $${(maxDailySpend / 100).toFixed(2)} reached. The limit resets at UTC midnight.`,
+          type: 'rate_limit_error',
+          code: 'daily_spend_limit_exceeded',
+          dailySpendLimitCents: maxDailySpend,
+          todaySpendCents: todaySpend,
+        },
+      }, 429);
+      return null;
+    }
+  }
+  // ───────────────────────────────────────────────────────────────────────
 
   const reserveCents = TIER_MAX_RESERVE_CENTS[tier] ?? 200;
   const reserved = deps.userStore.tryReserveCredits(user.id, reserveCents);

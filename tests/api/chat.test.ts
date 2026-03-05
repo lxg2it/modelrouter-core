@@ -134,6 +134,7 @@ interface MockUserStore {
   findById: ReturnType<typeof vi.fn>;
   addCredits: ReturnType<typeof vi.fn>;
   tryClaimAutoRecharge: ReturnType<typeof vi.fn>;
+  getDailySpendCents: ReturnType<typeof vi.fn>;
 }
 
 function makeMockUserStore(overrides?: Partial<MockUserStore>): MockUserStore {
@@ -144,6 +145,7 @@ function makeMockUserStore(overrides?: Partial<MockUserStore>): MockUserStore {
     findById:             vi.fn().mockReturnValue(null),
     addCredits:           vi.fn().mockReturnValue(1960),
     tryClaimAutoRecharge: vi.fn().mockReturnValue(true),
+    getDailySpendCents:   vi.fn().mockReturnValue(0),
     ...overrides,
   };
 }
@@ -180,6 +182,7 @@ function makeTestApp(
     userStore?: MockUserStore;
     stripe?: StripeService;
     billingTxStore?: BillingTransactionStore;
+    maxDailySpendCents?: number;
   } = {},
 ) {
   const app = new Hono<AuthEnv>();
@@ -201,6 +204,7 @@ function makeTestApp(
     userStore: opts.userStore as any,
     stripe: opts.stripe,
     billingTxStore: opts.billingTxStore,
+    maxDailySpendCents: opts.maxDailySpendCents,
   }));
   return app;
 }
@@ -876,6 +880,114 @@ describe('Auto-recharge — triggered when reservation fails', () => {
     expect(res.status).toBe(402);
     // Stripe charge was NOT attempted
     expect(mockStripe.charge).not.toHaveBeenCalled();
+  });
+});
+
+
+
+// ─── Tests: Daily spending limit ───────────────────────────────────────────
+
+describe('Daily spending limit', () => {
+  const billedUser: User = {
+    id: 'user-billed',
+    email: 'billed@example.com',
+    createdAt: new Date().toISOString(),
+    creditBalanceCents: 50000,
+    stripeCustomerId: 'cus_test',
+  };
+
+  const billedKey: ApiKey = {
+    ...fakeApiKey,
+    userId: 'user-billed',
+  };
+
+  function makeDailySpendEngine(): RoutingEngine {
+    return new RoutingEngine({
+      availableProviders: new Set<ProviderName>(['google']),
+      models: [{ provider: 'google', model: 'gemini-flash', quality: 0.7, inputPer1M: 0.1, outputPer1M: 0.4, latencyMs: 200, maxContextTokens: 1_000_000 }],
+    });
+  }
+
+  it('allows requests when daily spend is below the limit', async () => {
+    const googleAdapter = makeSuccessAdapter('google');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const engine = makeDailySpendEngine();
+
+    const mockUserStore = makeMockUserStore({
+      getDailySpendCents: vi.fn().mockReturnValue(100), // Only $1 spent today
+    });
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: billedKey,
+      user: billedUser,
+      userStore: mockUserStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(200);
+    expect(mockUserStore.getDailySpendCents).toHaveBeenCalledWith('user-billed');
+  });
+
+  it('returns 429 with code daily_spend_limit_exceeded when limit is reached', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Should not be called');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const engine = makeDailySpendEngine();
+
+    const mockUserStore = makeMockUserStore({
+      getDailySpendCents: vi.fn().mockReturnValue(3000), // Exactly at $30 limit
+    });
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: billedKey,
+      user: billedUser,
+      userStore: mockUserStore,
+      maxDailySpendCents: 3000,
+    });
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(429);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('daily_spend_limit_exceeded');
+    expect(body.error.dailySpendLimitCents).toBe(3000);
+    // Provider was never called
+    expect(googleAdapter.complete).not.toHaveBeenCalled();
+  });
+
+  it('skips the daily spend check when maxDailySpendCents is 0 (no limit)', async () => {
+    const googleAdapter = makeSuccessAdapter('google');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const engine = makeDailySpendEngine();
+
+    const mockUserStore = makeMockUserStore({
+      getDailySpendCents: vi.fn().mockReturnValue(999999), // Way over any limit
+    });
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: billedKey,
+      user: billedUser,
+      userStore: mockUserStore,
+      maxDailySpendCents: 0, // No limit
+    });
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(200);
+    // getDailySpendCents should NOT have been called when limit is disabled
+    expect(mockUserStore.getDailySpendCents).not.toHaveBeenCalled();
   });
 });
 

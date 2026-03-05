@@ -23,6 +23,7 @@ import type { UserStore } from '../auth/users.js';
 import type { KeyStore } from '../auth/keys.js';
 import type { EmailSender } from '../auth/email.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
+import { isDisposableEmail } from '../auth/email-filter.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -68,6 +69,15 @@ export function createAuthRouter(deps: AuthRouterDeps): Hono {
     if (!emailAddr || !EMAIL_RE.test(emailAddr)) {
       return c.json({
         error: { message: 'A valid email address is required.', code: 'invalid_email' },
+      }, 400);
+    }
+
+    if (isDisposableEmail(emailAddr)) {
+      return c.json({
+        error: {
+          message: 'Disposable email addresses are not accepted. Please use a permanent email address.',
+          code: 'disposable_email',
+        },
       }, 400);
     }
 

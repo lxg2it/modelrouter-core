@@ -196,6 +196,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     keyStore: stripeService ? keyStore : undefined,
     stripe: stripeService,
     billingTxStore: stripeService ? billingTxStore : undefined,
+    maxDailySpendCents: config.maxDailySpendCents,
   });
   app.use('/v1/chat/*', apiAuth);
   app.route('/v1/chat', chatRouter);

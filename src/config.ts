@@ -51,6 +51,8 @@ export interface Config {
   signupBonusCents: number;
   /** Maximum total signup bonus credits per UTC day (0 = no cap). */
   signupBonusDailyLimitCents: number;
+  /** Maximum credit spend per user per UTC day, in cents (0 = no limit). Default: $30. */
+  maxDailySpendCents: number;
 }
 
 export function loadConfig(): Config {
@@ -109,6 +111,7 @@ export function loadConfig(): Config {
 
     signupBonusCents: parseInt(env('SIGNUP_BONUS_CENTS', '0'), 10),
     signupBonusDailyLimitCents: parseInt(process.env.SIGNUP_BONUS_DAILY_LIMIT_CENTS ?? '0', 10),
+    maxDailySpendCents: parseInt(process.env.MAX_DAILY_SPEND_CENTS ?? '3000', 10),
   };
 }
 

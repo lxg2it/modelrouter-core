@@ -6,6 +6,7 @@
  *
  * Covers:
  *   - request-code: valid email → 200, invalid email → 400
+ *   - request-code: disposable email → 400 with code 'disposable_email'
  *   - request-code: email send errors are swallowed (non-enumeration)
  *   - verify-code: valid code for existing user → 200, no apiKey
  *   - verify-code: valid code for new user → 201 with apiKey
@@ -158,6 +159,49 @@ describe('POST /request-code', () => {
     expect(res.status).toBe(400);
     const body = await res.json() as any;
     expect(body.error.code).toBe('invalid_email');
+  });
+
+  it('returns 400 with code disposable_email for a mailinator.com address', async () => {
+    const app = buildApp(mockUserStore(), mockKeyStore());
+
+    const res = await app.request('/request-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'test@mailinator.com' }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('disposable_email');
+  });
+
+  it('returns 400 with code disposable_email for a guerrillamail subdomain', async () => {
+    const app = buildApp(mockUserStore(), mockKeyStore());
+
+    const res = await app.request('/request-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'user@anything.guerrillamail.com' }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('disposable_email');
+  });
+
+  it('accepts email from a legitimate domain (gmail, company, etc.)', async () => {
+    const userStore = mockUserStore();
+    const app = buildApp(userStore, mockKeyStore());
+
+    const res = await app.request('/request-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'user@gmail.com' }),
+    });
+
+    // Should proceed to send a code (not blocked)
+    expect(res.status).toBe(200);
+    expect(userStore.requestLoginCode).toHaveBeenCalled();
   });
 
   it('returns 200 even if the email sender throws (prevents enumeration)', async () => {

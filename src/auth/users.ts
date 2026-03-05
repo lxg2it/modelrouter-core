@@ -390,6 +390,23 @@ export class UserStore {
   }
 
   /**
+   * Sum of provider costs incurred by a user today (UTC day), in cents.
+   *
+   * Joins usage_log with api_keys to aggregate across all of the user's
+   * keys. Used to enforce per-account daily spending limits.
+   */
+  getDailySpendCents(userId: string): number {
+    const row = this.db.prepare(`
+      SELECT COALESCE(SUM(u.cost_cents), 0) AS total
+      FROM usage_log u
+      JOIN api_keys k ON u.key_id = k.id
+      WHERE k.user_id = ?
+        AND date(u.created_at) = date('now')
+    `).get(userId) as { total: number };
+    return row.total;
+  }
+
+  /**
    * Return unused reserved credits after a provider call.
    *
    * Called with the difference (reserved - actual) to settle the reservation.
