@@ -18,6 +18,7 @@ import { UsageLogger } from './tracking/logger.js';
 import { AnthropicAdapter } from './providers/anthropic.js';
 import { OpenAIAdapter } from './providers/openai.js';
 import { GoogleAdapter } from './providers/google.js';
+import { SHARED_HEAD, SHARED_CSS, pageFooter } from './api/shared-styles.js';
 import { GrokAdapter } from './providers/grok.js';
 import { SatbillClient } from './billing/satbill-client.js';
 import { StripeService } from './billing/stripe.js';
@@ -297,122 +298,82 @@ function renderHealthHtml(data: HealthData): string {
   const providerRows = data.providers.map((p) => `
     <tr>
       <td><code>${p}</code></td>
-      <td><span class="badge badge-ok">active</span></td>
+      <td><span class="status-ok">active</span></td>
     </tr>`).join('');
 
-  const circuitBadge = data.openCircuits === 0
-    ? `<span class="badge badge-ok">0 open</span>`
-    : `<span class="badge badge-warn">${data.openCircuits} open</span>`;
+  const circuitStatus = data.openCircuits === 0
+    ? `<span class="status-ok">0 open</span>`
+    : `<span class="status-warn">${data.openCircuits} open</span>`;
 
-  const stripeBadge = data.billing.stripe === 'enabled'
-    ? `<span class="badge badge-ok">enabled</span>`
-    : `<span class="badge" style="background:#1e2a1e;color:var(--muted)">disabled</span>`;
+  const stripeStatus = data.billing.stripe === 'enabled'
+    ? `<span class="status-ok">enabled</span>`
+    : `<span class="status-off">disabled</span>`;
 
-  const satbillBadge = data.billing.satbill === 'enabled'
-    ? `<span class="badge badge-ok">enabled</span>`
-    : `<span class="badge" style="background:#1e2a1e;color:var(--muted)">disabled</span>`;
+  const satbillStatus = data.billing.satbill === 'enabled'
+    ? `<span class="status-ok">enabled</span>`
+    : `<span class="status-off">disabled</span>`;
 
   return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Health — Model Router</title>
+  ${SHARED_HEAD}
+  <title>Health — model-router</title>
   <style>
-    :root {
-      --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
-      --border: #30363d; --text: #e6edf3; --muted: #8b949e;
-      --accent: #58a6ff; --accent2: #3fb950; --warn: #f0883e;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: var(--bg); color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-      font-size: 15px; line-height: 1.6; min-height: 100vh;
-    }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .container { max-width: 700px; margin: 0 auto; padding: 48px 24px; }
-    .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-    .logo-icon {
-      width: 32px; height: 32px;
-      background: linear-gradient(135deg, #58a6ff, #3fb950);
-      border-radius: 8px; display: flex; align-items: center;
-      justify-content: center; font-size: 16px; font-weight: 700; color: #0d1117;
-    }
-    .logo-name { font-size: 18px; font-weight: 700; }
-    .page-title { font-size: 24px; font-weight: 700; margin: 28px 0 6px; }
-    .page-sub { color: var(--muted); margin-bottom: 28px; font-size: 13px; }
-    .card {
-      background: var(--bg2); border: 1px solid var(--border);
-      border-radius: 10px; padding: 20px; margin-bottom: 16px;
-    }
-    .card-title {
-      font-size: 12px; font-weight: 600; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px;
-    }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 500; }
-    td { padding: 7px 10px; border-bottom: 1px solid var(--bg3); }
-    tr:last-child td { border-bottom: none; }
-    code { font-family: 'SFMono-Regular', Consolas, Menlo, monospace; font-size: 12px; background: var(--bg3); padding: 2px 5px; border-radius: 4px; }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-    .badge-ok   { background: #1a3a2a; color: var(--accent2); }
-    .badge-warn { background: #3a2a10; color: var(--warn); }
-    .kv { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--bg3); font-size: 13px; }
+    ${SHARED_CSS}
+    .kv { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
     .kv:last-child { border-bottom: none; }
-    .kv-key { color: var(--muted); }
-    .back { margin-top: 32px; font-size: 13px; color: var(--muted); }
-    .status-ok { color: var(--accent2); font-weight: 600; font-size: 28px; }
+    .kv-key { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+    .status-ok { color: var(--green); font-family: var(--mono); font-size: 13px; font-weight: 700; }
+    .status-warn { color: var(--accent); font-family: var(--mono); font-size: 13px; font-weight: 700; }
+    .status-off { color: var(--muted); font-family: var(--mono); font-size: 13px; }
+    .status-large { font-size: 20px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="logo">
-      <div class="logo-icon">M</div>
-      <a href="/" class="logo-name">Model Router</a>
+<div class="page">
+
+  <div class="header">
+    <div class="header-top">
+      <div class="title"><a href="/">model-router</a></div>
+      <a href="/profile" class="nav-link">profile →</a>
     </div>
+    <p class="subtitle">Live system health. Refreshed on each page load.</p>
+  </div>
 
-    <h1 class="page-title">System Health</h1>
-    <p class="page-sub">Live status — refreshed on each page load.</p>
+  <div class="section-head">Status</div>
 
-    <div class="card">
-      <div class="card-title">Overall Status</div>
-      <div class="kv">
-        <span class="kv-key">Status</span>
-        <span class="status-ok">● ${data.status.toUpperCase()}</span>
-      </div>
-      <div class="kv">
-        <span class="kv-key">Version</span>
-        <code>${data.version}</code>
-      </div>
-      <div class="kv">
-        <span class="kv-key">Circuit breakers</span>
-        ${circuitBadge}
-      </div>
-    </div>
+  <div class="kv">
+    <span class="kv-key">status</span>
+    <span class="status-ok status-large">● ${data.status.toUpperCase()}</span>
+  </div>
+  <div class="kv">
+    <span class="kv-key">version</span>
+    <code>${data.version}</code>
+  </div>
+  <div class="kv">
+    <span class="kv-key">circuit breakers</span>
+    ${circuitStatus}
+  </div>
 
-    <div class="card">
-      <div class="card-title">Active Providers (${data.providers.length})</div>
-      <table>
-        <thead><tr><th>Provider</th><th>Status</th></tr></thead>
-        <tbody>${providerRows}</tbody>
-      </table>
-    </div>
+  <div class="section-head">Providers (${data.providers.length})</div>
 
-    <div class="card">
-      <div class="card-title">Billing</div>
-      <div class="kv">
-        <span class="kv-key">Stripe (card payments)</span>
-        ${stripeBadge}
-      </div>
-      <div class="kv">
-        <span class="kv-key">Satbill (Bitcoin)</span>
-        ${satbillBadge}
-      </div>
-    </div>
+  <table>
+    <thead><tr><th>provider</th><th>status</th></tr></thead>
+    <tbody>${providerRows}</tbody>
+  </table>
 
-    <div class="back"><a href="/">← Back to home</a></div>
+  <div class="section-head">Billing</div>
+
+  <div class="kv">
+    <span class="kv-key">stripe (card payments)</span>
+    ${stripeStatus}
+  </div>
+  <div class="kv">
+    <span class="kv-key">satbill (bitcoin)</span>
+    ${satbillStatus}
+  </div>
+
+  ${pageFooter('health')}
   </div>
 </body>
 </html>`;
