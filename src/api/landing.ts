@@ -6,6 +6,46 @@
  */
 
 import { Hono } from 'hono';
+import { TIERS } from '../config.js';
+
+/** Strip date suffixes like -20251001 from model IDs for display. */
+function displayModel(id: string): string {
+  return id.replace(/-\d{8}$/, '');
+}
+
+/** Generate tier rows for the landing page from TIERS config. */
+function tierRows(): string {
+  const tierClasses: Record<string, string> = {
+    economy: 'eco', standard: 'std', premium: 'prm',
+  };
+  return Object.entries(TIERS).map(([name, cfg]) => {
+    const cls = tierClasses[name] ?? name.slice(0, 3);
+    const models = cfg.models.map((m) => displayModel(m.model)).join(' · ');
+    return `<div class="tier">
+    <span class="tier-name ${cls}">${name}</span>
+    <span class="tier-models">${models}</span>
+  </div>`;
+  }).join('\n  ');
+}
+
+/** Pick two example model names from standard tier for the alias hint. */
+function exampleAliases(): string {
+  const std = TIERS.standard?.models ?? [];
+  // Pick one OpenAI and one Anthropic as recognizable examples
+  const openai = std.find((m) => m.provider === 'openai');
+  const anthropic = std.find((m) => m.provider === 'anthropic');
+  const examples = [openai, anthropic].filter(Boolean).map((m) => m!.model);
+  if (examples.length === 0 && std.length > 0) examples.push(std[0].model);
+  return examples
+    .map((id) => `<code style="font-size:12px; color:var(--text);">${displayModel(id)}</code>`)
+    .join(',\n    ');
+}
+
+/** Tier value list for the model parameter (economy · standard · ...). */
+function tierValues(): string {
+  const names = Object.keys(TIERS);
+  return [...names, 'auto'].map((n) => n).join('<span>·</span>');
+}
 
 export function createLandingRouter(): Hono {
   const router = new Hono();
@@ -246,7 +286,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       <div class="param-name">model</div>
       <div class="param-body">
         <div class="param-desc">The capability tier — sets the floor for what models are eligible.</div>
-        <div class="param-values">economy<span>·</span>standard<span>·</span>premium<span>·</span>auto</div>
+        <div class="param-values">${tierValues()}</div>
       </div>
     </div>
     <div class="param-row">
@@ -260,8 +300,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
 
   <p style="font-size:14px; color:var(--muted); margin-top:16px;">
     You can also pass a specific model name
-    (<code style="font-size:12px; color:var(--text);">gpt-4.1</code>,
-    <code style="font-size:12px; color:var(--text);">claude-sonnet-4-6</code>)
+    (${exampleAliases()})
     to pin routing and bypass tier selection entirely.
   </p>
 
@@ -270,18 +309,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
   <!-- Tiers -->
   <div class="section-head">Current tiers</div>
 
-  <div class="tier">
-    <span class="tier-name eco">economy</span>
-    <span class="tier-models">gemini-2.5-flash · gpt-4.1-mini · o4-mini · claude-haiku-4-5 · grok-3-mini-beta</span>
-  </div>
-  <div class="tier">
-    <span class="tier-name std">standard</span>
-    <span class="tier-models">gemini-2.5-pro · gpt-4.1 · o3 · claude-sonnet-4-6 · grok-3-beta</span>
-  </div>
-  <div class="tier">
-    <span class="tier-name prm">premium</span>
-    <span class="tier-models">gemini-3.1-pro-preview · claude-opus-4-6 · gpt-5.2</span>
-  </div>
+  ${tierRows()}
 
   <p style="font-size:13px; color:var(--muted); margin-top:16px;">
     Context-window guard: never routes to a model that can't handle your input.
