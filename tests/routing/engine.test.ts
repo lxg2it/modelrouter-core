@@ -322,8 +322,9 @@ describe('RoutingEngine', () => {
         expect(decision.prefer).toBe('cheap');
       });
 
-      it('can route to a lower tier than requested when prefer:cheap', () => {
-        // Even if tier:premium, cheap mode ignores tier and picks cheapest overall
+      it('stays within the requested tier when prefer:cheap', () => {
+        // prefer:cheap optimises for cost within the resolved tier — it does NOT cross into lower tiers.
+        // To get the absolute cheapest model regardless of capability, use tier:economy explicitly.
         const engine = new RoutingEngine({
           availableProviders: new Set(['anthropic', 'openai', 'google']),
           defaultTier: 'premium',
@@ -332,8 +333,8 @@ describe('RoutingEngine', () => {
 
         const decision = engine.selectModel(req({ tier: 'premium', prefer: 'cheap' }))!;
         expect(decision).not.toBeNull();
-        // The cheapest model overall should be economy tier
-        expect(decision.tier).toBe('economy');
+        // cheap stays within the resolved tier
+        expect(decision.tier).toBe('premium');
       });
 
       it('returns null when no providers are configured', () => {
@@ -422,51 +423,45 @@ describe('RoutingEngine', () => {
         expect(decision.prefer).toBe('quality');
       });
 
-      it('forces premium tier regardless of requested tier', () => {
+      it('stays within the requested tier when prefer:quality', () => {
+        // prefer:quality optimises for the best model within the resolved tier — it does NOT override to premium.
+        // To get the absolute best model, use tier:premium explicitly.
         const engine = new RoutingEngine({
           availableProviders: new Set(['anthropic', 'openai', 'google']),
           defaultTier: 'economy',
           defaultOutputRatio: 0.33,
         });
 
-        // Even though tier is economy and default is economy, quality forces premium
+        // tier:economy + prefer:quality → picks highest quality economy model, not premium
         const decision = engine.selectModel(req({ tier: 'economy', prefer: 'quality' }))!;
+        expect(decision.tier).toBe('economy');
+      });
+
+      it('picks the highest quality model within the resolved tier', () => {
+        // With default tier premium, quality picks the best premium model
+        const engine = new RoutingEngine({
+          availableProviders: new Set(['anthropic', 'openai', 'google']),
+          defaultTier: 'premium',
+          defaultOutputRatio: 0.33,
+        });
+
+        const decision = engine.selectModel(req({ prefer: 'quality' }))!;
+        // claude-opus-4-6 has quality: 1.00 — the highest in premium
+        expect(decision.model).toBe('claude-opus-4-6');
         expect(decision.tier).toBe('premium');
       });
 
-      it('picks the highest quality model in premium', () => {
+      it('picks the highest quality model in any tier when set explicitly', () => {
+        // tier:standard + prefer:quality → highest quality standard model
         const engine = new RoutingEngine({
           availableProviders: new Set(['anthropic', 'openai', 'google']),
           defaultTier: 'economy',
           defaultOutputRatio: 0.33,
         });
 
-        const decision = engine.selectModel(req({ prefer: 'quality' }))!;
-        // claude-opus-4-6 has quality: 1.00 — the highest in the catalog
-        expect(decision.model).toBe('claude-opus-4-6');
-      });
-
-      it('falls back to standard when all premium models are circuit-broken', () => {
-        const engine = new RoutingEngine({
-          availableProviders: new Set(['anthropic', 'openai', 'google']),
-          defaultTier: 'economy',
-          defaultOutputRatio: 0.33,
-        });
-
-        // Trip all premium circuits
-        const premiumModels = [
-          { provider: 'anthropic' as const, model: 'claude-opus-4-6' },
-          { provider: 'openai' as const, model: 'gpt-5.2' },
-          { provider: 'google' as const, model: 'gemini-3.1-pro-preview' },
-        ];
-        for (const m of premiumModels) {
-          for (let i = 0; i < 3; i++) engine.recordFailure(m.provider, m.model);
-        }
-        vi.advanceTimersByTime(1); // Ensure circuit opens
-
-        const decision = engine.selectModel(req({ prefer: 'quality' }))!;
-        // Falls back to best standard model
-        expect(decision).not.toBeNull();
+        const decision = engine.selectModel(req({ tier: 'standard', prefer: 'quality' }))!;
+        // claude-sonnet-4-6 has quality: 0.92 — the highest in standard
+        expect(decision.model).toBe('claude-sonnet-4-6');
         expect(decision.tier).toBe('standard');
         expect(decision.prefer).toBe('quality');
       });
@@ -561,20 +556,21 @@ describe('RoutingEngine', () => {
       expect(decision).toBeNull();
     });
 
-    it('cheap mode applies context filter across all tiers', () => {
+    it('cheap mode applies context filter within the resolved tier', () => {
       const engine = new RoutingEngine({
         availableProviders: new Set(['openai', 'google', 'anthropic']),
         defaultTier: 'economy',
         defaultOutputRatio: 0.33,
       });
 
-      // 210k tokens — 200k models filtered, leaving only 1M+ context models
+      // 210k tokens — 200k models filtered (claude-haiku, o4-mini, grok-3-mini filtered).
+      // Only large-context economy models remain: gemini-2.5-flash (1M) and gpt-4.1-mini (1M).
       const cheapDecision = engine.selectModel(
         { ...reqWithChars(630_000), prefer: 'cheap' },
       );
       expect(cheapDecision).not.toBeNull();
-      const largeCxtModels = ['gemini-2.5-flash', 'gpt-4.1-mini', 'gemini-2.5-pro', 'gpt-4.1', 'gemini-3.1-pro-preview'];
-      expect(largeCxtModels.includes(cheapDecision!.model)).toBe(true);
+      const largeContextEconomyModels = ['gemini-2.5-flash', 'gpt-4.1-mini'];
+      expect(largeContextEconomyModels.includes(cheapDecision!.model)).toBe(true);
     });
 
     it('selectFallback respects context limits', () => {
@@ -660,7 +656,7 @@ describe('RoutingEngine', () => {
       expect(fallbackNone).toBeNull();
     });
 
-    it('cheap mode respects provider blocking across all tiers', () => {
+    it('cheap mode respects provider blocking within the resolved tier', () => {
       const engine = new RoutingEngine({
         availableProviders: new Set(['anthropic', 'openai', 'google']),
         defaultTier: 'economy',

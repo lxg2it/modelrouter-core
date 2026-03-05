@@ -239,7 +239,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       <div class="feature-item">
         <div class="feature-icon">🎯</div>
         <div class="feature-name">Smart routing</div>
-        <div class="feature-desc">Use <code class="inline">prefer</code> to route by cost, speed, or quality — not just failover. One endpoint, all providers.</div>
+        <div class="feature-desc">Two dimensions: <strong>tier</strong> sets the capability floor, <code class="inline">prefer</code> optimises within it. Build once, the router tracks which model wins each month.</div>
       </div>
       <div class="feature-item">
         <div class="feature-icon">🚫</div>
@@ -320,13 +320,14 @@ curl -X POST https://api.lxg2it.com/v1/chat/completions \\
   <div class="card">
     <div class="card-title">Routing with <code style="font-size:12px; color:var(--accent3)">prefer</code></div>
     <p style="font-size:14px; color:var(--muted); margin-bottom:16px;">
-      The <code class="inline">prefer</code> field on any request controls how the router selects a model.
+      Two independent dimensions: <strong>tier</strong> sets the capability floor (which pool of models to use),
+      and <code class="inline">prefer</code> controls the optimisation direction within that pool.
       Default is <code class="inline">balanced</code>.
     </p>
     <div class="prefer-grid">
       <div class="prefer-item">
         <div class="prefer-name">cheap</div>
-        <div class="prefer-desc">Cheapest model across all tiers. Ignores tier selection — ideal for batch jobs or high-volume tasks where cost dominates.</div>
+        <div class="prefer-desc">Lowest cost within your tier. Combine with <code class="inline">economy</code> tier for the absolute cheapest option today.</div>
       </div>
       <div class="prefer-item">
         <div class="prefer-name">fast</div>
@@ -334,11 +335,11 @@ curl -X POST https://api.lxg2it.com/v1/chat/completions \\
       </div>
       <div class="prefer-item">
         <div class="prefer-name">balanced</div>
-        <div class="prefer-desc">Cheapest available in the selected tier. The sensible default for general use.</div>
+        <div class="prefer-desc">Cost-efficient with quality tie-breaking. The sensible default for general use.</div>
       </div>
       <div class="prefer-item">
         <div class="prefer-name">quality</div>
-        <div class="prefer-desc">Forces premium tier, routes to highest quality score. Use when correctness matters more than cost.</div>
+        <div class="prefer-desc">Highest quality score within your tier. Combine with <code class="inline">premium</code> tier for best-in-class output.</div>
       </div>
     </div>
   </div>

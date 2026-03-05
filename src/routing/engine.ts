@@ -5,14 +5,15 @@
  * provider availability, and circuit breaker state.
  *
  * V1: cheapest available model in the tier.
- * V2: prefer parameter for cross-tier cost minimisation, latency preference,
- *     and quality maximisation. Context-window guard: filter models whose
- *     context window is smaller than the estimated input token count.
+ * V2: prefer parameter (cheap/fast/balanced/quality) operates within the resolved tier —
+ *     tier is the capability floor, prefer is the optimisation direction within that floor.
+ *     Context-window guard: filter models whose context window is smaller than the estimated
+ *     input token count.
  */
 
 import type { ModelConfig, Tier, ProviderName, ChatCompletionRequest, ChatMessage } from '../types.js';
 import { CircuitBreaker } from './circuit-breaker.js';
-import { getModelsForTier, getAllTiers, resolveTier, findModelById } from './tiers.js';
+import { getModelsForTier, resolveTier, findModelById } from './tiers.js';
 
 export interface RouteDecision {
   provider: ProviderName;
@@ -50,11 +51,16 @@ export class RoutingEngine {
    * 3. Default tier from API key configuration
    * 4. Global default tier
    *
-   * The `prefer` field controls ranking strategy:
-   * - `balanced` (default): cheapest in tier. Classic behavior.
-   * - `cheap`:  cheapest model across ALL tiers (ignores tier, great for batch).
+   * The `prefer` field controls ranking strategy within the resolved tier:
+   * - `balanced` (default): cheapest in tier, break ties by quality.
+   * - `cheap`:  lowest cost within tier. Same algorithm as balanced; semantic signal to the caller.
    * - `fast`:   lowest latency (TTFT) within tier. Good for interactive apps.
-   * - `quality`: forces premium tier, ranks by quality score.
+   * - `quality`: highest quality score within tier; break ties by cost.
+   *
+   * All four prefer values operate within the resolved tier — prefer is an optimisation
+   * direction, not a tier override. Tier establishes the capability floor; prefer governs
+   * what to optimise for within that floor. To get the absolute cheapest model, use
+   * tier:economy + prefer:cheap. To get the absolute best, use tier:premium + prefer:quality.
    */
   selectModel(
     request: ChatCompletionRequest,
@@ -78,17 +84,9 @@ export class RoutingEngine {
       }
     }
 
-    // ── quality mode: force premium tier regardless ──────────────
-    if (prefer === 'quality') {
-      return this.selectByQuality(estimatedTokens, blockedProviders);
-    }
-
-    // ── cheap mode: cross-tier cost minimisation ─────────────────
-    if (prefer === 'cheap') {
-      return this.selectCheapestAcrossAllTiers(estimatedTokens, blockedProviders);
-    }
-
-    // ── balanced / fast: operate within the resolved tier ─────────
+    // ── tier resolution — same for all prefer values ──────────────
+    // Tier establishes the capability floor: which pool of models to select from.
+    // prefer operates within this pool to control the optimisation direction.
     const tier = request.tier
       ?? resolveTier(request.model)
       ?? keyTier
@@ -109,6 +107,17 @@ export class RoutingEngine {
       return this.toDecision(candidates[0], tier, undefined, prefer);
     }
 
+    const ratio = this.config.defaultOutputRatio;
+
+    if (prefer === 'quality') {
+      // Maximize quality score within tier; break ties by cost (ascending)
+      const sorted = [...available].sort((a, b) =>
+        b.quality - a.quality
+        || (a.inputPer1M + a.outputPer1M * ratio) - (b.inputPer1M + b.outputPer1M * ratio),
+      );
+      return this.toDecision(sorted[0], tier, undefined, prefer);
+    }
+
     if (prefer === 'fast') {
       // Sort by latency (ascending), break ties by quality (descending)
       const sorted = [...available].sort((a, b) =>
@@ -117,8 +126,7 @@ export class RoutingEngine {
       return this.toDecision(sorted[0], tier, undefined, prefer);
     }
 
-    // balanced: cheapest in tier, break ties by quality (descending)
-    const ratio = this.config.defaultOutputRatio;
+    // cheap / balanced: cheapest in tier, break ties by quality (descending)
     const scored = available.map((m) => ({
       config: m,
       estimatedCost: m.inputPer1M + m.outputPer1M * ratio,
@@ -190,57 +198,6 @@ export class RoutingEngine {
   }
 
   // ─── Private helpers ───────────────────────────────────────────
-
-  /**
-   * prefer: 'cheap' — find cheapest model across ALL tiers.
-   * Ignores tier entirely; useful for batch workloads that don't need quality guarantees.
-   */
-  private selectCheapestAcrossAllTiers(estimatedTokens: number, blockedProviders?: Set<string>): RouteDecision | null {
-    const ratio = this.config.defaultOutputRatio;
-    let best: { config: ModelConfig; tier: Tier; cost: number } | null = null;
-
-    for (const tier of getAllTiers()) {
-      const available = this.filterByContext(
-        this.filterBlocked(getModelsForTier(tier, this.config.availableProviders), blockedProviders),
-        estimatedTokens,
-      ).filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model));
-
-      for (const m of available) {
-        const cost = m.inputPer1M + m.outputPer1M * ratio;
-        if (!best || cost < best.cost || (cost === best.cost && m.quality > best.config.quality)) {
-          best = { config: m, tier, cost };
-        }
-      }
-    }
-
-    if (!best) return null;
-    return this.toDecision(best.config, best.tier, best.cost, 'cheap');
-  }
-
-  /**
-   * prefer: 'quality' — force premium tier, pick highest quality model.
-   */
-  private selectByQuality(estimatedTokens: number, blockedProviders?: Set<string>): RouteDecision | null {
-    const available = this.filterByContext(
-      this.filterBlocked(getModelsForTier('premium', this.config.availableProviders), blockedProviders),
-      estimatedTokens,
-    ).filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model));
-
-    if (available.length === 0) {
-      // Premium tier fully unavailable or no model fits context — fall back to best in standard
-      const fallback = this.filterByContext(
-        this.filterBlocked(getModelsForTier('standard', this.config.availableProviders), blockedProviders),
-        estimatedTokens,
-      )
-        .filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model))
-        .sort((a, b) => b.quality - a.quality);
-      if (fallback.length === 0) return null;
-      return this.toDecision(fallback[0], 'standard', undefined, 'quality');
-    }
-
-    const sorted = [...available].sort((a, b) => b.quality - a.quality);
-    return this.toDecision(sorted[0], 'premium', undefined, 'quality');
-  }
 
   /**
    * Filter models whose provider is in the user's blocked list.
