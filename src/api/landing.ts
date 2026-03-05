@@ -1,8 +1,8 @@
 /**
  * GET / — landing page.
  *
- * Serves as the public face of the API. Shows what it is, how to get started,
- * and links to the profile. Static HTML, self-contained.
+ * Serves as the public face of the API. Designed to read like documentation,
+ * not a marketing page. Code-first, typography-driven, no card grids or emoji.
  */
 
 import { Hono } from 'hono';
@@ -26,456 +26,385 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
   <title>Model Router — AI API Gateway</title>
   <style>
     :root {
-      --bg: #0d1117;
-      --bg2: #161b22;
-      --bg3: #21262d;
-      --border: #30363d;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --accent: #58a6ff;
-      --accent2: #3fb950;
-      --accent3: #d2a8ff;
-      --warn: #f0883e;
-      --code-bg: #161b22;
+      --bg: #111;
+      --surface: #1a1a1a;
+      --text: #e8e6e3;
+      --muted: #777;
+      --accent: #ff6b35;
+      --green: #4a9;
+      --border: #2a2a2a;
+      --code-bg: #0c0c0c;
+      --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
-      font-size: 16px;
-      line-height: 1.6;
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.7;
       min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
     }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
-    code, pre {
-      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-      font-size: 13px;
-    }
+    code, pre { font-family: var(--mono); }
 
-    /* Layout */
-    .container { max-width: 860px; margin: 0 auto; padding: 48px 24px; }
+    .page { max-width: 620px; margin: 0 auto; padding: 60px 24px 80px; }
 
-    /* Header */
+    /* ── Header ── */
     .header { margin-bottom: 48px; }
-    .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-    .logo-icon {
-      width: 36px; height: 36px;
-      background: linear-gradient(135deg, #58a6ff, #3fb950);
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; font-weight: 700; color: #0d1117;
+    .header-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+    .title { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: -0.5px; }
+    .sign-in { font-size: 13px; color: var(--muted); font-family: var(--mono); }
+    .sign-in:hover { color: var(--accent); }
+    .subtitle { font-size: 15px; color: var(--muted); margin-bottom: 16px; max-width: 480px; }
+    .status { display: flex; align-items: center; gap: 8px; }
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--muted);
+      flex-shrink: 0; animation: pulse 1.5s infinite;
     }
-    .logo-name { font-size: 20px; font-weight: 700; color: var(--text); }
-    .tagline { font-size: 15px; color: var(--muted); }
-    .status-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; display: inline-block; }
-    .dot.loading { background: var(--muted); animation: pulse 1s infinite; }
-    .dot.error { background: #f85149; }
+    .dot.up { background: var(--green); animation: none; }
+    .dot.degraded { background: var(--accent); animation: none; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-    .status-text { font-size: 13px; color: var(--muted); }
+    .status-text { font-size: 12px; color: var(--muted); font-family: var(--mono); }
 
-    /* Cards */
-    .card {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 24px;
-      margin-bottom: 16px;
-    }
-    .card-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+    /* ── Sections ── */
+    .hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+    .section-head {
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.1em;
       margin-bottom: 16px;
     }
 
-    /* Features */
-    .feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    @media (max-width: 600px) { .feature-grid { grid-template-columns: 1fr; } }
-    .feature-item {
-      background: var(--bg3);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
-    }
-    .feature-icon { font-size: 20px; margin-bottom: 8px; }
-    .feature-name { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-    .feature-desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
-
-    /* Quickstart */
-    .qs-step { display: flex; gap: 16px; margin-bottom: 20px; }
-    .qs-step:last-child { margin-bottom: 0; }
-    .qs-num {
-      flex-shrink: 0;
-      width: 28px; height: 28px;
-      background: var(--bg3);
-      border: 1px solid var(--border);
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 13px; font-weight: 700; color: var(--accent);
-      margin-top: 2px;
-    }
-    .qs-content { flex: 1; min-width: 0; }
-    .qs-label { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
-    .qs-sub { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
-    pre.code-block {
+    /* ── Hero code block ── */
+    pre.hero {
       background: var(--code-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px 16px;
+      border-left: 3px solid var(--accent);
+      padding: 20px 24px;
       overflow-x: auto;
-      line-height: 1.5;
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 32px;
     }
-    .comment { color: #8b949e; }
-    .keyword { color: var(--accent3); }
-    .string { color: var(--accent2); }
-    .key { color: var(--accent); }
+    .c { color: #666; }
+    .s { color: var(--green); }
+    .k { color: var(--accent); }
 
-    /* Endpoints */
-    .endpoint { display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border); }
-    .endpoint:last-child { border-bottom: none; padding-bottom: 0; }
-    .endpoint:first-child { padding-top: 0; }
-    .method {
-      flex-shrink: 0;
-      font-size: 11px; font-weight: 700;
-      padding: 2px 8px; border-radius: 4px;
-      font-family: monospace;
-      margin-top: 2px;
+    /* ── Pitch ── */
+    .pitch { font-size: 16px; color: var(--text); margin-bottom: 24px; line-height: 1.7; }
+    .pitch strong { color: var(--accent); font-weight: 600; }
+
+    /* ── Param table ── */
+    .params { margin: 24px 0; }
+    .param-row { display: flex; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .param-row:last-child { border-bottom: none; }
+    .param-name {
+      flex-shrink: 0; width: 90px;
+      font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--accent);
+      padding-top: 1px;
     }
-    .method.get { background: #1f4d2e; color: #3fb950; }
-    .method.post { background: #1a3255; color: #58a6ff; }
-    .method.patch { background: #2a2040; color: var(--accent3); }
-    .method.del { background: #3d1515; color: #f85149; }
-    .ep-path { font-size: 14px; font-weight: 600; color: var(--text); font-family: monospace; }
-    .ep-desc { font-size: 13px; color: var(--muted); margin-top: 2px; }
+    .param-body { flex: 1; }
+    .param-desc { font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+    .param-values {
+      font-family: var(--mono); font-size: 13px; color: var(--text);
+    }
+    .param-values span { color: var(--muted); margin: 0 4px; }
+
+    /* ── Tiers ── */
+    .tier { margin-bottom: 16px; }
+    .tier-name {
+      font-family: var(--mono); font-size: 13px; font-weight: 700;
+      display: inline-block; width: 90px;
+    }
+    .tier-name.eco { color: var(--green); }
+    .tier-name.std { color: var(--accent); }
+    .tier-name.prm { color: #c084fc; }
+    .tier-models { font-size: 13px; color: var(--muted); display: inline; }
+
+    /* ── Steps ── */
+    .step { display: flex; gap: 12px; margin-bottom: 16px; }
+    .step-num {
+      flex-shrink: 0; font-family: var(--mono); font-size: 13px;
+      font-weight: 700; color: var(--accent); padding-top: 1px;
+    }
+    .step-body { font-size: 14px; color: var(--text); }
+    .step-body .muted { color: var(--muted); }
+
+    /* ── Features list ── */
+    .features { list-style: none; }
+    .features li {
+      font-size: 14px; color: var(--muted); padding: 4px 0;
+      padding-left: 20px; position: relative;
+    }
+    .features li::before {
+      content: '→'; position: absolute; left: 0; color: var(--accent);
+      font-family: var(--mono);
+    }
+
+    /* ── Endpoints ── */
+    .ep-table { width: 100%; border-collapse: collapse; }
+    .ep-table td {
+      padding: 6px 0; font-size: 13px; vertical-align: top;
+      border-bottom: 1px solid var(--border);
+    }
+    .ep-table tr:last-child td { border-bottom: none; }
+    .ep-method {
+      font-family: var(--mono); font-weight: 700; width: 50px;
+      color: var(--muted); font-size: 11px; padding-top: 8px;
+    }
+    .ep-method.post { color: var(--accent); }
+    .ep-method.patch { color: #c084fc; }
+    .ep-method.del { color: #f44; }
+    .ep-path { font-family: var(--mono); color: var(--text); white-space: nowrap; padding-right: 16px; }
+    .ep-desc { color: var(--muted); }
     .ep-auth {
-      font-size: 11px;
-      padding: 1px 6px; border-radius: 4px;
-      margin-left: 8px;
-      background: var(--bg3);
+      font-family: var(--mono); font-size: 10px;
+      color: var(--muted); background: var(--surface);
+      padding: 1px 5px; border-radius: 3px; margin-left: 6px;
+    }
+
+    /* ── Pricing callout ── */
+    .callout {
+      border-left: 3px solid var(--accent);
+      padding: 16px 20px;
+      background: var(--surface);
+      font-size: 14px;
       color: var(--muted);
-      font-family: monospace;
+      line-height: 1.7;
+    }
+    .callout strong { color: var(--text); font-weight: 600; }
+    .callout code {
+      font-size: 12px; color: var(--accent);
+      background: var(--code-bg); padding: 1px 5px; border-radius: 3px;
     }
 
-    /* Tiers */
-    .tier-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-    @media (max-width: 600px) { .tier-grid { grid-template-columns: 1fr; } }
-    .tier-card {
-      background: var(--bg3);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
+    /* ── Footer ── */
+    .footer {
+      margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
     }
-    .tier-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
-    .tier-name.economy { color: var(--accent2); }
-    .tier-name.standard { color: var(--accent); }
-    .tier-name.premium { color: var(--accent3); }
-    .tier-models { font-size: 12px; color: var(--muted); line-height: 1.7; }
-    .tier-badge {
-      display: inline-block;
-      font-size: 10px;
-      padding: 1px 5px;
-      border-radius: 3px;
-      margin-left: 4px;
-      background: var(--bg);
-      color: var(--muted);
-      font-family: monospace;
-      vertical-align: middle;
-    }
-
-    /* Prefer modes */
-    .prefer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    @media (max-width: 600px) { .prefer-grid { grid-template-columns: 1fr; } }
-    .prefer-item {
-      background: var(--bg3);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px;
-    }
-    .prefer-name { font-size: 13px; font-weight: 700; color: var(--accent3); font-family: monospace; margin-bottom: 4px; }
-    .prefer-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
-
-    /* Footer */
-    .footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
     .footer-links { display: flex; gap: 20px; }
-    .footer-links a { font-size: 13px; color: var(--muted); }
-    .footer-links a:hover { color: var(--text); }
-    .footer-note { font-size: 12px; color: var(--muted); }
+    .footer-links a { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+    .footer-links a:hover { color: var(--accent); }
+    .footer-note { font-size: 12px; color: var(--muted); font-family: var(--mono); }
 
-    /* Inline code */
-    code.inline {
-      background: var(--bg3);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 1px 6px;
-      color: var(--accent3);
+    /* ── Mobile ── */
+    @media (max-width: 600px) {
+      .page { padding: 40px 16px 60px; }
+      pre.hero { padding: 16px; font-size: 12px; }
+      .param-row { flex-direction: column; gap: 4px; }
+      .param-name { width: auto; }
+      .tier-name { display: block; width: auto; margin-bottom: 2px; }
+      .tier-models { display: block; }
+      .ep-table td { font-size: 12px; }
     }
   </style>
 </head>
 <body>
-<div class="container">
+<div class="page">
 
   <!-- Header -->
   <div class="header">
-    <div class="logo">
-      <div class="logo-icon">M</div>
-      <span class="logo-name">Model Router</span>
+    <div class="header-top">
+      <div class="title">model-router</div>
+      <a href="/profile" class="sign-in">sign in →</a>
     </div>
-    <p class="tagline">OpenAI-compatible AI API gateway — intelligent routing across Anthropic, OpenAI, Google, and xAI.</p>
-    <div class="status-row">
-      <span class="dot loading" id="statusDot"></span>
-      <span class="status-text" id="statusText">Checking status…</span>
-    </div>
-  </div>
-
-  <!-- Why Model Router -->
-  <div class="card">
-    <div class="card-title">Why Model Router</div>
-    <div class="feature-grid">
-      <div class="feature-item">
-        <div class="feature-icon">🎯</div>
-        <div class="feature-name">Smart routing</div>
-        <div class="feature-desc">Two dimensions: <strong>tier</strong> sets the capability floor, <code class="inline">prefer</code> optimises within it. Build once, the router tracks which model wins each month.</div>
-      </div>
-      <div class="feature-item">
-        <div class="feature-icon">🚫</div>
-        <div class="feature-name">Provider blocking</div>
-        <div class="feature-desc">Exclude providers you don't want to fund. Your inference dollars go where you direct them.</div>
-      </div>
-      <div class="feature-item">
-        <div class="feature-icon">⚡</div>
-        <div class="feature-name">Automatic failover</div>
-        <div class="feature-desc">Circuit breakers reroute around outages automatically. Providers recover without intervention.</div>
-      </div>
-      <div class="feature-item">
-        <div class="feature-icon">💰</div>
-        <div class="feature-name">Transparent pricing, pay for what you use</div>
-        <div class="feature-desc">A 4% fee applies when you deposit credits. Requests are then charged at actual market rates — you pay exactly what the provider charges, nothing more. Response headers tell you exactly what ran: <code class="inline">X-Model-Router-Model</code>, <code class="inline">X-Model-Router-Provider</code>. All prices in USD.</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Quickstart -->
-  <div class="card">
-    <div class="card-title">Quickstart</div>
-
-    <div class="qs-step">
-      <div class="qs-num">1</div>
-      <div class="qs-content">
-        <div class="qs-label">Create an account</div>
-        <div class="qs-sub">No password needed — we email you a code. Visit <a href="/profile">/profile</a> or use the API:</div>
-        <pre class="code-block"><code><span class="comment"># Request a login code</span>
-curl -X POST https://api.lxg2it.com/v1/auth/request-code \\
-  -H "Content-Type: application/json" \\
-  -d '{"email": "you@example.com"}'
-
-<span class="comment"># Verify code → session. First login creates account + API key.</span>
-curl -X POST https://api.lxg2it.com/v1/auth/verify-code \\
-  -H "Content-Type: application/json" \\
-  -d '{"email": "you@example.com", "code": "123456"}'</code></pre>
-      </div>
-    </div>
-
-    <div class="qs-step">
-      <div class="qs-num">2</div>
-      <div class="qs-content">
-        <div class="qs-label">Add credits</div>
-        <div class="qs-sub">Top up your balance and optionally block providers you don't want to use.</div>
-        <div><a href="/profile">Open your profile →</a></div>
-      </div>
-    </div>
-
-    <div class="qs-step">
-      <div class="qs-num">3</div>
-      <div class="qs-content">
-        <div class="qs-label">Make a request</div>
-        <div class="qs-sub">Drop-in replacement for the OpenAI API. Point your existing clients here.</div>
-        <pre class="code-block"><code><span class="comment"># Automatic routing — let the router pick for you</span>
-curl -X POST https://api.lxg2it.com/v1/chat/completions \\
-  -H "Authorization: Bearer mr_sk_your_key" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model": "auto",
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'
-
-<span class="comment"># Use prefer for cost/speed/quality control</span>
-curl -X POST https://api.lxg2it.com/v1/chat/completions \\
-  -H "Authorization: Bearer mr_sk_your_key" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model": "auto",
-    "prefer": "cheap",
-    "messages": [{"role": "user", "content": "Summarise this text"}]
-  }'</code></pre>
-      </div>
-    </div>
-  </div>
-
-  <!-- prefer parameter -->
-  <div class="card">
-    <div class="card-title">Routing with <code style="font-size:12px; color:var(--accent3)">prefer</code></div>
-    <p style="font-size:14px; color:var(--muted); margin-bottom:16px;">
-      Two independent dimensions: <strong>tier</strong> sets the capability floor (which pool of models to use),
-      and <code class="inline">prefer</code> controls the optimisation direction within that pool.
-      Default is <code class="inline">balanced</code>.
+    <p class="subtitle">
+      An OpenAI-compatible API that routes your requests
+      across Anthropic, OpenAI, Google, and xAI.
     </p>
-    <div class="prefer-grid">
-      <div class="prefer-item">
-        <div class="prefer-name">cheap</div>
-        <div class="prefer-desc">Lowest cost within your tier. Combine with <code class="inline">economy</code> tier for the absolute cheapest option today.</div>
+    <div class="status">
+      <span class="dot" id="statusDot"></span>
+      <span class="status-text" id="statusText">checking…</span>
+    </div>
+  </div>
+
+  <!-- Hero code -->
+  <pre class="hero"><code><span class="c">$ curl</span> https://api.lxg2it.com/v1/chat/completions \\
+    -H <span class="s">"Authorization: Bearer $KEY"</span> \\
+    -H <span class="s">"Content-Type: application/json"</span> \\
+    -d <span class="s">'{
+      "model": "<span class="k">standard</span>",
+      "prefer": "<span class="k">cheap</span>",
+      "messages": [{"role": "user", "content": "Hello"}]
+    }'</span></code></pre>
+
+  <!-- Pitch -->
+  <p class="pitch">
+    You pick what matters — the capability tier and the optimisation direction.
+    The router picks the model. When a cheaper option launches or a provider
+    goes down, your requests adapt automatically. <strong>No model names to track.
+    No code to change.</strong>
+  </p>
+
+  <!-- Two parameters -->
+  <div class="params">
+    <div class="param-row">
+      <div class="param-name">model</div>
+      <div class="param-body">
+        <div class="param-desc">The capability tier — sets the floor for what models are eligible.</div>
+        <div class="param-values">economy<span>·</span>standard<span>·</span>premium<span>·</span>auto</div>
       </div>
-      <div class="prefer-item">
-        <div class="prefer-name">fast</div>
-        <div class="prefer-desc">Lowest time-to-first-token within your tier. Best for interactive apps where latency matters.</div>
-      </div>
-      <div class="prefer-item">
-        <div class="prefer-name">balanced</div>
-        <div class="prefer-desc">Cost-efficient with quality tie-breaking. The sensible default for general use.</div>
-      </div>
-      <div class="prefer-item">
-        <div class="prefer-name">quality</div>
-        <div class="prefer-desc">Highest quality score within your tier. Combine with <code class="inline">premium</code> tier for best-in-class output.</div>
+    </div>
+    <div class="param-row">
+      <div class="param-name">prefer</div>
+      <div class="param-body">
+        <div class="param-desc">The optimisation direction within that tier.</div>
+        <div class="param-values">cheap<span>·</span>fast<span>·</span>balanced<span>·</span>quality</div>
       </div>
     </div>
   </div>
+
+  <p style="font-size:14px; color:var(--muted); margin-top:16px;">
+    You can also pass a specific model name
+    (<code style="font-size:12px; color:var(--text);">gpt-4.1</code>,
+    <code style="font-size:12px; color:var(--text);">claude-sonnet-4-6</code>)
+    to pin routing and bypass tier selection entirely.
+  </p>
+
+  <hr class="hr">
 
   <!-- Tiers -->
-  <div class="card">
-    <div class="card-title">Model Tiers</div>
-    <p style="font-size:14px; color:var(--muted); margin-bottom:16px;">
-      Use tier aliases like <code class="inline">economy</code>, <code class="inline">standard</code>, <code class="inline">premium</code>,
-      or <code class="inline">auto</code> for automatic selection. Familiar model names (e.g. <code class="inline">gpt-4o</code>,
-      <code class="inline">claude-sonnet</code>) are mapped to the appropriate tier automatically.
-      You can also pin a specific model by passing its exact catalog ID (e.g. <code class="inline">gpt-4.1</code>,
-      <code class="inline">claude-sonnet-4-6</code>) — the router will go directly to that model, bypassing cost selection.
-      Pinned requests include <code class="inline">"pinned": true</code> in the <code class="inline">_router</code> response field.
-    </p>
-    <div class="tier-grid">
-      <div class="tier-card">
-        <div class="tier-name economy">economy</div>
-        <div class="tier-models">
-          gemini-2.5-flash<br>
-          gpt-4.1-mini<br>
-          o4-mini<br>
-          claude-haiku-4-5<br>
-          grok-3-mini-beta
-        </div>
-      </div>
-      <div class="tier-card">
-        <div class="tier-name standard">standard</div>
-        <div class="tier-models">
-          gemini-2.5-pro<br>
-          gpt-4.1<br>
-          o3<br>
-          claude-sonnet-4-6<br>
-          grok-3-beta
-        </div>
-      </div>
-      <div class="tier-card">
-        <div class="tier-name premium">premium</div>
-        <div class="tier-models">
-          gemini-3.1-pro-preview<br>
-          claude-opus-4-6<br>
-          gpt-5.2
-        </div>
-      </div>
-    </div>
-    <p style="font-size:12px; color:var(--muted); margin-top:12px;">
-      Context-window guard: requests are only routed to models that can handle your input length.
-      Circuit breakers automatically reroute around provider outages.
-    </p>
+  <div class="section-head">Current tiers</div>
+
+  <div class="tier">
+    <span class="tier-name eco">economy</span>
+    <span class="tier-models">gemini-2.5-flash · gpt-4.1-mini · o4-mini · claude-haiku-4-5 · grok-3-mini-beta</span>
   </div>
+  <div class="tier">
+    <span class="tier-name std">standard</span>
+    <span class="tier-models">gemini-2.5-pro · gpt-4.1 · o3 · claude-sonnet-4-6 · grok-3-beta</span>
+  </div>
+  <div class="tier">
+    <span class="tier-name prm">premium</span>
+    <span class="tier-models">gemini-3.1-pro-preview · claude-opus-4-6 · gpt-5.2</span>
+  </div>
+
+  <p style="font-size:13px; color:var(--muted); margin-top:16px;">
+    Context-window guard: never routes to a model that can't handle your input.
+    Circuit breakers reroute around provider outages automatically.
+  </p>
+
+  <hr class="hr">
+
+  <!-- Getting started -->
+  <div class="section-head">Getting started</div>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      Sign up at <a href="/profile">/profile</a> — no password, just an email code.
+      <span class="muted">New accounts get $1 credit to try it.</span>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      Point any OpenAI-compatible client at
+      <code style="font-size:13px; color:var(--accent);">https://api.lxg2it.com</code>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      That's it. <span class="muted">Top up credits when you need more.</span>
+    </div>
+  </div>
+
+  <hr class="hr">
+
+  <!-- Pricing -->
+  <div class="section-head">Pricing</div>
+
+  <div class="callout">
+    <strong>4% fee on credit deposits.</strong> Requests billed at actual provider market
+    rates — you pay what the model costs, nothing more.<br><br>
+    Every response includes:<br>
+    <code>X-Model-Router-Model</code> and <code>X-Model-Router-Provider</code><br>
+    You always know exactly what ran and what it cost.
+  </div>
+
+  <hr class="hr">
+
+  <!-- Also -->
+  <div class="section-head">Also</div>
+  <ul class="features">
+    <li>Block providers you don't want to fund</li>
+    <li>Auto-recharge via Stripe when balance is low</li>
+    <li>Per-user daily spend limits (configurable)</li>
+    <li>Streaming and tool calls supported</li>
+  </ul>
+
+  <hr class="hr">
 
   <!-- Endpoints -->
-  <div class="card">
-    <div class="card-title">Endpoints</div>
+  <div class="section-head">Endpoints</div>
 
-    <div class="endpoint">
-      <span class="method post">POST</span>
-      <div>
-        <div class="ep-path">/v1/auth/request-code</div>
-        <div class="ep-desc">Send a login code to your email. Works for sign-up and sign-in.</div>
-      </div>
-    </div>
-
-    <div class="endpoint">
-      <span class="method post">POST</span>
-      <div>
-        <div class="ep-path">/v1/auth/verify-code</div>
-        <div class="ep-desc">Verify code → session token. Creates account on first use. Returns API key for new accounts.</div>
-      </div>
-    </div>
-
-    <div class="endpoint">
-      <span class="method post">POST</span>
-      <div>
-        <div class="ep-path">/v1/chat/completions <span class="ep-auth">auth</span></div>
-        <div class="ep-desc">OpenAI-compatible chat completions. Supports streaming, model aliases, and the <code class="inline">prefer</code> parameter.</div>
-      </div>
-    </div>
-
-    <div class="endpoint">
-      <span class="method get">GET</span>
-      <div>
-        <div class="ep-path">/v1/models <span class="ep-auth">auth</span></div>
-        <div class="ep-desc">List available models and tier aliases in OpenAI format.</div>
-      </div>
-    </div>
-
-    <div class="endpoint">
-      <span class="method get">GET</span>
-      <div>
-        <div class="ep-path">/v1/usage <span class="ep-auth">auth</span></div>
-        <div class="ep-desc">Usage summary for your key — tokens, requests, estimated cost.</div>
-      </div>
-    </div>
-
-    <div class="endpoint">
-      <span class="method get">GET</span>
-      <div>
-        <div class="ep-path">/v1/account <span class="ep-auth">session</span></div>
-        <div class="ep-desc">Account info, credit balance, and blocked provider list.</div>
-      </div>
-    </div>
-
-    <div class="endpoint">
-      <span class="method patch">PATCH</span>
-      <div>
-        <div class="ep-path">/v1/account/providers <span class="ep-auth">session</span></div>
-        <div class="ep-desc">Update your blocked providers list. Blocked providers are never used for routing your requests.</div>
-      </div>
-    </div>
-
-    <div class="endpoint">
-      <span class="method get">GET</span>
-      <div>
-        <div class="ep-path">/health</div>
-        <div class="ep-desc">Provider health and circuit breaker status. No auth required.</div>
-      </div>
-    </div>
-  </div>
+  <table class="ep-table">
+    <tr>
+      <td class="ep-method post">POST</td>
+      <td class="ep-path">/v1/auth/request-code</td>
+      <td class="ep-desc">Send a login code to your email</td>
+    </tr>
+    <tr>
+      <td class="ep-method post">POST</td>
+      <td class="ep-path">/v1/auth/verify-code</td>
+      <td class="ep-desc">Verify code → session + API key</td>
+    </tr>
+    <tr>
+      <td class="ep-method post">POST</td>
+      <td class="ep-path">/v1/chat/completions<span class="ep-auth">auth</span></td>
+      <td class="ep-desc">Chat completions with routing</td>
+    </tr>
+    <tr>
+      <td class="ep-method">GET</td>
+      <td class="ep-path">/v1/models<span class="ep-auth">auth</span></td>
+      <td class="ep-desc">Available models and aliases</td>
+    </tr>
+    <tr>
+      <td class="ep-method">GET</td>
+      <td class="ep-path">/v1/usage<span class="ep-auth">auth</span></td>
+      <td class="ep-desc">Token and cost summary</td>
+    </tr>
+    <tr>
+      <td class="ep-method">GET</td>
+      <td class="ep-path">/v1/account<span class="ep-auth">session</span></td>
+      <td class="ep-desc">Account info, balance, blocked providers</td>
+    </tr>
+    <tr>
+      <td class="ep-method patch">PATCH</td>
+      <td class="ep-path">/v1/account/providers<span class="ep-auth">session</span></td>
+      <td class="ep-desc">Update blocked providers</td>
+    </tr>
+    <tr>
+      <td class="ep-method patch">PATCH</td>
+      <td class="ep-path">/v1/account/settings<span class="ep-auth">session</span></td>
+      <td class="ep-desc">Update daily spend limit, defaults</td>
+    </tr>
+    <tr>
+      <td class="ep-method">GET</td>
+      <td class="ep-path">/health</td>
+      <td class="ep-desc">Provider health, circuit breakers</td>
+    </tr>
+  </table>
 
   <!-- Footer -->
   <div class="footer">
     <div class="footer-links">
-      <a href="/profile">Profile</a>
-      <a href="/health">Health</a>
-      <a href="/v1/models">Models</a>
-      <a href="/privacy">Privacy</a>
-      <a href="/terms">Terms</a>
+      <a href="/profile">profile</a>
+      <a href="/health">health</a>
+      <a href="/v1/models">models</a>
+      <a href="/privacy">privacy</a>
+      <a href="/terms">terms</a>
     </div>
-    <div class="footer-note">Model Router · api.lxg2it.com</div>
+    <div class="footer-note">api.lxg2it.com</div>
   </div>
 
 </div>
 
 <script>
-  // Live health check
   (async () => {
     const dot = document.getElementById('statusDot');
     const txt = document.getElementById('statusText');
@@ -484,22 +413,18 @@ curl -X POST https://api.lxg2it.com/v1/chat/completions \\
       if (!res.ok) throw new Error('non-ok');
       const data = await res.json();
       const providers = data.providers || [];
-      const openCircuits = data.openCircuits || 0;
-      dot.className = 'dot' + (openCircuits > 0 ? ' ' : '');
-      if (openCircuits === 0) {
-        dot.style.background = '#3fb950';
-        dot.className = 'dot';
+      const open = data.openCircuits || 0;
+      if (open === 0) {
+        dot.classList.add('up');
         txt.textContent = providers.length > 0
-          ? 'Operational · ' + providers.join(', ')
-          : 'Operational';
+          ? 'operational — ' + providers.join(', ')
+          : 'operational';
       } else {
-        dot.style.background = '#f0883e';
-        dot.className = 'dot';
-        txt.textContent = 'Degraded · ' + openCircuits + ' provider(s) in cooldown';
+        dot.classList.add('degraded');
+        txt.textContent = 'degraded — ' + open + ' provider(s) in cooldown';
       }
     } catch {
-      dot.style.background = '#8b949e';
-      txt.textContent = 'Status unavailable';
+      txt.textContent = 'status unavailable';
     }
   })();
 </script>
