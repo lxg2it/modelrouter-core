@@ -20,6 +20,7 @@
  */
 
 import { Hono } from 'hono';
+import { TIERS, PROVIDER_META } from '../config.js';
 
 export interface ProfileDeps {
   adminEmails?: string[];
@@ -28,10 +29,28 @@ export interface ProfileDeps {
 export function createProfileRouter(deps: ProfileDeps = {}): Hono {
   const router = new Hono();
   const adminEmailsJson = JSON.stringify((deps.adminEmails ?? []).map((e) => e.toLowerCase()));
+
+  // Build provider metadata from tier config (unique providers actually used)
+  const seen = new Set<string>();
+  for (const cfg of Object.values(TIERS)) {
+    for (const m of cfg.models) seen.add(m.provider);
+  }
+  const providerMetaJson = JSON.stringify(
+    Array.from(seen).map((p) => ({
+      id: p,
+      label: PROVIDER_META[p as keyof typeof PROVIDER_META]?.label ?? p,
+      models: PROVIDER_META[p as keyof typeof PROVIDER_META]?.models ?? '',
+    })),
+  );
+
   router.get('/', (c) => {
     c.header('Content-Type', 'text/html; charset=utf-8');
-    // Inject admin email list for conditional admin link rendering
-    return c.body(PROFILE_HTML.replace('/* __ADMIN_EMAILS__ */', `const ADMIN_EMAILS = ${adminEmailsJson};`));
+    // Inject admin email list and provider metadata
+    return c.body(
+      PROFILE_HTML
+        .replace('/* __ADMIN_EMAILS__ */', `const ADMIN_EMAILS = ${adminEmailsJson};`)
+        .replace('/* __PROVIDER_META__ */', `const KNOWN_PROVIDERS = ${providerMetaJson};`),
+    );
   });
   return router;
 }
@@ -862,12 +881,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
   // ─── Provider preferences ─────────────────────────────────
 
-  const KNOWN_PROVIDERS = [
-    { id: 'anthropic', label: 'Anthropic', models: 'Claude family' },
-    { id: 'openai',    label: 'OpenAI',    models: 'GPT, o-series' },
-    { id: 'google',    label: 'Google',    models: 'Gemini family' },
-    { id: 'grok',      label: 'xAI / Grok', models: 'Grok family' },
-  ];
+  /* __PROVIDER_META__ */
 
   function renderProviderToggles(blockedProviders) {
     const container = document.getElementById('providerToggles');

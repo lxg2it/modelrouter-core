@@ -6,7 +6,7 @@
  */
 
 import { Hono } from 'hono';
-import { TIERS } from '../config.js';
+import { TIERS, PROVIDER_META } from '../config.js';
 
 /** Strip date suffixes like -20251001 from model IDs for display. */
 function displayModel(id: string): string {
@@ -46,6 +46,20 @@ function tierValues(): string {
   const names = Object.keys(TIERS);
   return [...names, 'auto'].map((n) => n).join('<span>·</span>');
 }
+
+/** Build the "across X, Y, and Z" provider subtitle from tier config. */
+function providerSubtitle(): string {
+  // Collect unique providers actually referenced in tiers
+  const seen = new Set<string>();
+  for (const cfg of Object.values(TIERS)) {
+    for (const m of cfg.models) seen.add(m.provider);
+  }
+  const labels = Array.from(seen).map((p) => PROVIDER_META[p as keyof typeof PROVIDER_META]?.label ?? p);
+  if (labels.length === 0) return '';
+  if (labels.length === 1) return labels[0];
+  return labels.slice(0, -1).join(', ') + ', and ' + labels[labels.length - 1];
+}
+
 
 export function createLandingRouter(): Hono {
   const router = new Hono();
@@ -255,7 +269,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     </div>
     <p class="subtitle">
       An OpenAI-compatible API that routes your requests
-      across Anthropic, OpenAI, Google, and xAI.
+      across ${providerSubtitle()}.
     </p>
     <div class="status">
       <span class="dot" id="statusDot"></span>

@@ -298,6 +298,21 @@ export const MODEL_ALIASES: Record<string, string> = {
 
 // ─── Provider Base URLs ────────────────────────────────
 
+// ─── Provider Display Metadata ─────────────────────────
+//
+// Human-readable labels and model family descriptions for each provider.
+// Used by the landing page subtitle and profile page provider toggles.
+// Adding a provider here + to ProviderName + to TIERS is all that's needed.
+
+export const PROVIDER_META: Record<ProviderName, { label: string; models: string }> = {
+  anthropic: { label: 'Anthropic',        models: 'Claude family' },
+  openai:    { label: 'OpenAI',           models: 'GPT, o-series' },
+  google:    { label: 'Google',           models: 'Gemini family' },
+  grok:      { label: 'xAI / Grok',       models: 'Grok family' },
+  bedrock:   { label: 'AWS Bedrock',       models: 'GLM, DeepSeek, Qwen, Kimi, Mistral, MiniMax' },
+};
+
+
 export const PROVIDER_URLS: Record<ProviderName, string> = {
   anthropic: 'https://api.anthropic.com',
   openai: 'https://api.openai.com',
