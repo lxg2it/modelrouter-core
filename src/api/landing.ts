@@ -70,7 +70,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       --bg: #111;
       --surface: #1a1a1a;
       --text: #e8e6e3;
-      --muted: #777;
+      --muted: #999;
       --accent: #ff6b35;
       --green: #4a9;
       --border: #2a2a2a;
@@ -129,7 +129,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       line-height: 1.6;
       margin-bottom: 32px;
     }
-    .c { color: #666; }
+    .c { color: #999; }
     .s { color: var(--green); }
     .k { color: var(--accent); }
 
