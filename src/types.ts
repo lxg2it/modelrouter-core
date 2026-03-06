@@ -120,7 +120,7 @@ export interface ModelsListResponse {
 
 export type Tier = 'economy' | 'standard' | 'premium';
 
-export type ProviderName = 'anthropic' | 'openai' | 'google' | 'grok';
+export type ProviderName = 'anthropic' | 'openai' | 'google' | 'grok' | 'zai';
 
 export interface ModelConfig {
   provider: ProviderName;

@@ -20,6 +20,7 @@ export interface Config {
     openai?: { apiKey: string };
     google?: { apiKey: string };
     grok?: { apiKey: string };
+    zai?: { apiKey: string };
   };
 
   // Router defaults
@@ -80,6 +81,9 @@ export function loadConfig(): Config {
         : undefined,
       grok: process.env.GROK_API_KEY
         ? { apiKey: process.env.GROK_API_KEY }
+        : undefined,
+      zai: process.env.ZAI_API_KEY
+        ? { apiKey: process.env.ZAI_API_KEY }
         : undefined,
     },
 
@@ -147,6 +151,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'openai',    model: 'o4-mini',                   quality: 0.74, inputPer1M: 1.10,  outputPer1M: 4.40,  latencyMs: 2500, maxContextTokens: 200_000,   isThinkingModel: true },
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', quality: 0.60, inputPer1M: 1.00,  outputPer1M: 5.00,  latencyMs: 320,  maxContextTokens: 200_000   },
       { provider: 'grok',      model: 'grok-3-mini-beta',          quality: 0.50, inputPer1M: 0.30,  outputPer1M: 0.50,  latencyMs: 250,  maxContextTokens: 131_072,   isThinkingModel: true },
+      { provider: 'zai',       model: 'glm-4.7-flash',             quality: 0.51, inputPer1M: 0.06,  outputPer1M: 0.40,  latencyMs: 300,  maxContextTokens: 202_752  },
     ],
     description: 'Fast and cheap. Good for classification, extraction, simple generation.',
   },
@@ -157,6 +162,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'openai',    model: 'o3',               quality: 0.85, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 3500, maxContextTokens: 200_000,   isThinkingModel: true },
       { provider: 'anthropic', model: 'claude-sonnet-4-6', quality: 0.85, inputPer1M: 3.00, outputPer1M: 15.00, latencyMs: 650,  maxContextTokens: 200_000   },
       { provider: 'grok',      model: 'grok-3-beta',       quality: 0.74, inputPer1M: 3.00, outputPer1M: 15.00, latencyMs: 580,  maxContextTokens: 131_072   },
+      { provider: 'zai',       model: 'glm-4.7',                   quality: 1.00, inputPer1M: 0.30, outputPer1M: 1.40,  latencyMs: 500,  maxContextTokens: 202_752,  isThinkingModel: true },
     ],
     description: 'Balanced quality and cost. The default for most applications.',
   },
@@ -165,6 +171,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'google',    model: 'gemini-3.1-pro-preview', quality: 1.00, inputPer1M: 2.00,  outputPer1M: 12.00, latencyMs: 900,  maxContextTokens: 1_048_576 },
       { provider: 'anthropic', model: 'claude-opus-4-6', quality: 1.00, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 200_000   },
       { provider: 'openai',    model: 'gpt-5.2',         quality: 0.93, inputPer1M: 10.00, outputPer1M: 30.00, latencyMs: 1000, maxContextTokens: 200_000   },
+      { provider: 'zai',       model: 'glm-5',            quality: 0.95, inputPer1M: 0.80,  outputPer1M: 2.56,  latencyMs: 800,  maxContextTokens: 202_752  },
     ],
     description: 'Maximum capability. For complex reasoning, creative work, difficult tasks.',
   },
@@ -229,6 +236,13 @@ export const MODEL_ALIASES: Record<string, string> = {
   'o3': 'standard', // o3 is actually standard-priced
   'o4-mini': 'economy',
 
+  // Z.ai GLM aliases
+  'glm': 'standard',
+  'glm-5': 'premium',
+  'glm-4.7': 'standard',
+  'glm-4.7-flash': 'economy',
+
+
   // Grok aliases
   'grok': 'standard',
   'grok-3': 'standard',
@@ -249,6 +263,7 @@ export const PROVIDER_URLS: Record<ProviderName, string> = {
   openai: 'https://api.openai.com',
   google: 'https://generativelanguage.googleapis.com',
   grok: 'https://api.x.ai/v1',
+  zai: 'https://api.z.ai/api/paas/v4',
 };
 
 // ─── Grok aliases ──────────────────────────────────────

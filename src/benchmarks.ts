@@ -125,6 +125,30 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     simpleBench: 52.0,
   },
 
+  // ── Z.ai ───────────────────────────────────────────────
+  'glm-4.7-flash': {
+    arenaElo: 1310,
+    gpqaDiamond: 58.1,
+    sweBench: 40.0,
+    mmluPro: 72.0,
+    simpleBench: 39.0,
+  },
+  'glm-4.7': {
+    arenaElo: 1445,
+    gpqaDiamond: 85.7,
+    sweBench: 73.8,
+    mmluPro: 84.3,
+    simpleBench: 60.0,
+  },
+  'glm-5': {
+    arenaElo: 1451,
+    gpqaDiamond: 86.0,
+    sweBench: 77.8,
+    mmluPro: 70.4,
+    simpleBench: 62.0,
+  },
+
+
   // ── Premium ───────────────────────────────────────────
   'gemini-3.1-pro-preview': {
     arenaElo: 1395,
