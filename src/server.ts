@@ -112,6 +112,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
 
   // Rate limiter — in-memory token bucket, one bucket per API key
   const rateLimiter = new RateLimiter();
+  const ipRateLimiter = new RateLimiter(5); // 5 requests/minute per IP (auth endpoint)
 
 
   // Billing transaction store — always initialised (records top-up history)
@@ -179,6 +180,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     billingTxStore,
     signupBonusCents: config.signupBonusCents,
     signupBonusDailyLimitCents: config.signupBonusDailyLimitCents,
+    ipRateLimiter,
   }));
 
   // ─── API routes (API key auth) ────────────────────────────

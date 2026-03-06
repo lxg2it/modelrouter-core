@@ -8,6 +8,7 @@
  *   - request-code: valid email → 200, invalid email → 400
  *   - request-code: disposable email → 400 with code 'disposable_email'
  *   - request-code: email send errors are swallowed (non-enumeration)
+ *   - request-code: IP rate limit exceeded → 429 with code 'rate_limit_exceeded'
  *   - verify-code: valid code for existing user → 200, no apiKey
  *   - verify-code: valid code for new user → 201 with apiKey
  *   - verify-code: invalid/expired code → 401
@@ -22,6 +23,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createAuthRouter } from '../../src/api/auth.js';
+import { RateLimiter } from '../../src/ratelimit/token-bucket.js';
 import type { UserStore } from '../../src/auth/users.js';
 import type { KeyStore } from '../../src/auth/keys.js';
 import type { EmailSender } from '../../src/auth/email.js';
@@ -116,6 +118,7 @@ function buildApp(
   billingTxStore?: BillingTransactionStore,
   signupBonusCents = 0,
   signupBonusDailyLimitCents = 0,
+  ipRateLimiter?: RateLimiter,
 ): Hono {
   const app = new Hono();
   app.route('/', createAuthRouter({
@@ -125,6 +128,7 @@ function buildApp(
     billingTxStore: billingTxStore ?? mockBillingTxStore(),
     signupBonusCents,
     signupBonusDailyLimitCents,
+    ipRateLimiter,
   }));
   return app;
 }
@@ -217,6 +221,44 @@ describe('POST /request-code', () => {
     });
 
     expect(res.status).toBe(200);
+  });
+
+  it('returns 429 when the IP rate limit is exceeded', async () => {
+    // Limit of 1 RPM so the second request within the same second is blocked.
+    const limiter = new RateLimiter(1);
+    const app = buildApp(
+      mockUserStore(), mockKeyStore(), undefined, undefined, 0, 0, limiter,
+    );
+    const requestOpts = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'cf-connecting-ip': '1.2.3.4' },
+      body: JSON.stringify({ email: 'alice@example.com' }),
+    } as const;
+
+    // First request consumes the single token — should succeed.
+    const first = await app.request('/request-code', requestOpts);
+    expect(first.status).toBe(200);
+
+    // Second request immediately after — bucket is empty — should be throttled.
+    const second = await app.request('/request-code', requestOpts);
+    expect(second.status).toBe(429);
+    const body = await second.json() as { error: { code: string } };
+    expect(body.error.code).toBe('rate_limit_exceeded');
+  });
+
+  it('does not apply IP rate limiting when no limiter is provided', async () => {
+    // Explicit undefined limiter — no rate limit, all requests succeed.
+    const app = buildApp(mockUserStore(), mockKeyStore());
+    const requestOpts = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'alice@example.com' }),
+    } as const;
+
+    for (let i = 0; i < 10; i++) {
+      const res = await app.request('/request-code', requestOpts);
+      expect(res.status).toBe(200);
+    }
   });
 });
 

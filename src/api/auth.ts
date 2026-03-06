@@ -24,6 +24,7 @@ import type { KeyStore } from '../auth/keys.js';
 import type { EmailSender } from '../auth/email.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
 import { isDisposableEmail } from '../auth/email-filter.js';
+import type { RateLimiter } from '../ratelimit/token-bucket.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -35,6 +36,8 @@ export interface AuthRouterDeps {
   signupBonusCents: number;
   /** Maximum total signup bonus credits to award per UTC day (0 = no limit). */
   signupBonusDailyLimitCents: number;
+  /** Optional IP-level rate limiter to protect the request-code endpoint. */
+  ipRateLimiter?: RateLimiter;
 }
 
 export function createAuthRouter(deps: AuthRouterDeps): Hono {
@@ -45,6 +48,7 @@ export function createAuthRouter(deps: AuthRouterDeps): Hono {
     billingTxStore,
     signupBonusCents,
     signupBonusDailyLimitCents,
+    ipRateLimiter,
   } = deps;
   const router = new Hono();
 
@@ -55,6 +59,21 @@ export function createAuthRouter(deps: AuthRouterDeps): Hono {
   // (prevents user enumeration).
   //
   router.post('/request-code', async (c) => {
+    // IP-level rate limiting — protects against signup floods and email spam.
+    // cf-connecting-ip is the real IP through Cloudflare; x-real-ip is the
+    // nginx fallback. We use 'unknown' as a safe last resort (will share a bucket).
+    if (ipRateLimiter) {
+      const ip = c.req.header('cf-connecting-ip')
+               ?? c.req.header('x-real-ip')
+               ?? 'unknown';
+      const rl = ipRateLimiter.consume(ip);
+      if (!rl.allowed) {
+        return c.json({
+          error: { message: 'Too many requests. Please try again later.', code: 'rate_limit_exceeded' },
+        }, 429);
+      }
+    }
+
     let body: { email?: unknown } = {};
     try {
       body = await c.req.json() as typeof body;
