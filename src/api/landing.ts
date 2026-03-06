@@ -70,7 +70,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       --bg: #111;
       --surface: #1a1a1a;
       --text: #e8e6e3;
-      --muted: #999;
+      --muted: #aaa;
       --accent: #ff6b35;
       --green: #4a9;
       --border: #2a2a2a;
@@ -100,7 +100,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     .title { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: -0.5px; }
     .sign-in { font-size: 13px; color: var(--accent); font-family: var(--mono); }
     .sign-in:hover { opacity: 0.8; }
-    .subtitle { font-size: 15px; color: var(--muted); margin-bottom: 16px; max-width: 480px; }
+    .subtitle { font-size: 15px; color: var(--text); margin-bottom: 16px; max-width: 480px; }
     .status { display: flex; align-items: center; gap: 8px; }
     .dot {
       width: 7px; height: 7px; border-radius: 50%; background: var(--muted);
@@ -147,7 +147,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       padding-top: 1px;
     }
     .param-body { flex: 1; }
-    .param-desc { font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+    .param-desc { font-size: 14px; color: var(--text); margin-bottom: 4px; }
     .param-values {
       font-family: var(--mono); font-size: 13px; color: var(--text);
     }
@@ -162,7 +162,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     .tier-name.eco { color: var(--green); }
     .tier-name.std { color: var(--accent); }
     .tier-name.prm { color: #c084fc; }
-    .tier-models { font-size: 13px; color: var(--muted); display: inline; }
+    .tier-models { font-size: 13px; color: var(--text); display: inline; }
 
     /* ── Steps ── */
     .step { display: flex; gap: 12px; margin-bottom: 16px; }
@@ -176,7 +176,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     /* ── Features list ── */
     .features { list-style: none; }
     .features li {
-      font-size: 14px; color: var(--muted); padding: 4px 0;
+      font-size: 14px; color: var(--text); padding: 4px 0;
       padding-left: 20px; position: relative;
     }
     .features li::before {
@@ -199,7 +199,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     .ep-method.patch { color: #c084fc; }
     .ep-method.del { color: #f44; }
     .ep-path { font-family: var(--mono); color: var(--text); white-space: nowrap; padding-right: 16px; }
-    .ep-desc { color: var(--muted); }
+    .ep-desc { color: var(--text); }
     .ep-auth {
       font-family: var(--mono); font-size: 10px;
       color: var(--muted); background: var(--surface);
@@ -299,7 +299,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     </div>
   </div>
 
-  <p style="font-size:14px; color:var(--muted); margin-top:16px;">
+  <p style="font-size:14px; color:var(--text); margin-top:16px;">
     You can also pass a specific model name
     (${exampleAliases()})
     to pin routing and bypass tier selection entirely.
@@ -312,7 +312,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
 
   ${tierRows()}
 
-  <p style="font-size:13px; color:var(--muted); margin-top:16px;">
+  <p style="font-size:13px; color:var(--text); margin-top:16px;">
     Context-window guard: never routes to a model that can't handle your input.
     Circuit breakers reroute around provider outages automatically.
   </p>
