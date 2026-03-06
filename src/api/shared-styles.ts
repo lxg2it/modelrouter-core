@@ -13,7 +13,7 @@ export const SHARED_CSS = /* css */ `
     --bg: #111;
     --surface: #1a1a1a;
     --text: #e8e6e3;
-    --muted: #777;
+    --muted: #aaa;
     --accent: #ff6b35;
     --green: #4a9;
     --border: #2a2a2a;
@@ -63,9 +63,9 @@ export const SHARED_CSS = /* css */ `
   /* ── Content ── */
   h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; font-family: var(--mono); }
   h2 { font-size: 14px; font-weight: 700; color: var(--text); margin: 28px 0 8px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 1px; }
-  p { color: var(--muted); margin-bottom: 12px; }
+  p { color: var(--text); margin-bottom: 12px; }
   p strong { color: var(--text); }
-  ul { color: var(--muted); padding-left: 20px; margin-bottom: 12px; }
+  ul { color: var(--text); padding-left: 20px; margin-bottom: 12px; }
   li { margin-bottom: 4px; }
   li strong { color: var(--text); }
 

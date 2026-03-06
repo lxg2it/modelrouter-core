@@ -47,7 +47,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
   <script src="https://js.stripe.com/v3/"><\/script>
   <style>
     :root {
-      --bg: #111; --surface: #1a1a1a; --text: #e8e6e3; --muted: #777;
+      --bg: #111; --surface: #1a1a1a; --text: #e8e6e3; --muted: #aaa;
       --accent: #ff6b35; --green: #4a9; --red: #f44; --warn: #d97706;
       --border: #2a2a2a; --code-bg: #0c0c0c;
       --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;

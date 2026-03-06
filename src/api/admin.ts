@@ -338,7 +338,7 @@ function svgBarChart(data: DayStat[], options: BarChartOptions = {}): string {
     const val = maxVal * frac;
     const labelStr = vf(Math.round(val));
     return `<line x1="${ML}" y1="${y.toFixed(1)}" x2="${W - MR}" y2="${y.toFixed(1)}" stroke="#2a2a2a" stroke-width="1"/>
-<text x="${(ML - 4).toFixed(0)}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#777" font-size="10">${labelStr}</text>`;
+<text x="${(ML - 4).toFixed(0)}" y="${(y + 4).toFixed(1)}" text-anchor="end" fill="#aaa" font-size="10">${labelStr}</text>`;
   }).join('\n');
 
   // Show every Nth x-axis label to avoid crowding
@@ -350,7 +350,7 @@ function svgBarChart(data: DayStat[], options: BarChartOptions = {}): string {
     const y = MT + chartH - barH;
     const showLabel = i % labelEvery === 0 || i === data.length - 1;
     const label = showLabel
-      ? `<text x="${(x + barW / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle" fill="#777" font-size="9">${d.day.slice(5)}</text>`
+      ? `<text x="${(x + barW / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle" fill="#aaa" font-size="9">${d.day.slice(5)}</text>`
       : '';
     return `<rect x="${(x + 1).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${color}" rx="2"/>
 ${label}`;
@@ -478,7 +478,7 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
         <div class="user-list">\${userCards(s.recentUsers)}</div>
 
         <div class="section-head" id="grant-card">Grant Promotional Credit</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Credit a user for free — records a 'promotional' billing transaction.</p>
+        <p style="font-size:13px;color:var(--text);margin-bottom:14px">Credit a user for free — records a 'promotional' billing transaction.</p>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
           <div>
             <label>Email</label>

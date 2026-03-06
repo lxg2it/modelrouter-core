@@ -242,7 +242,7 @@ function renderMethodology(): string {
     }).join('\n      ');
 
   return `
-  <p style="font-size:13px; color:var(--muted); margin-bottom:16px;">
+  <p style="font-size:13px; color:var(--text); margin-bottom:16px;">
     Quality scores are derived from a weighted composite of public benchmarks.
     Each benchmark is normalised across our model catalogue, then combined.
     The best model scores 1.00; the floor is 0.50.
@@ -329,7 +329,7 @@ function renderModelsHtml(models: ModelInfo[]): string {
     </div>
 
     <div class="section-head">Routing Grid</div>
-    <p style="font-size:13px; color:var(--muted); margin-bottom:16px;">
+    <p style="font-size:13px; color:var(--text); margin-bottom:16px;">
       Which model you get for each <code>model</code> (tier) × <code>prefer</code> combination.
       All providers healthy, default output ratio.
     </p>
@@ -341,7 +341,7 @@ function renderModelsHtml(models: ModelInfo[]): string {
     ${renderMethodology()}
 
     <div class="section-head">Usage</div>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:10px;">
+    <p style="font-size:13px;color:var(--text);margin-bottom:10px;">
       Pass a tier name or any alias as the <code>model</code> field in your request.
       The router picks the best available provider based on your <code>prefer</code> setting.
     </p>
