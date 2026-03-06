@@ -20,6 +20,7 @@ import { OpenAIAdapter } from './providers/openai.js';
 import { GoogleAdapter } from './providers/google.js';
 import { SHARED_HEAD, SHARED_CSS, pageFooter } from './api/shared-styles.js';
 import { GrokAdapter } from './providers/grok.js';
+import { BedrockAdapter } from './providers/bedrock.js';
 import { SatbillClient } from './billing/satbill-client.js';
 import { StripeService } from './billing/stripe.js';
 import { BillingTransactionStore } from './billing/transactions.js';
@@ -82,6 +83,9 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   }
   if (config.providers.grok) {
     providers.set('grok', new GrokAdapter(config.providers.grok.apiKey));
+  }
+  if (config.providers.bedrock) {
+    providers.set('bedrock', new BedrockAdapter(config.providers.bedrock.apiKey));
   }
 
   // Routing engine

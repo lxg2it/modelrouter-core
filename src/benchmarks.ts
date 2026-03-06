@@ -125,29 +125,86 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     simpleBench: 52.0,
   },
 
-  // ── Z.ai ───────────────────────────────────────────────
-  'glm-4.7-flash': {
-    arenaElo: 1310,
-    gpqaDiamond: 58.1,
-    sweBench: 40.0,
+  // ── Bedrock Economy ────────────────────────────────────
+  'zai.glm-4.7-flash': {
+    arenaElo: 1366,
+    gpqaDiamond: 55.0,
+    sweBench: 35.0,
     mmluPro: 72.0,
-    simpleBench: 39.0,
+    simpleBench: 38.0,
   },
-  'glm-4.7': {
+  'deepseek.v3.1': {
+    arenaElo: 1418,
+    gpqaDiamond: 76.0,
+    sweBench: 60.0,
+    mmluPro: 83.0,
+    simpleBench: 52.0,
+  },
+  'qwen.qwen3-32b': {
+    arenaElo: 1347,
+    gpqaDiamond: 55.0,
+    sweBench: 35.0,
+    mmluPro: 72.0,
+    simpleBench: 38.0,
+  },
+  'openai.gpt-oss-120b': {
+    arenaElo: 1354,
+    gpqaDiamond: 80.9,
+    sweBench: 62.4,
+    mmluPro: 90.0,
+    simpleBench: 45.0,
+  },
+
+  // ── Bedrock Standard ──────────────────────────────────
+  'zai.glm-4.7': {
     arenaElo: 1445,
     gpqaDiamond: 85.7,
     sweBench: 73.8,
     mmluPro: 84.3,
     simpleBench: 60.0,
   },
-  'glm-5': {
-    arenaElo: 1451,
-    gpqaDiamond: 86.0,
-    sweBench: 77.8,
-    mmluPro: 70.4,
-    simpleBench: 62.0,
+  'deepseek.v3.2': {
+    arenaElo: 1421,
+    gpqaDiamond: 79.9,
+    sweBench: 67.8,
+    mmluPro: 85.0,
+    simpleBench: 54.0,
   },
-
+  'qwen.qwen3-235b-a22b-2507': {
+    arenaElo: 1422,
+    gpqaDiamond: 81.1,
+    sweBench: 62.0,
+    mmluPro: 84.4,
+    simpleBench: 55.0,
+  },
+  'mistral.mistral-large-3-675b-instruct': {
+    arenaElo: 1415,
+    gpqaDiamond: 43.9,
+    sweBench: 55.0,
+    mmluPro: 82.0,
+    simpleBench: 50.0,
+  },
+  'moonshotai.kimi-k2.5': {
+    arenaElo: 1434,
+    gpqaDiamond: 82.0,
+    sweBench: 65.0,
+    mmluPro: 84.0,
+    simpleBench: 56.0,
+  },
+  'minimax.minimax-m2.1': {
+    arenaElo: 1385,
+    gpqaDiamond: 68.0,
+    sweBench: 55.0,
+    mmluPro: 76.0,
+    simpleBench: 45.0,
+  },
+  'qwen.qwen3-next-80b-a3b-instruct': {
+    arenaElo: 1402,
+    gpqaDiamond: 72.0,
+    sweBench: 50.0,
+    mmluPro: 79.0,
+    simpleBench: 48.0,
+  },
 
   // ── Premium ───────────────────────────────────────────
   'gemini-3.1-pro-preview': {

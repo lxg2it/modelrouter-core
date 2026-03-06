@@ -20,6 +20,7 @@ export interface Config {
     openai?: { apiKey: string };
     google?: { apiKey: string };
     grok?: { apiKey: string };
+    bedrock?: { apiKey: string };
   };
 
   // Router defaults
@@ -80,6 +81,9 @@ export function loadConfig(): Config {
         : undefined,
       grok: process.env.GROK_API_KEY
         ? { apiKey: process.env.GROK_API_KEY }
+        : undefined,
+      bedrock: process.env.BEDROCK_API_KEY
+        ? { apiKey: process.env.BEDROCK_API_KEY }
         : undefined,
     },
 
@@ -147,6 +151,11 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'openai',    model: 'o4-mini',                   quality: 0.74, inputPer1M: 1.10,  outputPer1M: 4.40,  latencyMs: 2500, maxContextTokens: 200_000,   isThinkingModel: true },
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', quality: 0.60, inputPer1M: 1.00,  outputPer1M: 5.00,  latencyMs: 320,  maxContextTokens: 200_000   },
       { provider: 'grok',      model: 'grok-3-mini-beta',          quality: 0.50, inputPer1M: 0.30,  outputPer1M: 0.50,  latencyMs: 250,  maxContextTokens: 131_072,   isThinkingModel: true },
+      // Bedrock economy models
+      { provider: 'bedrock',   model: 'zai.glm-4.7-flash',          quality: 0.51, inputPer1M: 0.072, outputPer1M: 0.412, latencyMs: 350,  maxContextTokens: 202_752  },
+      { provider: 'bedrock',   model: 'deepseek.v3.1',              quality: 0.68, inputPer1M: 0.30,  outputPer1M: 0.87,  latencyMs: 400,  maxContextTokens: 128_000  },
+      { provider: 'bedrock',   model: 'qwen.qwen3-32b',             quality: 0.48, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 300,  maxContextTokens: 131_072  },
+      { provider: 'bedrock',   model: 'openai.gpt-oss-120b',        quality: 0.50, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 450,  maxContextTokens: 128_000  },
     ],
     description: 'Fast and cheap. Good for classification, extraction, simple generation.',
   },
@@ -157,6 +166,14 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'openai',    model: 'o3',               quality: 0.85, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 3500, maxContextTokens: 200_000,   isThinkingModel: true },
       { provider: 'anthropic', model: 'claude-sonnet-4-6', quality: 0.85, inputPer1M: 3.00, outputPer1M: 15.00, latencyMs: 650,  maxContextTokens: 200_000   },
       { provider: 'grok',      model: 'grok-3-beta',       quality: 0.74, inputPer1M: 3.00, outputPer1M: 15.00, latencyMs: 580,  maxContextTokens: 131_072   },
+      // Bedrock standard models
+      { provider: 'bedrock',   model: 'zai.glm-4.7',                quality: 0.90, inputPer1M: 0.62, outputPer1M: 2.27,  latencyMs: 550,  maxContextTokens: 202_752  },
+      { provider: 'bedrock',   model: 'deepseek.v3.2',              quality: 0.83, inputPer1M: 0.64, outputPer1M: 1.91,  latencyMs: 600,  maxContextTokens: 128_000  },
+      { provider: 'bedrock',   model: 'qwen.qwen3-235b-a22b-2507',  quality: 0.83, inputPer1M: 0.23, outputPer1M: 0.91,  latencyMs: 500,  maxContextTokens: 131_072  },
+      { provider: 'bedrock',   model: 'mistral.mistral-large-3-675b-instruct', quality: 0.80, inputPer1M: 0.52, outputPer1M: 1.55, latencyMs: 600, maxContextTokens: 131_072 },
+      { provider: 'bedrock',   model: 'moonshotai.kimi-k2.5',       quality: 0.88, inputPer1M: 0.62, outputPer1M: 3.09,  latencyMs: 600,  maxContextTokens: 131_072  },
+      { provider: 'bedrock',   model: 'minimax.minimax-m2.1',       quality: 0.72, inputPer1M: 0.31, outputPer1M: 1.24,  latencyMs: 500,  maxContextTokens: 1_000_000 },
+      { provider: 'bedrock',   model: 'qwen.qwen3-next-80b-a3b-instruct', quality: 0.75, inputPer1M: 0.15, outputPer1M: 1.24, latencyMs: 450, maxContextTokens: 131_072 },
     ],
     description: 'Balanced quality and cost. The default for most applications.',
   },
@@ -229,6 +246,43 @@ export const MODEL_ALIASES: Record<string, string> = {
   'o3': 'standard', // o3 is actually standard-priced
   'o4-mini': 'economy',
 
+  // DeepSeek aliases
+  'deepseek': 'standard',
+  'deepseek-v3': 'standard',
+  'deepseek-v3.1': 'economy',
+  'deepseek-v3.2': 'standard',
+
+  // Qwen aliases
+  'qwen': 'standard',
+  'qwen3': 'standard',
+  'qwen3-32b': 'economy',
+  'qwen3-235b': 'standard',
+
+  // Kimi/Moonshot aliases
+  'kimi': 'standard',
+  'kimi-k2.5': 'standard',
+  'moonshot': 'standard',
+
+  // Mistral aliases (via Bedrock)
+  'mistral': 'standard',
+  'mistral-large': 'standard',
+  'mistral-large-3': 'standard',
+
+  // MiniMax aliases
+  'minimax': 'standard',
+  'minimax-m2.1': 'standard',
+
+  // GLM aliases (via Bedrock)
+  'glm': 'standard',
+  'glm-5': 'premium',
+  'glm-4.7': 'standard',
+  'glm-4.7-flash': 'economy',
+
+  // GPT-OSS aliases (OpenAI open-source via Bedrock)
+  'gpt-oss': 'economy',
+  'gpt-oss-120b': 'economy',
+
+
   // Grok aliases
   'grok': 'standard',
   'grok-3': 'standard',
@@ -249,6 +303,7 @@ export const PROVIDER_URLS: Record<ProviderName, string> = {
   openai: 'https://api.openai.com',
   google: 'https://generativelanguage.googleapis.com',
   grok: 'https://api.x.ai/v1',
+  bedrock: 'https://bedrock-mantle.ap-southeast-2.api.aws/v1',
 };
 
 // ─── Grok aliases ──────────────────────────────────────
