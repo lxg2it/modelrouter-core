@@ -1,0 +1,31 @@
+{
+  "name": "modelrouter-core",
+  "version": "0.1.0",
+  "description": "Tier-based AI model routing engine — pick economy, standard, or premium and let the router handle the rest",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "model-routing",
+    "openai",
+    "anthropic",
+    "google",
+    "bedrock"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
