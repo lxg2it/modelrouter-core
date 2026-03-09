@@ -11,6 +11,7 @@
  * - role:'tool' messages → Anthropic tool_result content blocks
  * - response tool_use blocks → OpenAI tool_calls
  * - streaming tool_use blocks → OpenAI streaming tool_calls delta
+ * - thinking blocks → reasoning_content (when request.include_reasoning is true)
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -48,27 +49,43 @@ export class AnthropicAdapter implements ProviderAdapter {
 
     const { system, messages } = this.translateMessages(request.messages);
     const tools = request.tools ? this.translateTools(request.tools) : undefined;
+    const includeReasoning = request.include_reasoning ?? false;
 
-    const response = await this.client.messages.create({
+    const createParams: Anthropic.MessageCreateParamsNonStreaming = {
       model,
       max_tokens: request.max_tokens ?? 4096,
       system: system ?? undefined,
       messages,
       tools,
-      temperature: request.temperature,
-      top_p: request.top_p,
+      temperature: includeReasoning ? undefined : request.temperature,
+      top_p: includeReasoning ? undefined : request.top_p,
       stop_sequences: request.stop
         ? Array.isArray(request.stop) ? request.stop : [request.stop]
         : undefined,
-    });
+    };
+    if (includeReasoning) {
+      (createParams as unknown as Record<string, unknown>)['thinking'] = {
+        type: 'enabled',
+        budget_tokens: Math.floor((request.max_tokens ?? 4096) * 0.8),
+      };
+      (createParams as unknown as Record<string, unknown>)['betas'] = ['interleaved-thinking-2025-05-14'];
+    }
+    const response = await this.client.messages.create(createParams);
 
     const completionId = `chatcmpl-${response.id}`;
 
-    // Separate text blocks and tool_use blocks
+    // Separate text, thinking, and tool_use blocks
     const textContent = response.content
       .filter((block): block is Anthropic.TextBlock => block.type === 'text')
       .map((block) => block.text)
       .join('');
+
+    const reasoningContent = includeReasoning
+      ? response.content
+          .filter((block): block is Anthropic.ThinkingBlock => block.type === 'thinking')
+          .map((block) => block.thinking)
+          .join('\n\n') || undefined
+      : undefined;
 
     const toolCalls: ToolCall[] | undefined = response.content
       .filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
@@ -99,6 +116,7 @@ export class AnthropicAdapter implements ProviderAdapter {
             role: 'assistant',
             content: textContent,
             ...(toolCalls && toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+            ...(reasoningContent ? { reasoning_content: reasoningContent } : {}),
           },
           finish_reason: this.mapStopReason(response.stop_reason),
         }],
@@ -116,19 +134,28 @@ export class AnthropicAdapter implements ProviderAdapter {
 
     const { system, messages } = this.translateMessages(request.messages);
     const tools = request.tools ? this.translateTools(request.tools) : undefined;
+    const includeReasoning = request.include_reasoning ?? false;
 
-    const anthropicStream = this.client.messages.stream({
+    const streamParams: Anthropic.MessageStreamParams = {
       model,
       max_tokens: request.max_tokens ?? 4096,
       system: system ?? undefined,
       messages,
       tools,
-      temperature: request.temperature,
-      top_p: request.top_p,
+      temperature: includeReasoning ? undefined : request.temperature,
+      top_p: includeReasoning ? undefined : request.top_p,
       stop_sequences: request.stop
         ? Array.isArray(request.stop) ? request.stop : [request.stop]
         : undefined,
-    });
+    };
+    if (includeReasoning) {
+      (streamParams as unknown as Record<string, unknown>)['thinking'] = {
+        type: 'enabled',
+        budget_tokens: Math.floor((request.max_tokens ?? 4096) * 0.8),
+      };
+      (streamParams as unknown as Record<string, unknown>)['betas'] = ['interleaved-thinking-2025-05-14'];
+    }
+    const anthropicStream = this.client.messages.stream(streamParams);
 
     const completionId = `chatcmpl-${Date.now()}`;
     let finalUsage: UsageInfo = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
@@ -170,7 +197,20 @@ export class AnthropicAdapter implements ProviderAdapter {
 
         // ── content_block_delta ──────────────────────────────────
         if (event.type === 'content_block_delta') {
-          if (event.delta.type === 'text_delta') {
+          if (event.delta.type === 'thinking_delta' && includeReasoning) {
+            const chunk: ChatCompletionChunk = {
+              id: completionId,
+              object: 'chat.completion.chunk',
+              created: Math.floor(Date.now() / 1000),
+              model,
+              choices: [{
+                index: 0,
+                delta: { reasoning_content: event.delta.thinking },
+                finish_reason: null,
+              }],
+            };
+            yield `data: ${JSON.stringify(chunk)}\n\n`;
+          } else if (event.delta.type === 'text_delta') {
             const chunk: ChatCompletionChunk = {
               id: completionId,
               object: 'chat.completion.chunk',

@@ -98,6 +98,7 @@ export class OpenAIAdapter implements ProviderAdapter {
     });
 
     let finalUsage: UsageInfo = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+    const includeReasoning = request.include_reasoning ?? false;
 
     async function* generateChunks(): AsyncIterable<string> {
       for await (const chunk of openaiStream) {
@@ -109,6 +110,10 @@ export class OpenAIAdapter implements ProviderAdapter {
             total_tokens: chunk.usage.total_tokens,
           };
         }
+
+        // xAI/OpenAI reasoning models expose chain-of-thought via reasoning_content
+        const rawReasoning = (c: typeof chunk.choices[0]) =>
+          (c.delta as unknown as { reasoning_content?: string }).reasoning_content;
 
         const translated: ChatCompletionChunk = {
           id: chunk.id,
@@ -128,6 +133,7 @@ export class OpenAIAdapter implements ProviderAdapter {
                   arguments: tc.function?.arguments ?? '',
                 },
               })),
+              ...(includeReasoning && rawReasoning(c) ? { reasoning_content: rawReasoning(c) } : {}),
             },
             finish_reason: c.finish_reason as 'stop' | 'length' | 'tool_calls' | null,
           })),
@@ -140,8 +146,9 @@ export class OpenAIAdapter implements ProviderAdapter {
           (c) =>
             c.delta.role !== undefined ||
             c.delta.content !== undefined ||
+            c.delta.reasoning_content !== undefined ||
             (c.delta.tool_calls?.length ?? 0) > 0 ||
-            c.finish_reason != null, // loose: catches both null and absent (undefined) finish_reason
+            c.finish_reason != null,
         );
         if (!hasContent) continue;
 

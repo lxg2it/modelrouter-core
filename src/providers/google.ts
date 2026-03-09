@@ -93,12 +93,22 @@ export class GoogleAdapter implements ProviderAdapter {
 
     const candidate = response.candidates?.[0];
     const parts = candidate?.content?.parts ?? [];
+    const includeReasoning = request.include_reasoning ?? false;
 
     // Extract text and function call parts
+    // Gemini thinking models mark thought parts with `thought: true`
+    type GooglePart = Part & { thought?: boolean };
     const textContent = parts
-      .filter((p): p is { text: string } => 'text' in p && typeof (p as { text: string }).text === 'string')
-      .map(p => p.text)
+      .filter((p): p is GooglePart => 'text' in p && typeof (p as GooglePart).text === 'string' && !(p as GooglePart).thought)
+      .map(p => (p as GooglePart).text!)
       .join('');
+
+    const reasoningContent = includeReasoning
+      ? parts
+          .filter((p): p is GooglePart => 'text' in p && typeof (p as GooglePart).text === 'string' && !!(p as GooglePart).thought)
+          .map(p => (p as GooglePart).text!)
+          .join('\n\n') || undefined
+      : undefined;
 
     const functionCallParts = parts.filter((p): p is FunctionCallPart => 'functionCall' in p);
 
@@ -137,6 +147,7 @@ export class GoogleAdapter implements ProviderAdapter {
             role: 'assistant',
             content: textContent || '',
             ...(toolCalls ? { tool_calls: toolCalls } : {}),
+            ...(reasoningContent ? { reasoning_content: reasoningContent } : {}),
           },
           finish_reason: finishReason,
         }],
@@ -174,6 +185,7 @@ export class GoogleAdapter implements ProviderAdapter {
 
     const chat = generativeModel.startChat({ history });
     const streamResult = await chat.sendMessageStream(lastMessage);
+    const includeReasoning = request.include_reasoning ?? false;
 
     const completionId = `chatcmpl-google-${Date.now()}`;
     let finalUsage: UsageInfo = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
@@ -185,17 +197,43 @@ export class GoogleAdapter implements ProviderAdapter {
     async function* generateChunks(): AsyncIterable<string> {
       // Collect function call parts across all chunks (Gemini delivers them as complete objects)
       const allFunctionCallParts: FunctionCallPart[] = [];
+      type GooglePart = Part & { thought?: boolean };
 
       for await (const chunk of streamResult.stream) {
-        const parts = chunk.candidates?.[0]?.content?.parts ?? [];
+        const parts = (chunk.candidates?.[0]?.content?.parts ?? []) as GooglePart[];
         const functionCallParts = parts.filter((p): p is FunctionCallPart => 'functionCall' in p);
 
         if (functionCallParts.length > 0) {
           // Buffer tool calls — emit after stream ends
           allFunctionCallParts.push(...functionCallParts);
         } else {
+          // Check for thought parts first
+          const thoughtText = parts
+            .filter(p => 'text' in p && typeof p.text === 'string' && !!p.thought)
+            .map(p => p.text!)
+            .join('');
+
+          if (thoughtText && includeReasoning) {
+            const reasoningChunk: ChatCompletionChunk = {
+              id: completionId,
+              object: 'chat.completion.chunk',
+              created: Math.floor(Date.now() / 1000),
+              model,
+              choices: [{
+                index: 0,
+                delta: { reasoning_content: thoughtText },
+                finish_reason: null,
+              }],
+            };
+            yield `data: ${JSON.stringify(reasoningChunk)}\n\n`;
+            continue;
+          }
+
           // Normal text chunk
-          const text = chunk.text();
+          const text = parts
+            .filter(p => 'text' in p && typeof p.text === 'string' && !p.thought)
+            .map(p => p.text!)
+            .join('');
           if (text) {
             const sseChunk: ChatCompletionChunk = {
               id: completionId,

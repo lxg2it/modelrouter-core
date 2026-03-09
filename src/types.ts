@@ -13,6 +13,8 @@ export interface ChatMessage {
   name?: string;
   tool_call_id?: string;
   tool_calls?: ToolCall[];
+  /** Reasoning/thinking content from reasoning models. Present when `include_reasoning: true`. */
+  reasoning_content?: string;
 }
 
 export interface ContentPart {
@@ -51,6 +53,12 @@ export interface ChatCompletionRequest {
   // Model Router extensions
   tier?: 'economy' | 'standard' | 'premium'; // Override key's default tier
   prefer?: 'balanced' | 'cheap' | 'fast' | 'quality'; // Routing preference
+  /**
+   * When true, reasoning/thinking content from reasoning models is included
+   * in the response as `reasoning_content` alongside the regular `content`.
+   * Has no effect on non-thinking models. Default: false.
+   */
+  include_reasoning?: boolean;
 }
 
 // ─── Response Types ────────────────────────────────────
