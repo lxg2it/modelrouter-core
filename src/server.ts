@@ -33,6 +33,7 @@ import { createAccountRouter } from './api/account.js';
 import { createProfileRouter } from './api/profile.js';
 import { createLegalRouter } from './api/legal.js';
 import { createAdminRouter } from './api/admin.js';
+import { createDocsRouter } from './api/docs.js';
 import { ResendEmailSender, ConsoleEmailSender } from './auth/email.js';
 import type { EmailSender } from './auth/email.js';
 import { RateLimiter } from './ratelimit/token-bucket.js';
@@ -253,6 +254,10 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   app.route('/profile', createProfileRouter({ adminEmails: config.adminEmails }));
 
   // Legal pages — always available, unauthenticated
+
+  // Docs (unauthenticated)
+  app.route('/docs', createDocsRouter());
+
   app.route('/', createLegalRouter());
 
   // Admin dashboard — session auth + admin email required

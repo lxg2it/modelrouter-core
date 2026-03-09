@@ -166,6 +166,7 @@ export function pageFooter(currentPage?: string): string {
     { href: '/profile', label: 'profile' },
     { href: '/health', label: 'health' },
     { href: '/v1/models', label: 'models' },
+    { href: '/docs', label: 'docs' },
     { href: '/privacy', label: 'privacy' },
     { href: '/terms', label: 'terms' },
   ];

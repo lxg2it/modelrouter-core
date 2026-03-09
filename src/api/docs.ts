@@ -1,0 +1,709 @@
+/**
+ * GET /docs              — Overview + Quick Start
+ * GET /docs/api          — API Reference
+ * GET /docs/integrations — Integration Guides
+ */
+
+import { Hono } from 'hono';
+import { SHARED_CSS, SHARED_HEAD, pageFooter } from './shared-styles.js';
+
+const FAVICON = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzFhMWExYSIvPjxwYXRoIGQ9Ik04IDE2IEwxNiAxNiIgc3Ryb2tlPSIjZmY2YjM1IiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTE2IDE2IEwyNCA4IiBzdHJva2U9IiNmZjZiMzUiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMTYgMTYgTDI0IDE2IiBzdHJva2U9IiNmZjZiMzUiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMTYgMTYgTDI0IDI0IiBzdHJva2U9IiNmZjZiMzUiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48Y2lyY2xlIGN4PSI4IiBjeT0iMTYiIHI9IjIuNSIgZmlsbD0iI2ZmNmIzNSIvPjxjaXJjbGUgY3g9IjI0IiBjeT0iOCIgcj0iMi41IiBmaWxsPSIjNGE5Ii8+PGNpcmNsZSBjeD0iMjQiIGN5PSIxNiIgcj0iMi41IiBmaWxsPSIjNGE5Ii8+PGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMi41IiBmaWxsPSIjNGE5Ii8+PC9zdmc+';
+
+const DOCS_CSS = /* css */ `
+  .docs-nav {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 40px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .docs-nav a {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+    padding: 4px 0;
+  }
+  .docs-nav a:hover { color: var(--accent); text-decoration: none; }
+  .docs-nav a.active { color: var(--accent); }
+
+  .code-block {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 16px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 16px 0;
+    color: var(--text);
+  }
+  .code-block .c { color: var(--muted); }
+  .code-block .s { color: #98c379; }
+  .code-block .k { color: var(--accent); }
+  .code-block .n { color: #61afef; }
+
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 20px 0;
+  }
+  @media (max-width: 500px) { .card-grid { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    transition: border-color 0.15s;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card a { text-decoration: none; }
+  .card-title {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .card-desc { font-size: 13px; color: var(--muted); }
+
+  .param-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  .param-table th {
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .param-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .param-table code {
+    font-size: 13px;
+    color: var(--accent);
+  }
+
+  .inline-code {
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+
+  .endpoint {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    margin: 20px 0;
+  }
+  .endpoint-method {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--green);
+    display: inline-block;
+    margin-right: 8px;
+  }
+  .endpoint-path {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--text);
+  }
+  .endpoint-desc {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+`;
+
+function docsNav(active: string): string {
+  const links = [
+    { href: '/docs', label: 'Overview' },
+    { href: '/docs/api', label: 'API Reference' },
+    { href: '/docs/integrations', label: 'Integrations' },
+  ];
+  return links
+    .map(l => `<a href="${l.href}" class="${l.label === active ? 'active' : ''}">${l.label}</a>`)
+    .join('\n    ');
+}
+
+function docsHead(title: string): string {
+  return /* html */ `<!DOCTYPE html>
+<html lang="en">
+<head>
+  ${SHARED_HEAD}
+  <link rel="icon" type="image/svg+xml" href="${FAVICON}">
+  <title>${title} — Model Router</title>
+  <style>
+    ${SHARED_CSS}
+    ${DOCS_CSS}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div class="header-top">
+        <div class="title"><a href="/">model-router</a></div>
+        <a class="nav-link" href="/profile">profile →</a>
+      </div>
+    </div>`;
+}
+
+function docsFooter(): string {
+  return `
+    ${pageFooter('docs')}
+  </div>
+</body>
+</html>`;
+}
+
+// ─── Overview / Quick Start ─────────────────────────────────────────────────
+
+const OVERVIEW_HTML = `${docsHead('Documentation')}
+
+    <div class="docs-nav">
+      ${docsNav('Overview')}
+    </div>
+
+    <h1>Documentation</h1>
+    <p class="subtitle" style="margin-bottom: 32px;">
+      An OpenAI-compatible API that routes your requests to the cheapest capable model
+      across multiple providers.
+    </p>
+
+    <div class="section-head">How it works</div>
+
+    <p>
+      Instead of specifying a model, you specify a <strong>capability tier</strong>
+      (<code class="inline-code">economy</code>, <code class="inline-code">standard</code>,
+      or <code class="inline-code">premium</code>) and an <strong>optimisation preference</strong>
+      (<code class="inline-code">cheap</code>, <code class="inline-code">fast</code>,
+      <code class="inline-code">balanced</code>, or <code class="inline-code">quality</code>).
+      The router selects the best model from all available providers.
+    </p>
+
+    <p>
+      If a provider goes down, the circuit breaker reroutes automatically.
+      If a cheaper model launches, you benefit without changing code.
+      Context-window guards ensure your input always fits the selected model.
+    </p>
+
+    <div class="section-head">Quick start</div>
+
+    <p><strong>1. Sign up</strong> — go to <a href="/profile">/profile</a>, enter your email, get a login code.
+    New accounts get $1 free credit.</p>
+
+    <p><strong>2. Create an API key</strong> — on the profile page, generate a key
+    (starts with <code class="inline-code">mr_sk_</code>).</p>
+
+    <p><strong>3. Make a request</strong> — point any OpenAI-compatible client at
+    <code class="inline-code">https://api.lxg2it.com</code>:</p>
+
+    <div class="code-block"><span class="c"># Tier-based routing — let the router pick the model</span>
+curl https://api.lxg2it.com/v1/chat/completions \\
+  -H <span class="s">"Authorization: Bearer YOUR_API_KEY"</span> \\
+  -H <span class="s">"Content-Type: application/json"</span> \\
+  -d <span class="s">'{
+    "model": "<span class="k">standard</span>",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</span></div>
+
+    <div class="code-block"><span class="c"># Model pinning — use a specific model directly</span>
+curl https://api.lxg2it.com/v1/chat/completions \\
+  -H <span class="s">"Authorization: Bearer YOUR_API_KEY"</span> \\
+  -H <span class="s">"Content-Type: application/json"</span> \\
+  -d <span class="s">'{
+    "model": "<span class="k">claude-sonnet-4-20250514</span>",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</span></div>
+
+    <p>That&rsquo;s it. The response format is identical to OpenAI&rsquo;s &mdash; any existing client library
+    or tool that speaks the OpenAI API will work without modification.</p>
+
+    <div class="section-head">Learn more</div>
+
+    <div class="card-grid">
+      <a href="/docs/api" style="text-decoration:none;">
+        <div class="card">
+          <div class="card-title">API Reference</div>
+          <div class="card-desc">Endpoints, parameters, tiers, model pinning, error codes.</div>
+        </div>
+      </a>
+      <a href="/docs/integrations" style="text-decoration:none;">
+        <div class="card">
+          <div class="card-title">Integrations</div>
+          <div class="card-desc">Setup guides for Cursor, Windsurf, RooCode, OpenClaw, and more.</div>
+        </div>
+      </a>
+    </div>
+
+    <div class="section-head">Pricing</div>
+
+    <p>
+      Provider costs are passed through at exact rates &mdash; no per-request markup.
+      We charge a <strong>4% fee on credit top-ups</strong> via Stripe. That&rsquo;s it.
+    </p>
+
+    <p style="font-size:13px; color:var(--muted);">
+      All prices in USD. View your balance and usage at <a href="/profile">/profile</a>.
+    </p>
+
+${docsFooter()}`;
+
+// ─── API Reference ──────────────────────────────────────────────────────────
+
+const API_HTML = `${docsHead('API Reference')}
+
+    <div class="docs-nav">
+      ${docsNav('API Reference')}
+    </div>
+
+    <h1>API Reference</h1>
+    <p class="subtitle" style="margin-bottom: 32px;">
+      Base URL: <code class="inline-code">https://api.lxg2it.com</code>
+    </p>
+
+    <div class="section-head">Authentication</div>
+
+    <p>
+      All API requests require a Bearer token. Include your API key in the
+      <code class="inline-code">Authorization</code> header:
+    </p>
+
+    <div class="code-block">Authorization: Bearer mr_sk_...</div>
+
+    <p>Generate keys at <a href="/profile">/profile</a>. Keys start with
+    <code class="inline-code">mr_sk_</code>.</p>
+
+    <!-- Chat completions -->
+    <div class="section-head">Chat completions</div>
+
+    <div class="endpoint">
+      <span class="endpoint-method">POST</span>
+      <span class="endpoint-path">/v1/chat/completions</span>
+      <div class="endpoint-desc">Create a chat completion. OpenAI-compatible request and response format.</div>
+    </div>
+
+    <p><strong>Request body:</strong></p>
+
+    <table class="param-table">
+      <thead>
+        <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>model</code></td>
+          <td>string</td>
+          <td>
+            <strong>Required.</strong> Either a tier name (<code>economy</code>,
+            <code>standard</code>, <code>premium</code>, <code>auto</code>) or an
+            exact model ID to pin routing (e.g. <code>gpt-4.1</code>,
+            <code>claude-sonnet-4-20250514</code>). See <a href="#tiers">Tiers</a> and
+            <a href="#pinning">Model pinning</a>.
+          </td>
+        </tr>
+        <tr>
+          <td><code>messages</code></td>
+          <td>array</td>
+          <td><strong>Required.</strong> Array of message objects with <code>role</code>
+          and <code>content</code>. Roles: <code>system</code>, <code>user</code>,
+          <code>assistant</code>.</td>
+        </tr>
+        <tr>
+          <td><code>prefer</code></td>
+          <td>string</td>
+          <td>Optimisation direction within the tier: <code>cheap</code> (lowest cost),
+          <code>fast</code> (lowest latency), <code>balanced</code> (default),
+          <code>quality</code> (highest quality score).</td>
+        </tr>
+        <tr>
+          <td><code>stream</code></td>
+          <td>boolean</td>
+          <td>Stream response chunks via SSE. Default: <code>false</code>.</td>
+        </tr>
+        <tr>
+          <td><code>temperature</code></td>
+          <td>number</td>
+          <td>Sampling temperature (0&ndash;2). Passed through to the provider.</td>
+        </tr>
+        <tr>
+          <td><code>max_tokens</code></td>
+          <td>integer</td>
+          <td>Maximum tokens to generate. Passed through to the provider.</td>
+        </tr>
+        <tr>
+          <td><code>top_p</code></td>
+          <td>number</td>
+          <td>Nucleus sampling parameter. Passed through to the provider.</td>
+        </tr>
+        <tr>
+          <td><code>stop</code></td>
+          <td>string | array</td>
+          <td>Stop sequence(s). Passed through to the provider.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p><strong>Response:</strong> Standard OpenAI chat completion object with
+    <code class="inline-code">id</code>, <code class="inline-code">choices</code>,
+    <code class="inline-code">usage</code>, etc. The <code class="inline-code">model</code>
+    field in the response contains the actual model that served the request.</p>
+
+    <div class="code-block"><span class="c">// Example response</span>
+{
+  <span class="n">"id"</span>: <span class="s">"chatcmpl-abc123"</span>,
+  <span class="n">"object"</span>: <span class="s">"chat.completion"</span>,
+  <span class="n">"model"</span>: <span class="s">"gpt-4.1"</span>,
+  <span class="n">"choices"</span>: [{
+    <span class="n">"index"</span>: 0,
+    <span class="n">"message"</span>: {
+      <span class="n">"role"</span>: <span class="s">"assistant"</span>,
+      <span class="n">"content"</span>: <span class="s">"Hello! How can I help?"</span>
+    },
+    <span class="n">"finish_reason"</span>: <span class="s">"stop"</span>
+  }],
+  <span class="n">"usage"</span>: {
+    <span class="n">"prompt_tokens"</span>: 12,
+    <span class="n">"completion_tokens"</span>: 8,
+    <span class="n">"total_tokens"</span>: 20
+  }
+}</div>
+
+    <!-- Tiers -->
+    <div class="section-head" id="tiers">Tiers</div>
+
+    <p>
+      Tiers group models by capability. The router selects the best model within
+      the tier based on your <code class="inline-code">prefer</code> setting, provider
+      availability, and context-window fit.
+    </p>
+
+    <table class="param-table">
+      <thead>
+        <tr><th>Tier</th><th>Description</th><th>Example models</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>economy</code></td>
+          <td>Fast, cheap, good for simple tasks</td>
+          <td>GPT-4.1 Mini, Claude 3.5 Haiku, Gemini 2.0 Flash</td>
+        </tr>
+        <tr>
+          <td><code>standard</code></td>
+          <td>Balanced capability and cost</td>
+          <td>GPT-4.1, Claude Sonnet 4, Gemini 2.5 Pro</td>
+        </tr>
+        <tr>
+          <td><code>premium</code></td>
+          <td>Maximum capability, reasoning models</td>
+          <td>GPT-4.5, Claude Opus 3, o1</td>
+        </tr>
+        <tr>
+          <td><code>auto</code></td>
+          <td>Alias for <code>standard</code></td>
+          <td>&mdash;</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>See the live model list at <a href="/v1/models">/v1/models</a>.</p>
+
+    <!-- Model pinning -->
+    <div class="section-head" id="pinning">Model pinning</div>
+
+    <p>
+      Pass an exact model ID in the <code class="inline-code">model</code> field to bypass
+      tier routing and target a specific model. The ID must match a model in our
+      catalog (visible at <a href="/v1/models">/v1/models</a>).
+    </p>
+
+    <div class="code-block"><span class="c"># Pin to Claude Sonnet 4 specifically</span>
+{
+  <span class="n">"model"</span>: <span class="s">"claude-sonnet-4-20250514"</span>,
+  <span class="n">"messages"</span>: [...]
+}</div>
+
+    <p>When pinning, the <code class="inline-code">prefer</code> parameter is ignored.
+    If the pinned model&rsquo;s provider is unavailable, the request fails rather
+    than falling back to another model.</p>
+
+    <!-- Prefer -->
+    <div class="section-head">Prefer parameter</div>
+
+    <p>
+      The <code class="inline-code">prefer</code> field controls how the router ranks
+      models <em>within</em> the resolved tier. It does not change which tier is used.
+    </p>
+
+    <table class="param-table">
+      <thead>
+        <tr><th>Value</th><th>Behaviour</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>cheap</code></td><td>Lowest cost per token.</td></tr>
+        <tr><td><code>fast</code></td><td>Lowest latency (time to first token).</td></tr>
+        <tr><td><code>balanced</code></td><td>Default. Cheapest, break ties by quality.</td></tr>
+        <tr><td><code>quality</code></td><td>Highest quality score, break ties by cost.</td></tr>
+      </tbody>
+    </table>
+
+    <!-- Other endpoints -->
+    <div class="section-head">Other endpoints</div>
+
+    <div class="endpoint">
+      <span class="endpoint-method">GET</span>
+      <span class="endpoint-path">/v1/models</span>
+      <div class="endpoint-desc">List all available models, tiers, and pricing. Public &mdash; no auth required.</div>
+    </div>
+
+    <div class="endpoint">
+      <span class="endpoint-method">GET</span>
+      <span class="endpoint-path">/v1/account/credits</span>
+      <div class="endpoint-desc">Check your current credit balance. Requires session auth.</div>
+    </div>
+
+    <div class="endpoint">
+      <span class="endpoint-method">GET</span>
+      <span class="endpoint-path">/v1/account/usage</span>
+      <div class="endpoint-desc">Usage history for the last 30 days, broken down by day and model. Requires session auth.</div>
+    </div>
+
+    <div class="endpoint">
+      <span class="endpoint-method">GET</span>
+      <span class="endpoint-path">/health</span>
+      <div class="endpoint-desc">Server health check. Returns provider status and open circuit breakers. No auth required.</div>
+    </div>
+
+    <!-- Context guard -->
+    <div class="section-head">Context-window guard</div>
+
+    <p>
+      Before routing, the router estimates your input token count and filters out any model
+      whose context window is too small. You never get a &ldquo;context length exceeded&rdquo;
+      error from the provider &mdash; the router handles it.
+    </p>
+
+    <!-- Circuit breaker -->
+    <div class="section-head">Circuit breaker</div>
+
+    <p>
+      If a provider returns repeated errors, its circuit breaker opens and the router
+      stops sending traffic to it. After a cooldown, one test request is allowed through.
+      If it succeeds, the circuit closes and the provider is back in the pool.
+    </p>
+
+    <p>This is automatic and invisible to clients. You get transparent failover
+    across providers within a tier.</p>
+
+    <!-- Rate limits -->
+    <div class="section-head">Rate limits</div>
+
+    <p>
+      Default: <strong>60 requests per minute</strong> per API key (token bucket).
+      If you need higher limits, contact <a href="mailto:support@api.lxg2it.com">support@api.lxg2it.com</a>.
+    </p>
+
+    <p>Rate-limited responses return HTTP <code class="inline-code">429</code> with a
+    <code class="inline-code">Retry-After</code> header.</p>
+
+    <!-- Errors -->
+    <div class="section-head">Error codes</div>
+
+    <table class="param-table">
+      <thead>
+        <tr><th>Status</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>400</code></td><td>Bad request &mdash; missing or invalid parameters.</td></tr>
+        <tr><td><code>401</code></td><td>Unauthorised &mdash; missing or invalid API key.</td></tr>
+        <tr><td><code>402</code></td><td>Insufficient credits.</td></tr>
+        <tr><td><code>429</code></td><td>Rate limited.</td></tr>
+        <tr><td><code>502</code></td><td>Provider error &mdash; upstream model returned an error.</td></tr>
+        <tr><td><code>503</code></td><td>No available model &mdash; all providers in the tier are down or context too large.</td></tr>
+      </tbody>
+    </table>
+
+    <p>Error responses follow the OpenAI format:</p>
+
+    <div class="code-block">{
+  <span class="n">"error"</span>: {
+    <span class="n">"message"</span>: <span class="s">"Insufficient credits"</span>,
+    <span class="n">"type"</span>: <span class="s">"billing_error"</span>,
+    <span class="n">"code"</span>: <span class="s">"insufficient_credits"</span>
+  }
+}</div>
+
+${docsFooter()}`;
+
+// ─── Integration Guides ─────────────────────────────────────────────────────
+
+const INTEGRATIONS_HTML = `${docsHead('Integration Guides')}
+
+    <div class="docs-nav">
+      ${docsNav('Integrations')}
+    </div>
+
+    <h1>Integration Guides</h1>
+    <p class="subtitle" style="margin-bottom: 32px;">
+      Model Router is OpenAI-compatible. Any tool that lets you set a custom API
+      base URL will work.
+    </p>
+
+    <!-- Cursor -->
+    <div class="section-head">Cursor</div>
+
+    <p>In Cursor, go to <strong>Settings → Models → OpenAI API Key</strong>:</p>
+
+    <ol>
+      <li>Set <strong>API Key</strong> to your <code class="inline-code">mr_sk_...</code> key.</li>
+      <li>Set <strong>Base URL</strong> to <code class="inline-code">https://api.lxg2it.com/v1</code>.</li>
+      <li>Add a model name — use a tier (<code class="inline-code">standard</code>) or
+      an exact model ID (<code class="inline-code">claude-sonnet-4-20250514</code>).</li>
+      <li>Select the model when starting a chat or using Cmd+K.</li>
+    </ol>
+
+    <!-- Windsurf -->
+    <div class="section-head">Windsurf</div>
+
+    <p>In Windsurf, go to <strong>Settings → LLM → Custom Provider</strong>:</p>
+
+    <ol>
+      <li>Set <strong>Provider</strong> to <code class="inline-code">OpenAI Compatible</code>.</li>
+      <li>Set <strong>Base URL</strong> to <code class="inline-code">https://api.lxg2it.com/v1</code>.</li>
+      <li>Set <strong>API Key</strong> to your <code class="inline-code">mr_sk_...</code> key.</li>
+      <li>Set <strong>Model</strong> to a tier name or exact model ID.</li>
+    </ol>
+
+    <!-- RooCode / Cline -->
+    <div class="section-head">RooCode / Cline</div>
+
+    <p>In VS Code, open <strong>RooCode settings → API Configuration</strong>:</p>
+
+    <ol>
+      <li>Set <strong>API Provider</strong> to <code class="inline-code">OpenAI Compatible</code>.</li>
+      <li>Set <strong>Base URL</strong> to <code class="inline-code">https://api.lxg2it.com/v1</code>.</li>
+      <li>Set <strong>API Key</strong> to your <code class="inline-code">mr_sk_...</code> key.</li>
+      <li>Set <strong>Model ID</strong> to <code class="inline-code">standard</code> (or any tier / model ID).</li>
+    </ol>
+
+    <!-- OpenClaw -->
+    <div class="section-head">OpenClaw</div>
+
+    <p>
+      OpenClaw supports OpenAI-compatible providers. In your OpenClaw configuration
+      (typically <code class="inline-code">~/.openclaw/config.yaml</code> or via environment variables):
+    </p>
+
+    <div class="code-block"><span class="c"># Environment variables</span>
+export OPENAI_API_KEY=<span class="s">"mr_sk_..."</span>
+export OPENAI_BASE_URL=<span class="s">"https://api.lxg2it.com/v1"</span>
+export OPENAI_MODEL=<span class="s">"standard"</span></div>
+
+    <p>Or in your config file:</p>
+
+    <div class="code-block"><span class="c"># config.yaml</span>
+provider:
+  type: openai
+  api_key: <span class="s">mr_sk_...</span>
+  base_url: <span class="s">https://api.lxg2it.com/v1</span>
+  model: <span class="s">standard</span></div>
+
+    <!-- Python SDK -->
+    <div class="section-head">Python (OpenAI SDK)</div>
+
+    <div class="code-block"><span class="k">from</span> openai <span class="k">import</span> OpenAI
+
+client = OpenAI(
+    api_key=<span class="s">"mr_sk_..."</span>,
+    base_url=<span class="s">"https://api.lxg2it.com/v1"</span>,
+)
+
+response = client.chat.completions.create(
+    model=<span class="s">"standard"</span>,
+    messages=[{<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"Hello!"</span>}],
+)
+print(response.choices[0].message.content)</div>
+
+    <!-- Node.js SDK -->
+    <div class="section-head">Node.js (OpenAI SDK)</div>
+
+    <div class="code-block"><span class="k">import</span> OpenAI <span class="k">from</span> <span class="s">'openai'</span>;
+
+<span class="k">const</span> client = <span class="k">new</span> OpenAI({
+  apiKey: <span class="s">'mr_sk_...'</span>,
+  baseURL: <span class="s">'https://api.lxg2it.com/v1'</span>,
+});
+
+<span class="k">const</span> response = <span class="k">await</span> client.chat.completions.create({
+  model: <span class="s">'standard'</span>,
+  messages: [{ role: <span class="s">'user'</span>, content: <span class="s">'Hello!'</span> }],
+});
+console.log(response.choices[0].message.content);</div>
+
+    <!-- curl -->
+    <div class="section-head">curl</div>
+
+    <div class="code-block">curl https://api.lxg2it.com/v1/chat/completions \\
+  -H <span class="s">"Authorization: Bearer mr_sk_..."</span> \\
+  -H <span class="s">"Content-Type: application/json"</span> \\
+  -d <span class="s">'{
+    "model": "standard",
+    "prefer": "cheap",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</span></div>
+
+    <!-- General pattern -->
+    <div class="section-head">General pattern</div>
+
+    <p>For any OpenAI-compatible tool or library:</p>
+
+    <ol>
+      <li>Set the <strong>base URL</strong> to <code class="inline-code">https://api.lxg2it.com/v1</code></li>
+      <li>Set the <strong>API key</strong> to your <code class="inline-code">mr_sk_...</code> key</li>
+      <li>Set the <strong>model</strong> to a tier name (<code class="inline-code">economy</code>,
+      <code class="inline-code">standard</code>, <code class="inline-code">premium</code>)
+      or an exact model ID from <a href="/v1/models">/v1/models</a></li>
+    </ol>
+
+    <p style="font-size:13px; color:var(--muted); margin-top:24px;">
+      Need help with a specific tool? Contact <a href="mailto:support@api.lxg2it.com">support@api.lxg2it.com</a>.
+    </p>
+
+${docsFooter()}`;
+
+// ─── Router ─────────────────────────────────────────────────────────────────
+
+export function createDocsRouter(): Hono {
+  const router = new Hono();
+
+  router.get('/', (c) => {
+    c.header('Content-Type', 'text/html; charset=utf-8');
+    return c.body(OVERVIEW_HTML);
+  });
+
+  router.get('/api', (c) => {
+    c.header('Content-Type', 'text/html; charset=utf-8');
+    return c.body(API_HTML);
+  });
+
+  router.get('/integrations', (c) => {
+    c.header('Content-Type', 'text/html; charset=utf-8');
+    return c.body(INTEGRATIONS_HTML);
+  });
+
+  return router;
+}
