@@ -474,7 +474,7 @@ const API_HTML = `${docsHead('API Reference')}
 
     <div class="code-block"><span class="c">// Tool call request (same across all tiers/providers)</span>
 {
-  <span class="s">"model"</span>: <span class="s">"mr-standard"</span>,
+  <span class="s">"model"</span>: <span class="s">"standard"</span>,
   <span class="s">"messages"</span>: [{ <span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"What is the weather in Sydney?"</span> }],
   <span class="s">"tools"</span>: [{
     <span class="s">"type"</span>: <span class="s">"function"</span>,
@@ -511,7 +511,7 @@ const API_HTML = `${docsHead('API Reference')}
 
     <div class="code-block"><span class="c">// Non-streaming — reasoning_content in the message</span>
 {
-  <span class="s">"model"</span>: <span class="s">"mr-economy"</span>,
+  <span class="s">"model"</span>: <span class="s">"economy"</span>,
   <span class="s">"include_reasoning"</span>: <span class="k">true</span>,
   <span class="s">"messages"</span>: [{ <span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"Is 17 prime?"</span> }]
 }
