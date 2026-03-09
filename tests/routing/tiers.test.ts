@@ -68,13 +68,12 @@ describe('resolveTier', () => {
     });
   });
 
-  describe('partial matching', () => {
-    it('resolves claude-3-5-sonnet-20241022 to standard via partial match', () => {
-      // "claude-3-5-sonnet-20241022" contains "claude-sonnet" or is contained by it
+  describe('exact alias matching for dated model versions', () => {
+    it('resolves claude-3-5-sonnet-20241022 to standard via exact alias', () => {
       expect(resolveTier('claude-3-5-sonnet-20241022')).toBe('standard');
     });
 
-    it('resolves claude-3-5-haiku-20241022 to economy via partial match', () => {
+    it('resolves claude-3-5-haiku-20241022 to economy via exact alias', () => {
       expect(resolveTier('claude-3-5-haiku-20241022')).toBe('economy');
     });
   });

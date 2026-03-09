@@ -25,16 +25,9 @@ export function resolveTier(model: string | undefined): Tier | undefined {
   // Direct tier match
   if (normalized in TIERS) return normalized as Tier;
 
-  // Alias lookup
+  // Alias lookup — exact match only (see MODEL_ALIASES in config.ts for the full list)
   const alias = MODEL_ALIASES[normalized];
   if (alias) return alias as Tier;
-
-  // Try partial matching (e.g., "claude-3-5-sonnet-latest" → "claude-sonnet")
-  for (const [pattern, tier] of Object.entries(MODEL_ALIASES)) {
-    if (normalized.includes(pattern) || pattern.includes(normalized)) {
-      return tier as Tier;
-    }
-  }
 
   return undefined;
 }
