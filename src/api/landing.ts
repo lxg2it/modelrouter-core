@@ -440,6 +440,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       <a href="/profile">profile</a>
       <a href="/health">health</a>
       <a href="/v1/models">models</a>
+      <a href="/docs">docs</a>
       <a href="/privacy">privacy</a>
       <a href="/terms">terms</a>
     </div>
