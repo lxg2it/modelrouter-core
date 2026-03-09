@@ -516,6 +516,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       <a href="/">home</a>
       <a href="/health">health</a>
       <a href="/v1/models">models</a>
+      <a href="/docs">docs</a>
       <a href="/privacy">privacy</a>
       <a href="/terms">terms</a>
     </div>
