@@ -125,6 +125,14 @@ export class UserStore {
         ALTER TABLE users ADD COLUMN daily_spend_limit_cents INTEGER NOT NULL DEFAULT 0;
       `);
     }
+
+    // Migration: add welcome_email_sent column if not present (added in v0.5)
+    const userColsV4 = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>;
+    if (!userColsV4.some((c) => c.name === 'welcome_email_sent')) {
+      this.db.exec(`
+        ALTER TABLE users ADD COLUMN welcome_email_sent INTEGER NOT NULL DEFAULT 0;
+      `);
+    }
   }
 
   // ─── Passwordless auth ────────────────────────────────
@@ -333,6 +341,27 @@ export class UserStore {
       `UPDATE users SET blocked_providers = ? WHERE id = ?`,
     ).run(JSON.stringify(blockedProviders), userId);
     return result.changes > 0;
+  }
+
+  // ─── Welcome email ────────────────────────────────────
+
+  /**
+   * Returns users who registered at least 24 hours ago and haven't yet
+   * received a welcome email.
+   */
+  getUsersPendingWelcomeEmail(): Array<{ id: string; email: string }> {
+    return this.db.prepare(`
+      SELECT id, email FROM users
+      WHERE welcome_email_sent = 0
+        AND created_at <= datetime('now', '-24 hours')
+    `).all() as Array<{ id: string; email: string }>;
+  }
+
+  /**
+   * Mark a user's welcome email as sent.
+   */
+  markWelcomeEmailSent(userId: string): void {
+    this.db.prepare(`UPDATE users SET welcome_email_sent = 1 WHERE id = ?`).run(userId);
   }
 
   // ─── Billing ──────────────────────────────────────────

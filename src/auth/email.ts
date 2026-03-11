@@ -12,6 +12,7 @@ import { Resend } from 'resend';
 
 export interface EmailSender {
   sendLoginCode(to: string, code: string): Promise<void>;
+  sendWelcomeEmail(to: string): Promise<void>;
 }
 
 /**
@@ -20,10 +21,12 @@ export interface EmailSender {
 export class ResendEmailSender implements EmailSender {
   private resend: Resend;
   private fromEmail: string;
+  private welcomeFromEmail: string;
 
-  constructor(apiKey: string, fromEmail: string) {
+  constructor(apiKey: string, fromEmail: string, welcomeFromEmail: string) {
     this.resend = new Resend(apiKey);
     this.fromEmail = fromEmail;
+    this.welcomeFromEmail = welcomeFromEmail;
   }
 
   async sendLoginCode(to: string, code: string): Promise<void> {
@@ -48,14 +51,40 @@ export class ResendEmailSender implements EmailSender {
       throw new Error(`Email send failed: ${error.message}`);
     }
   }
+
+  async sendWelcomeEmail(to: string): Promise<void> {
+    const { error } = await this.resend.emails.send({
+      from: this.welcomeFromEmail,
+      to,
+      subject: 'Hey, welcome to Model Router',
+      html: `
+        <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; color: #111827;">
+          <p>Hey,</p>
+          <p>Noticed you signed up recently — just wanted to say hi and let you know there's a real person here if you need anything.</p>
+          <p>We've got setup guides for Cursor, RooCode, and OpenClaw at <a href="https://api.lxg2it.com/docs/integrations">api.lxg2it.com/docs/integrations</a> if that's useful.</p>
+          <p>Otherwise, just reply if you run into anything.</p>
+          <p>Scott</p>
+        </div>
+      `,
+      text: `Hey,\n\nNoticed you signed up recently — just wanted to say hi and let you know there's a real person here if you need anything.\n\nWe've got setup guides for Cursor, RooCode, and OpenClaw at https://api.lxg2it.com/docs/integrations if that's useful.\n\nOtherwise, just reply if you run into anything.\n\nScott`,
+    });
+
+    if (error) {
+      throw new Error(`Welcome email send failed: ${error.message}`);
+    }
+  }
 }
 
 /**
- * No-op sender for development (logs the code to stdout instead).
+ * No-op sender for development (logs to stdout instead).
  * Used when RESEND_API_KEY is not configured.
  */
 export class ConsoleEmailSender implements EmailSender {
   async sendLoginCode(to: string, code: string): Promise<void> {
     console.log(`[Email:dev] Login code for ${to}: ${code}`);
+  }
+
+  async sendWelcomeEmail(to: string): Promise<void> {
+    console.log(`[Email:dev] Welcome email for ${to}`);
   }
 }

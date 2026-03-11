@@ -36,6 +36,7 @@ import { createAdminRouter } from './api/admin.js';
 import { createDocsRouter } from './api/docs.js';
 import { ResendEmailSender, ConsoleEmailSender } from './auth/email.js';
 import type { EmailSender } from './auth/email.js';
+import { WelcomeEmailScheduler } from './welcome-scheduler.js';
 import { RateLimiter } from './ratelimit/token-bucket.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ProviderName, Tier } from './types.js';
@@ -125,7 +126,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
 
   // Email sender — Resend in production, console logger in dev
   const emailSender: EmailSender = config.email
-    ? new ResendEmailSender(config.email.resendApiKey, config.email.fromEmail)
+    ? new ResendEmailSender(config.email.resendApiKey, config.email.fromEmail, config.email.welcomeFromEmail)
     : new ConsoleEmailSender();
 
   if (config.email) {
@@ -285,6 +286,10 @@ export function createApp(): { app: Hono; ctx: AppContext } {
       },
     }, 404);
   });
+
+  // Start the welcome email scheduler (24-hour delay after signup)
+  const welcomeScheduler = new WelcomeEmailScheduler(userStore, emailSender);
+  welcomeScheduler.start();
 
   const ctx: AppContext = { config, db, keyStore, userStore, usageStore, router, providers, billing, stripe: stripeService, email: emailSender };
   return { app, ctx };

@@ -43,6 +43,7 @@ export interface Config {
   email?: {
     resendApiKey: string;
     fromEmail: string;
+    welcomeFromEmail: string;
   };
 
   // Admin access — comma-separated list of emails granted /admin access
@@ -105,6 +106,7 @@ export function loadConfig(): Config {
       ? {
           resendApiKey: process.env.RESEND_API_KEY,
           fromEmail: process.env.FROM_EMAIL ?? 'auth@api.lxg2it.com',
+          welcomeFromEmail: process.env.WELCOME_FROM_EMAIL ?? 'scott@lxg2it.com',
         }
       : undefined,
 
