@@ -127,10 +127,13 @@ export class UserStore {
     }
 
     // Migration: add welcome_email_sent column if not present (added in v0.5)
+    // Existing users are marked as sent=1 so they don't receive duplicate welcome emails
+    // if this migration runs against a DB that pre-dates the column.
     const userColsV4 = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>;
     if (!userColsV4.some((c) => c.name === 'welcome_email_sent')) {
       this.db.exec(`
         ALTER TABLE users ADD COLUMN welcome_email_sent INTEGER NOT NULL DEFAULT 0;
+        UPDATE users SET welcome_email_sent = 1;
       `);
     }
   }
