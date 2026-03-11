@@ -48,6 +48,8 @@ export class WelcomeEmailScheduler {
         await this.emailSender.sendWelcomeEmail(user.email);
         this.userStore.markWelcomeEmailSent(user.id);
         console.log(`[WelcomeEmail] Sent to ${user.email}`);
+        // Respect Resend's 2 req/s rate limit
+        await new Promise((resolve) => setTimeout(resolve, 600));
       } catch (err) {
         console.error(`[WelcomeEmail] Failed for ${user.email}:`, err);
       }
