@@ -25,3 +25,5 @@ services:
 
 volumes:
   modelrouter-data:
+    external: true
+    name: modelrouter-data
