@@ -236,6 +236,16 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     mmluPro: 87.1,
     simpleBench: 63.0,
   },
+  // GPT-5.3-Codex: OpenAI's dedicated coding model, powers gpt-5.4 coding capabilities.
+  // SWE-bench not officially published; estimated conservatively at 78 based on OpenAI's
+  // claim of "industry-leading coding" and gpt-5.4's published 57.7% (gpt-5.4 = codex + broader capabilities).
+  'gpt-5.3-codex': {
+    arenaElo: 1425,
+    gpqaDiamond: 86.0,
+    sweBench: 78.0,  // estimated — mark for update when official figure published
+    mmluPro: 87.5,
+    simpleBench: 62.0,
+  },
   // GPT-5.4: March 5 2026, OpenAI's new flagship for professional/agentic work
   'gpt-5.4': {
     arenaElo: 1438,
