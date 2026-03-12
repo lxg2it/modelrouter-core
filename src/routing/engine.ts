@@ -14,13 +14,14 @@
 import type { ModelConfig, Tier, ProviderName, ChatCompletionRequest, ChatMessage } from '../types.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import { getModelsForTier, resolveTier, findModelById } from './tiers.js';
+import { computeCodingScores } from '../benchmarks.js';
 
 export interface RouteDecision {
   provider: ProviderName;
   model: string;
   tier: Tier;
   estimatedCostPer1M: number; // Blended cost estimate for logging
-  prefer: 'balanced' | 'cheap' | 'fast' | 'quality'; // Preference mode used
+  prefer: 'balanced' | 'cheap' | 'fast' | 'quality' | 'coding'; // Preference mode used
   /** True when the selected model has internal chain-of-thought (reasoning model). */
   isThinkingModel: boolean;
   /** True when the client explicitly pinned a specific model ID, bypassing tier routing. */
@@ -56,6 +57,8 @@ export class RoutingEngine {
    * - `cheap`:  lowest cost within tier. Same algorithm as balanced; semantic signal to the caller.
    * - `fast`:   lowest latency (TTFT) within tier. Good for interactive apps.
    * - `quality`: highest quality score within tier; break ties by cost.
+   * - `coding`: highest SWE-bench-weighted composite score within tier. Models without
+   *             SWE-bench data are excluded; falls back to quality if none remain.
    *
    * All four prefer values operate within the resolved tier — prefer is an optimisation
    * direction, not a tier override. Tier establishes the capability floor; prefer governs
@@ -115,6 +118,21 @@ export class RoutingEngine {
         b.quality - a.quality
         || (a.inputPer1M + a.outputPer1M * ratio) - (b.inputPer1M + b.outputPer1M * ratio),
       );
+      return this.toDecision(sorted[0], tier, undefined, prefer);
+    }
+
+    if (prefer === 'coding') {
+      // Rank by coding-weighted composite score (SWE-bench 60%, GPQA 20%, Arena 20%).
+      // Models without SWE-bench data are excluded. Falls back to quality if none remain.
+      const codingScores = computeCodingScores();
+      const codingEligible = available.filter((m) => codingScores[m.model] != null);
+      const pool = codingEligible.length > 0 ? codingEligible : available;
+      const sorted = [...pool].sort((a, b) => {
+        const scoreA = codingScores[a.model] ?? a.quality;
+        const scoreB = codingScores[b.model] ?? b.quality;
+        return scoreB - scoreA
+          || (a.inputPer1M + a.outputPer1M * ratio) - (b.inputPer1M + b.outputPer1M * ratio);
+      });
       return this.toDecision(sorted[0], tier, undefined, prefer);
     }
 

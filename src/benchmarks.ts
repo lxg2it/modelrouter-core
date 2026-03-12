@@ -256,6 +256,16 @@ export const BENCHMARK_WEIGHTS: Record<keyof BenchmarkScores, number> = {
   simpleBench: 0.15,
 };
 
+// Coding-optimised weights: SWE-bench dominates, GPQA and Arena Elo fill the rest.
+// Models with no SWE-bench data (sweBench === 0 or missing) are excluded before scoring.
+export const CODING_BENCHMARK_WEIGHTS: Record<keyof BenchmarkScores, number> = {
+  sweBench: 0.60,
+  gpqaDiamond: 0.20,
+  arenaElo: 0.20,
+  mmluPro: 0,
+  simpleBench: 0,
+};
+
 export const BENCHMARK_LABELS: Record<keyof BenchmarkScores, string> = {
   arenaElo: 'Chatbot Arena Elo',
   gpqaDiamond: 'GPQA Diamond',
@@ -323,3 +333,22 @@ export function computeQualityScores(
 
   return result;
 }
+
+/**
+ * Compute coding-optimised quality scores (0–1) for models that have SWE-bench data.
+ *
+ * Models with no published SWE-bench score (missing or 0) are excluded entirely —
+ * they will not be routed to when prefer=coding. The routing engine falls back to
+ * prefer=quality if no coding-eligible models exist in a tier.
+ */
+export function computeCodingScores(
+  data: Record<string, BenchmarkScores> = BENCHMARK_DATA,
+  floor = 0.50,
+): Record<string, number> {
+  // Filter to models with a meaningful SWE-bench score
+  const filtered = Object.fromEntries(
+    Object.entries(data).filter(([, scores]) => scores.sweBench != null && scores.sweBench > 0),
+  );
+  return computeQualityScores(filtered, CODING_BENCHMARK_WEIGHTS, floor);
+}
+

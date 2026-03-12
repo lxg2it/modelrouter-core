@@ -52,7 +52,7 @@ export interface ChatCompletionRequest {
 
   // Model Router extensions
   tier?: 'economy' | 'standard' | 'premium'; // Override key's default tier
-  prefer?: 'balanced' | 'cheap' | 'fast' | 'quality'; // Routing preference
+  prefer?: 'balanced' | 'cheap' | 'fast' | 'quality' | 'coding'; // Routing preference
   /**
    * When true, reasoning/thinking content from reasoning models is included
    * in the response as `reasoning_content` alongside the regular `content`.

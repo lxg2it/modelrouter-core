@@ -15,7 +15,7 @@ import type { AuthEnv } from '../auth/middleware.js';
 import { TIERS, MODEL_ALIASES } from '../config.js';
 import type { UsageStore } from '../tracking/store.js';
 import type { ModelsListResponse, ModelInfo, ModelConfig } from '../types.js';
-import { BENCHMARK_LABELS, BENCHMARK_WEIGHTS } from '../benchmarks.js';
+import { BENCHMARK_LABELS, BENCHMARK_WEIGHTS, computeCodingScores } from '../benchmarks.js';
 
 interface ModelsDeps {
   usageStore: UsageStore;
@@ -192,6 +192,18 @@ function selectForGrid(models: ModelConfig[], prefer: string, ratio = 1): ModelC
     );
     return sorted[0];
   }
+  if (prefer === 'coding') {
+    const codingScores = computeCodingScores();
+    const codingEligible = models.filter((m) => codingScores[m.model] != null);
+    const pool = codingEligible.length > 0 ? codingEligible : models;
+    const sorted = [...pool].sort((a, b) => {
+      const scoreA = codingScores[a.model] ?? a.quality;
+      const scoreB = codingScores[b.model] ?? b.quality;
+      return scoreB - scoreA
+        || (a.inputPer1M + a.outputPer1M * ratio) - (b.inputPer1M + b.outputPer1M * ratio);
+    });
+    return sorted[0];
+  }
   // cheap / balanced
   const scored = models.map((m) => ({
     config: m,
@@ -204,7 +216,7 @@ function selectForGrid(models: ModelConfig[], prefer: string, ratio = 1): ModelC
 /** Build the tier×prefer grid HTML showing which model is selected for each combo. */
 function renderSelectionGrid(): string {
   const tiers = Object.keys(TIERS);
-  const prefers = ['cheap', 'fast', 'balanced', 'quality'];
+  const prefers = ['cheap', 'fast', 'balanced', 'quality', 'coding'];
 
   const headerCells = tiers.map((t) =>
     `<th class="grid-tier tier-${t}">${t}</th>`).join('');
