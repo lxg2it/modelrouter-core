@@ -12,10 +12,11 @@
 
 import { Hono } from 'hono';
 import type { AuthEnv } from '../auth/middleware.js';
-import { TIERS, MODEL_ALIASES } from '../config.js';
+import { TIERS, MODEL_ALIASES, PROVIDER_META } from '../config.js';
 import type { UsageStore } from '../tracking/store.js';
-import type { ModelsListResponse, ModelInfo, ModelConfig } from '../types.js';
-import { BENCHMARK_LABELS, BENCHMARK_WEIGHTS, computeCodingScores } from '../benchmarks.js';
+import type { ModelsListResponse, ModelInfo, ModelConfig, ProviderName } from '../types.js';
+import { BENCHMARK_LABELS, BENCHMARK_WEIGHTS } from '../benchmarks.js';
+import { RoutingEngine } from '../routing/engine.js';
 
 interface ModelsDeps {
   usageStore: UsageStore;
@@ -177,54 +178,38 @@ function displayModel(id: string): string {
   return id.replace(/-\d{8}$/, '');
 }
 
-/** Simulate routing selection for a tier×prefer combination. */
-function selectForGrid(models: ModelConfig[], prefer: string, ratio = 1): ModelConfig {
-  if (prefer === 'quality') {
-    const sorted = [...models].sort((a, b) =>
-      b.quality - a.quality
-      || (a.inputPer1M + a.outputPer1M * ratio) - (b.inputPer1M + b.outputPer1M * ratio),
-    );
-    return sorted[0];
-  }
-  if (prefer === 'fast') {
-    const sorted = [...models].sort((a, b) =>
-      a.latencyMs - b.latencyMs || b.quality - a.quality,
-    );
-    return sorted[0];
-  }
-  if (prefer === 'coding') {
-    const codingScores = computeCodingScores();
-    const codingEligible = models.filter((m) => codingScores[m.model] != null);
-    const pool = codingEligible.length > 0 ? codingEligible : models;
-    const sorted = [...pool].sort((a, b) => {
-      const scoreA = codingScores[a.model] ?? a.quality;
-      const scoreB = codingScores[b.model] ?? b.quality;
-      return scoreB - scoreA
-        || (a.inputPer1M + a.outputPer1M * ratio) - (b.inputPer1M + b.outputPer1M * ratio);
-    });
-    return sorted[0];
-  }
-  // cheap / balanced
-  const scored = models.map((m) => ({
-    config: m,
-    cost: m.inputPer1M + m.outputPer1M * ratio,
-  }));
-  scored.sort((a, b) => a.cost - b.cost || b.config.quality - a.config.quality);
-  return scored[0].config;
+/**
+ * Build a RoutingEngine for display purposes — all known providers available,
+ * no circuit breakers tripped, default output ratio. This ensures the grid
+ * shows exactly what a real request would get (assuming all providers configured).
+ */
+function buildDisplayEngine(): RoutingEngine {
+  const allProviders = new Set<ProviderName>(
+    Object.keys(PROVIDER_META) as ProviderName[],
+  );
+  return new RoutingEngine({
+    availableProviders: allProviders,
+    defaultTier: 'standard',
+    defaultOutputRatio: 0.33,
+  });
 }
 
 /** Build the tier×prefer grid HTML showing which model is selected for each combo. */
 function renderSelectionGrid(): string {
   const tiers = Object.keys(TIERS);
   const prefers = ['cheap', 'fast', 'balanced', 'quality', 'coding'];
+  const engine = buildDisplayEngine();
 
   const headerCells = tiers.map((t) =>
     `<th class="grid-tier tier-${t}">${t}</th>`).join('');
 
   const rows = prefers.map((p) => {
     const cells = tiers.map((t) => {
-      const selected = selectForGrid(TIERS[t].models, p);
-      return `<td><code>${displayModel(selected.model)}</code></td>`;
+      const decision = engine.selectModel(
+        { model: t, prefer: p as 'cheap' | 'fast' | 'balanced' | 'quality' | 'coding', messages: [] },
+      );
+      const modelId = decision?.model ?? '—';
+      return `<td><code>${displayModel(modelId)}</code></td>`;
     }).join('');
     return `<tr><td class="grid-prefer">${p}</td>${cells}</tr>`;
   }).join('\n      ');
