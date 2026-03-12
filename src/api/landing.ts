@@ -308,7 +308,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       <div class="param-name">prefer</div>
       <div class="param-body">
         <div class="param-desc">The optimisation direction within that tier.</div>
-        <div class="param-values">cheap<span>·</span>fast<span>·</span>balanced<span>·</span>quality</div>
+        <div class="param-values">cheap<span>·</span>fast<span>·</span>balanced<span>·</span>quality<span>·</span>coding</div>
       </div>
     </div>
   </div>
