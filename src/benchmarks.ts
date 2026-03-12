@@ -228,6 +228,22 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     mmluPro: 86.3,
     simpleBench: 61.6,
   },
+  // GPT-5.3 Instant: conversational model, no separate SWE-bench published
+  'gpt-5.3-chat-latest': {
+    arenaElo: 1415,
+    gpqaDiamond: 89.5,
+    sweBench: 0,    // not published (chat-focused model)
+    mmluPro: 87.1,
+    simpleBench: 63.0,
+  },
+  // GPT-5.4: March 5 2026, OpenAI's new flagship for professional/agentic work
+  'gpt-5.4': {
+    arenaElo: 1438,
+    gpqaDiamond: 90.2,
+    sweBench: 57.7,
+    mmluPro: 88.5,
+    simpleBench: 66.0,
+  },
 };
 
 // ─── Scoring Weights ────────────────────────────────────

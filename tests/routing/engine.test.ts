@@ -460,8 +460,8 @@ describe('RoutingEngine', () => {
         });
 
         const decision = engine.selectModel(req({ tier: 'standard', prefer: 'quality' }))!;
-        // gemini-2.5-pro has quality: 0.87 — the highest in standard
-        expect(decision.model).toBe('gemini-2.5-pro');
+        // gpt-5.3-chat-latest has quality: 0.88 — the highest in standard (added Mar 2026)
+        expect(decision.model).toBe('gpt-5.3-chat-latest');
         expect(decision.tier).toBe('standard');
         expect(decision.prefer).toBe('quality');
       });

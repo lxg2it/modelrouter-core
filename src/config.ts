@@ -163,9 +163,10 @@ export const TIERS: Record<string, TierConfig> = {
   },
   standard: {
     models: [
-      { provider: 'google',    model: 'gemini-2.5-pro',   quality: 0.87, inputPer1M: 1.25,  outputPer1M: 10.00, latencyMs: 600,  maxContextTokens: 1_048_576, isThinkingModel: true },
-      { provider: 'openai',    model: 'gpt-4.1',          quality: 0.79, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 750,  maxContextTokens: 1_047_576 },
-      { provider: 'openai',    model: 'o3',               quality: 0.85, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 3500, maxContextTokens: 200_000,   isThinkingModel: true },
+      { provider: 'google',    model: 'gemini-2.5-pro',      quality: 0.87, inputPer1M: 1.25,  outputPer1M: 10.00, latencyMs: 600,  maxContextTokens: 1_048_576, isThinkingModel: true },
+      { provider: 'openai',    model: 'gpt-4.1',             quality: 0.79, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 750,  maxContextTokens: 1_047_576 },
+      { provider: 'openai',    model: 'gpt-5.3-chat-latest', quality: 0.88, inputPer1M: 1.75,  outputPer1M: 14.00, latencyMs: 600,  maxContextTokens: 1_047_576 },
+      { provider: 'openai',    model: 'o3',                  quality: 0.85, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 3500, maxContextTokens: 200_000,   isThinkingModel: true },
       { provider: 'anthropic', model: 'claude-sonnet-4-6', quality: 0.85, inputPer1M: 3.00, outputPer1M: 15.00, latencyMs: 650,  maxContextTokens: 200_000   },
       { provider: 'grok',      model: 'grok-3-beta',       quality: 0.74, inputPer1M: 3.00, outputPer1M: 15.00, latencyMs: 580,  maxContextTokens: 131_072   },
       // Bedrock standard models
@@ -181,9 +182,9 @@ export const TIERS: Record<string, TierConfig> = {
   },
   premium: {
     models: [
-      { provider: 'google',    model: 'gemini-3.1-pro-preview', quality: 1.00, inputPer1M: 2.00,  outputPer1M: 12.00, latencyMs: 900,  maxContextTokens: 1_048_576 },
-      { provider: 'anthropic', model: 'claude-opus-4-6', quality: 1.00, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 200_000   },
-      { provider: 'openai',    model: 'gpt-5.2',         quality: 0.93, inputPer1M: 10.00, outputPer1M: 30.00, latencyMs: 1000, maxContextTokens: 200_000   },
+      { provider: 'google',    model: 'gemini-3.1-pro-preview', quality: 1.00, inputPer1M: 2.00, outputPer1M: 12.00, latencyMs: 900,  maxContextTokens: 1_048_576 },
+      { provider: 'anthropic', model: 'claude-opus-4-6',        quality: 1.00, inputPer1M: 5.00, outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 200_000   },
+      { provider: 'openai',    model: 'gpt-5.4',                quality: 0.96, inputPer1M: 2.50, outputPer1M: 15.00, latencyMs: 900,  maxContextTokens: 1_050_000 },
     ],
     description: 'Maximum capability. For complex reasoning, creative work, difficult tasks.',
   },
@@ -241,12 +242,19 @@ export const MODEL_ALIASES: Record<string, string> = {
   // Premium tier aliases
   'gpt-4.5': 'premium',
   'gpt-5': 'premium',
+  'gpt-5.4': 'premium',
+  'gpt-5.2': 'premium',              // legacy; routes to gpt-5.4 now
   'claude-opus': 'premium',
   'claude-3-opus': 'premium',
   'o1': 'premium',
   'o1-pro': 'premium',
-  'o3': 'standard', // o3 is actually standard-priced
+  'o3': 'standard',                  // o3 is actually standard-priced
   'o4-mini': 'economy',
+
+  // Standard tier aliases (GPT-5.3 Instant)
+  'gpt-5.3': 'standard',
+  'gpt-5.3-instant': 'standard',
+  'gpt-5.3-chat-latest': 'standard',
 
   // DeepSeek aliases
   'deepseek': 'standard',
