@@ -462,6 +462,93 @@ const API_HTML = `${docsHead('API Reference')}
       </tbody>
     </table>
 
+    <!-- Tool calls -->
+    <div class="section-head">Tool calls</div>
+
+    <p>
+      Tool calls work the same as the OpenAI API &mdash; pass a <code class="inline-code">tools</code> array
+      and the router handles the format translation to each provider automatically.
+      You never need to handle Anthropic&rsquo;s <code class="inline-code">tool_use</code> blocks or
+      Google&rsquo;s <code class="inline-code">functionCall</code> parts; everything comes back in
+      standard OpenAI format.
+    </p>
+
+    <div class="code-block"><span class="c">// Tool call request (same across all tiers/providers)</span>
+{
+  <span class="s">"model"</span>: <span class="s">"standard"</span>,
+  <span class="s">"messages"</span>: [{ <span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"What is the weather in Sydney?"</span> }],
+  <span class="s">"tools"</span>: [{
+    <span class="s">"type"</span>: <span class="s">"function"</span>,
+    <span class="s">"function"</span>: {
+      <span class="s">"name"</span>: <span class="s">"get_weather"</span>,
+      <span class="s">"description"</span>: <span class="s">"Get the current weather for a city"</span>,
+      <span class="s">"parameters"</span>: {
+        <span class="s">"type"</span>: <span class="s">"object"</span>,
+        <span class="s">"properties"</span>: { <span class="s">"city"</span>: { <span class="s">"type"</span>: <span class="s">"string"</span> } },
+        <span class="s">"required"</span>: [<span class="s">"city"</span>]
+      }
+    }
+  }]
+}</div>
+
+    <p>The response contains a standard <code class="inline-code">tool_calls</code> array. Submit tool results
+    back using <code class="inline-code">role: "tool"</code> messages as you normally would.</p>
+
+    <!-- Reasoning / thinking -->
+    <div class="section-head">Reasoning / thinking</div>
+
+    <p>
+      Several models in the router are reasoning models: they think through a problem internally
+      before writing their response. By default this thinking is hidden &mdash; you only see the
+      final answer.
+    </p>
+
+    <p>
+      Set <code class="inline-code">"include_reasoning": true</code> to receive the thinking alongside
+      the response. This works in both streaming and non-streaming modes, across all providers.
+    </p>
+
+    <p>Economy tier reasoning models: <code class="inline-code">grok-3-mini-beta</code>, <code class="inline-code">gemini-2.5-flash</code>. Standard/premium: <code class="inline-code">o4-mini</code>, <code class="inline-code">o3</code>, <code class="inline-code">gemini-2.5-pro</code>, <code class="inline-code">claude-opus-4-6</code> (extended thinking).</p>
+
+    <div class="code-block"><span class="c">// Non-streaming — reasoning_content in the message</span>
+{
+  <span class="s">"model"</span>: <span class="s">"economy"</span>,
+  <span class="s">"include_reasoning"</span>: <span class="k">true</span>,
+  <span class="s">"messages"</span>: [{ <span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"Is 17 prime?"</span> }]
+}
+
+<span class="c">// Response</span>
+{
+  <span class="s">"choices"</span>: [{
+    <span class="s">"message"</span>: {
+      <span class="s">"role"</span>: <span class="s">"assistant"</span>,
+      <span class="s">"content"</span>: <span class="s">"Yes, 17 is prime."</span>,
+      <span class="s">"reasoning_content"</span>: <span class="s">"17 is only divisible by 1 and itself..."</span>
+    }
+  }]
+}</div>
+
+    <p>For streaming, <code class="inline-code">reasoning_content</code> arrives as delta chunks
+    <em>before</em> the regular <code class="inline-code">content</code> chunks. Filter by which field
+    is present to separate them:</p>
+
+    <div class="code-block"><span class="c">// Streaming — two chunk types, reasoning arrives first</span>
+<span class="k">for await</span> (<span class="k">const</span> chunk <span class="k">of</span> stream) {
+  <span class="k">const</span> delta = chunk.choices[<span class="n">0</span>]?.delta;
+
+  <span class="k">if</span> (delta?.reasoning_content) {
+    process.stdout.write(<span class="s">&#96;[thinking] \${delta.reasoning_content}&#96;</span>);
+  } <span class="k">else if</span> (delta?.content) {
+    process.stdout.write(delta.content);
+  }
+}</div>
+
+    <p class="callout" style="border-color: var(--muted); background: none; font-size: 13px; color: var(--muted);">
+      <strong style="color: var(--text);">Note:</strong> <code class="inline-code">include_reasoning</code> increases token usage and latency.
+      For models billed by output tokens, thinking tokens count toward your usage.
+    </p>
+
+
     <!-- Embeddings -->
     <div class="section-head">Embeddings</div>
 
@@ -558,92 +645,6 @@ const API_HTML = `${docsHead('API Reference')}
   }],
   <span class="n">"usage"</span>: { <span class="n">"prompt_tokens"</span>: 9, <span class="n">"total_tokens"</span>: 9 }
 }</div>
-
-    <!-- Tool calls -->
-    <div class="section-head">Tool calls</div>
-
-    <p>
-      Tool calls work the same as the OpenAI API &mdash; pass a <code class="inline-code">tools</code> array
-      and the router handles the format translation to each provider automatically.
-      You never need to handle Anthropic&rsquo;s <code class="inline-code">tool_use</code> blocks or
-      Google&rsquo;s <code class="inline-code">functionCall</code> parts; everything comes back in
-      standard OpenAI format.
-    </p>
-
-    <div class="code-block"><span class="c">// Tool call request (same across all tiers/providers)</span>
-{
-  <span class="s">"model"</span>: <span class="s">"standard"</span>,
-  <span class="s">"messages"</span>: [{ <span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"What is the weather in Sydney?"</span> }],
-  <span class="s">"tools"</span>: [{
-    <span class="s">"type"</span>: <span class="s">"function"</span>,
-    <span class="s">"function"</span>: {
-      <span class="s">"name"</span>: <span class="s">"get_weather"</span>,
-      <span class="s">"description"</span>: <span class="s">"Get the current weather for a city"</span>,
-      <span class="s">"parameters"</span>: {
-        <span class="s">"type"</span>: <span class="s">"object"</span>,
-        <span class="s">"properties"</span>: { <span class="s">"city"</span>: { <span class="s">"type"</span>: <span class="s">"string"</span> } },
-        <span class="s">"required"</span>: [<span class="s">"city"</span>]
-      }
-    }
-  }]
-}</div>
-
-    <p>The response contains a standard <code class="inline-code">tool_calls</code> array. Submit tool results
-    back using <code class="inline-code">role: "tool"</code> messages as you normally would.</p>
-
-    <!-- Reasoning / thinking -->
-    <div class="section-head">Reasoning / thinking</div>
-
-    <p>
-      Several models in the router are reasoning models: they think through a problem internally
-      before writing their response. By default this thinking is hidden &mdash; you only see the
-      final answer.
-    </p>
-
-    <p>
-      Set <code class="inline-code">"include_reasoning": true</code> to receive the thinking alongside
-      the response. This works in both streaming and non-streaming modes, across all providers.
-    </p>
-
-    <p>Economy tier reasoning models: <code class="inline-code">grok-3-mini-beta</code>, <code class="inline-code">gemini-2.5-flash</code>. Standard/premium: <code class="inline-code">o4-mini</code>, <code class="inline-code">o3</code>, <code class="inline-code">gemini-2.5-pro</code>, <code class="inline-code">claude-opus-4-6</code> (extended thinking).</p>
-
-    <div class="code-block"><span class="c">// Non-streaming — reasoning_content in the message</span>
-{
-  <span class="s">"model"</span>: <span class="s">"economy"</span>,
-  <span class="s">"include_reasoning"</span>: <span class="k">true</span>,
-  <span class="s">"messages"</span>: [{ <span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"Is 17 prime?"</span> }]
-}
-
-<span class="c">// Response</span>
-{
-  <span class="s">"choices"</span>: [{
-    <span class="s">"message"</span>: {
-      <span class="s">"role"</span>: <span class="s">"assistant"</span>,
-      <span class="s">"content"</span>: <span class="s">"Yes, 17 is prime."</span>,
-      <span class="s">"reasoning_content"</span>: <span class="s">"17 is only divisible by 1 and itself..."</span>
-    }
-  }]
-}</div>
-
-    <p>For streaming, <code class="inline-code">reasoning_content</code> arrives as delta chunks
-    <em>before</em> the regular <code class="inline-code">content</code> chunks. Filter by which field
-    is present to separate them:</p>
-
-    <div class="code-block"><span class="c">// Streaming — two chunk types, reasoning arrives first</span>
-<span class="k">for await</span> (<span class="k">const</span> chunk <span class="k">of</span> stream) {
-  <span class="k">const</span> delta = chunk.choices[<span class="n">0</span>]?.delta;
-
-  <span class="k">if</span> (delta?.reasoning_content) {
-    process.stdout.write(<span class="s">&#96;[thinking] \${delta.reasoning_content}&#96;</span>);
-  } <span class="k">else if</span> (delta?.content) {
-    process.stdout.write(delta.content);
-  }
-}</div>
-
-    <p class="callout" style="border-color: var(--muted); background: none; font-size: 13px; color: var(--muted);">
-      <strong style="color: var(--text);">Note:</strong> <code class="inline-code">include_reasoning</code> increases token usage and latency.
-      For models billed by output tokens, thinking tokens count toward your usage.
-    </p>
 
 
     <!-- Other endpoints -->
