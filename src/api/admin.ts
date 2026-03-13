@@ -225,22 +225,24 @@ function queryAdminStats(db: Database.Database): AdminStats {
   `).all() as { model: string; provider: string; count: number }[];
 
   // ── Revenue ──
+  // Promotional credits (signup bonuses) are excluded — they are a cost of acquisition,
+  // not revenue. Only real Stripe payments count.
   const totalRevenue = (db.prepare(`
     SELECT COALESCE(SUM(credits_added_cents), 0) as total
     FROM billing_transactions
-    WHERE status = 'succeeded'
+    WHERE status = 'succeeded' AND source != 'promotional'
   `).get() as { total: number }).total;
 
   const revenueLast30 = (db.prepare(`
     SELECT COALESCE(SUM(credits_added_cents), 0) as total
     FROM billing_transactions
-    WHERE status = 'succeeded' AND created_at > datetime('now', '-30 days')
+    WHERE status = 'succeeded' AND source != 'promotional' AND created_at > datetime('now', '-30 days')
   `).get() as { total: number }).total;
 
   const dailyRevenueRaw = db.prepare(`
     SELECT date(created_at) as day, SUM(credits_added_cents) as cents
     FROM billing_transactions
-    WHERE status = 'succeeded' AND created_at > datetime('now', '-30 days')
+    WHERE status = 'succeeded' AND source != 'promotional' AND created_at > datetime('now', '-30 days')
     GROUP BY date(created_at)
     ORDER BY day ASC
   `).all() as { day: string; cents: number }[];
