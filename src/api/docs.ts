@@ -458,8 +458,106 @@ const API_HTML = `${docsHead('API Reference')}
         <tr><td><code>fast</code></td><td>Lowest latency (time to first token).</td></tr>
         <tr><td><code>balanced</code></td><td>Default. Cheapest, break ties by quality.</td></tr>
         <tr><td><code>quality</code></td><td>Highest quality score, break ties by cost.</td></tr>
+        <tr><td><code>coding</code></td><td>Highest SWE-bench score. Routes to models with the strongest software engineering performance.</td></tr>
       </tbody>
     </table>
+
+    <!-- Embeddings -->
+    <div class="section-head">Embeddings</div>
+
+    <div class="endpoint">
+      <span class="endpoint-method">POST</span>
+      <span class="endpoint-path">/v1/embeddings</span>
+      <div class="endpoint-desc">Generate vector embeddings. OpenAI-compatible request and response format.</div>
+    </div>
+
+    <p>
+      Use the same API key and base URL as chat completions. Billed at input tokens only &mdash;
+      there are no output tokens for embeddings.
+    </p>
+
+    <p><strong>Request body:</strong></p>
+
+    <table class="param-table">
+      <thead>
+        <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>model</code></td>
+          <td>string</td>
+          <td><strong>Required.</strong> An embedding tier alias or exact model ID.
+          See the table below for available tiers.</td>
+        </tr>
+        <tr>
+          <td><code>input</code></td>
+          <td>string | array</td>
+          <td><strong>Required.</strong> Text to embed. Pass a single string or an array
+          of strings for batch embedding.</td>
+        </tr>
+        <tr>
+          <td><code>dimensions</code></td>
+          <td>integer</td>
+          <td>Optional. Truncate output dimensions. Supported by <code>embed-large</code>
+          (up to 3072) and <code>embed-titan</code> (256, 512, or 1024).</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p><strong>Embedding tiers:</strong></p>
+
+    <table class="param-table">
+      <thead>
+        <tr><th>Alias</th><th>Model</th><th>Dimensions</th><th>Price</th><th>Best for</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>embed-small</code></td>
+          <td><code>text-embedding-3-small</code></td>
+          <td>1536</td>
+          <td>$0.02 / 1M tokens</td>
+          <td>High-volume, cost-sensitive workloads</td>
+        </tr>
+        <tr>
+          <td><code>embed-large</code></td>
+          <td><code>text-embedding-3-large</code></td>
+          <td>up to 3072</td>
+          <td>$0.13 / 1M tokens</td>
+          <td>Maximum retrieval accuracy</td>
+        </tr>
+        <tr>
+          <td><code>embed-titan</code></td>
+          <td><code>amazon.titan-embed-text-v2:0</code></td>
+          <td>256 / 512 / 1024</td>
+          <td>$0.10 / 1M tokens</td>
+          <td>AWS-native workloads, flexible dimensions</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p><strong>Example:</strong></p>
+
+    <div class="code-block"><span class="c">curl</span> https://api.lxg2it.com/v1/embeddings \\
+  -H <span class="s">"Authorization: Bearer $KEY"</span> \\
+  -H <span class="s">"Content-Type: application/json"</span> \\
+  -d <span class="s">'{
+  "model": "embed-small",
+  "input": ["The quick brown fox", "jumps over the lazy dog"]
+}'</span></div>
+
+    <p><strong>Response:</strong> Standard OpenAI embeddings object.</p>
+
+    <div class="code-block"><span class="c">// Example response</span>
+{
+  <span class="n">"object"</span>: <span class="s">"list"</span>,
+  <span class="n">"model"</span>: <span class="s">"text-embedding-3-small"</span>,
+  <span class="n">"data"</span>: [{
+    <span class="n">"object"</span>: <span class="s">"embedding"</span>,
+    <span class="n">"index"</span>: 0,
+    <span class="n">"embedding"</span>: [0.0023, -0.0141, ...]
+  }],
+  <span class="n">"usage"</span>: { <span class="n">"prompt_tokens"</span>: 9, <span class="n">"total_tokens"</span>: 9 }
+}</div>
 
     <!-- Tool calls -->
     <div class="section-head">Tool calls</div>
