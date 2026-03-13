@@ -377,12 +377,22 @@ export const EMBEDDING_MODELS: Record<string, EmbeddingModelConfig> = {
     maxInputTokens: 8191,
     description: 'Highest accuracy embeddings. Best for retrieval, RAG pipelines, and precision-sensitive applications.',
   },
+  'amazon.titan-embed-text-v2:0': {
+    provider: 'bedrock',
+    providerUrl: 'https://bedrock-mantle.ap-southeast-2.api.aws/v1',
+    apiKeyEnv: 'BEDROCK_API_KEY',
+    inputPer1M: 0.10,
+    dimensions: 1024,
+    maxInputTokens: 8192,
+    description: 'Amazon Titan Text Embeddings V2. Cost-effective, 1024 dimensions (supports 256/512/1024). Good for RAG pipelines using AWS infrastructure.',
+  },
 };
 
 // Aliases map friendly names to exact model IDs
 export const EMBEDDING_ALIASES: Record<string, string> = {
   'embed-small':               'text-embedding-3-small',
   'embed-large':               'text-embedding-3-large',
+  'embed-titan':               'amazon.titan-embed-text-v2:0',
   // Common alternative names people try
   'text-embedding-small':      'text-embedding-3-small',
   'text-embedding-large':      'text-embedding-3-large',

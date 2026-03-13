@@ -379,8 +379,92 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     <li>Auto-recharge via Stripe when balance is low</li>
     <li>Per-user daily spend limits (configurable)</li>
     <li>Streaming and tool calls supported</li>
-    <li>Embeddings via <code>POST /v1/embeddings</code> — same key, <code>embed-small</code> ($0.02/1M) or <code>embed-large</code> ($0.13/1M)</li>
+    <li>Embeddings via <code>POST /v1/embeddings</code> — same key, <code>embed-small</code> ($0.02/1M), <code>embed-large</code> ($0.13/1M), or <code>embed-titan</code> ($0.10/1M)</li>
   </ul>
+
+  <hr class="hr">
+
+  <!-- API Reference -->
+  <div class="section-head">API reference</div>
+
+  <div style="margin-bottom:24px;">
+    <div style="font-weight:600; font-size:13px; color:var(--text); margin-bottom:8px;">
+      <span class="ep-method post" style="display:inline-block; margin-right:8px;">POST</span>
+      <code>/v1/chat/completions</code>
+    </div>
+    <pre class="hero" style="margin-top:8px;"><code><span class="c">$ curl</span> https://api.lxg2it.com/v1/chat/completions \\
+    -H <span class="s">"Authorization: Bearer $KEY"</span> \\
+    -H <span class="s">"Content-Type: application/json"</span> \\
+    -d <span class="s">'{
+      "model": "<span class="k">standard</span>",
+      "prefer": "<span class="k">coding</span>",
+      "messages": [{"role": "user", "content": "Hello"}]
+    }'</span></code></pre>
+    <div class="params" style="margin-top:12px;">
+      <div class="param-row">
+        <div class="param-name">model</div>
+        <div class="param-body">
+          <div class="param-desc">Capability tier or exact model name.</div>
+          <div class="param-values">${tierValues()}<span>·</span>or exact model ID</div>
+        </div>
+      </div>
+      <div class="param-row">
+        <div class="param-name">prefer</div>
+        <div class="param-body">
+          <div class="param-desc">Optimisation direction within the tier. Ignored when an exact model ID is used.</div>
+          <div class="param-values">cheap<span>·</span>fast<span>·</span>balanced<span>·</span>quality<span>·</span>coding</div>
+        </div>
+      </div>
+      <div class="param-row">
+        <div class="param-name">messages</div>
+        <div class="param-body">
+          <div class="param-desc">Standard OpenAI messages array. Streaming, tool calls, and vision inputs are all supported.</div>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--muted); margin-top:10px;">
+      Response headers <code>X-Model-Router-Model</code> and <code>X-Model-Router-Provider</code>
+      tell you exactly what ran.
+    </p>
+  </div>
+
+  <div style="margin-bottom:24px;">
+    <div style="font-weight:600; font-size:13px; color:var(--text); margin-bottom:8px;">
+      <span class="ep-method post" style="display:inline-block; margin-right:8px;">POST</span>
+      <code>/v1/embeddings</code>
+    </div>
+    <pre class="hero" style="margin-top:8px;"><code><span class="c">$ curl</span> https://api.lxg2it.com/v1/embeddings \\
+    -H <span class="s">"Authorization: Bearer $KEY"</span> \\
+    -H <span class="s">"Content-Type: application/json"</span> \\
+    -d <span class="s">'{
+      "model": "<span class="k">embed-small</span>",
+      "input": "The quick brown fox"
+    }'</span></code></pre>
+    <div class="params" style="margin-top:12px;">
+      <div class="param-row">
+        <div class="param-name">model</div>
+        <div class="param-body">
+          <div class="param-desc">Embedding tier alias or exact model ID.</div>
+          <div class="param-values">embed-small<span>·</span>embed-large<span>·</span>embed-titan<span>·</span>or exact model ID</div>
+        </div>
+      </div>
+      <div class="param-row">
+        <div class="param-name">input</div>
+        <div class="param-body">
+          <div class="param-desc">Text to embed. A string, or an array of strings for batch requests.</div>
+        </div>
+      </div>
+      <div class="param-row">
+        <div class="param-name">dimensions</div>
+        <div class="param-body">
+          <div class="param-desc">Optional. Truncate output dimensions. Supported by <code>embed-large</code> (up to 3072) and <code>embed-titan</code> (256, 512, or 1024).</div>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--muted); margin-top:10px;">
+      Returns a standard OpenAI embeddings response. Billed at input tokens only — no output token cost.
+    </p>
+  </div>
 
   <hr class="hr">
 
