@@ -336,3 +336,56 @@ export const PROVIDER_URLS: Record<ProviderName, string> = {
 
 // ─── Grok aliases ──────────────────────────────────────
 // These are also added to MODEL_ALIASES above but noted here for clarity.
+
+// ─── Embedding Models ──────────────────────────────────
+//
+// Embeddings are not part of the tier routing system — they have a separate
+// endpoint (/v1/embeddings) and are accessed by alias or exact model ID.
+//
+// Two tiers:
+//   embed-small → text-embedding-3-small ($0.02/1M input tokens, 1536 dims)
+//   embed-large → text-embedding-3-large ($0.13/1M input tokens, 3072 dims)
+//
+// inputPer1M is in USD. Cost is input-token-only (no output tokens).
+
+export interface EmbeddingModelConfig {
+  provider: ProviderName;
+  providerUrl: string;
+  apiKeyEnv: string;
+  inputPer1M: number;  // USD per 1M input tokens
+  dimensions: number;  // Default output dimensions
+  maxInputTokens: number;
+  description: string;
+}
+
+export const EMBEDDING_MODELS: Record<string, EmbeddingModelConfig> = {
+  'text-embedding-3-small': {
+    provider: 'openai',
+    providerUrl: 'https://api.openai.com/v1',
+    apiKeyEnv: 'OPENAI_API_KEY',
+    inputPer1M: 0.02,
+    dimensions: 1536,
+    maxInputTokens: 8191,
+    description: 'Fast, cheap general-purpose embeddings. Good for semantic search, clustering, and classification.',
+  },
+  'text-embedding-3-large': {
+    provider: 'openai',
+    providerUrl: 'https://api.openai.com/v1',
+    apiKeyEnv: 'OPENAI_API_KEY',
+    inputPer1M: 0.13,
+    dimensions: 3072,
+    maxInputTokens: 8191,
+    description: 'Highest accuracy embeddings. Best for retrieval, RAG pipelines, and precision-sensitive applications.',
+  },
+};
+
+// Aliases map friendly names to exact model IDs
+export const EMBEDDING_ALIASES: Record<string, string> = {
+  'embed-small':               'text-embedding-3-small',
+  'embed-large':               'text-embedding-3-large',
+  // Common alternative names people try
+  'text-embedding-small':      'text-embedding-3-small',
+  'text-embedding-large':      'text-embedding-3-large',
+};
+
+

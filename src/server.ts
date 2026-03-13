@@ -12,6 +12,7 @@ import { UserStore } from './auth/users.js';
 import { authMiddleware, sessionMiddleware } from './auth/middleware.js';
 import { RoutingEngine } from './routing/engine.js';
 import { createChatRouter } from './api/chat.js';
+import { createEmbeddingsRouter } from './api/embeddings.js';
 import { createModelsRouter, createUsageRouter } from './api/models.js';
 import { UsageStore } from './tracking/store.js';
 import { UsageLogger } from './tracking/logger.js';
@@ -209,6 +210,15 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   });
   app.use('/v1/chat/*', apiAuth);
   app.route('/v1/chat', chatRouter);
+
+  app.use('/v1/embeddings/*', apiAuth);
+
+  const embeddingsRouter = createEmbeddingsRouter({
+    usageStore,
+    userStore,
+    keyStore,
+  });
+  app.route('/v1/embeddings', embeddingsRouter);
 
   // Models catalog — intentionally public (no auth): it's discovery + marketing info.
   const modelsRouter = createModelsRouter({ usageStore });

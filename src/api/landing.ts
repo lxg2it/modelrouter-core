@@ -379,6 +379,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     <li>Auto-recharge via Stripe when balance is low</li>
     <li>Per-user daily spend limits (configurable)</li>
     <li>Streaming and tool calls supported</li>
+    <li>Embeddings via <code>POST /v1/embeddings</code> — same key, <code>embed-small</code> ($0.02/1M) or <code>embed-large</code> ($0.13/1M)</li>
   </ul>
 
   <hr class="hr">
@@ -401,6 +402,11 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       <td class="ep-method post">POST</td>
       <td class="ep-path" data-desc="Chat completions with routing">/v1/chat/completions<span class="ep-auth">auth</span></td>
       <td class="ep-desc">Chat completions with routing</td>
+    </tr>
+    <tr>
+      <td class="ep-method post">POST</td>
+      <td class="ep-path" data-desc="Generate embeddings (embed-small, embed-large)">/v1/embeddings<span class="ep-auth">auth</span></td>
+      <td class="ep-desc">Generate embeddings (embed-small, embed-large)</td>
     </tr>
     <tr>
       <td class="ep-method">GET</td>

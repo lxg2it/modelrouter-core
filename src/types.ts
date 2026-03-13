@@ -126,7 +126,7 @@ export interface ModelsListResponse {
 
 // ─── Tier Types ────────────────────────────────────────
 
-export type Tier = 'economy' | 'standard' | 'premium';
+export type Tier = 'economy' | 'standard' | 'premium' | 'embeddings';
 
 export type ProviderName = 'anthropic' | 'openai' | 'google' | 'grok' | 'bedrock';
 

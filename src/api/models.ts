@@ -12,7 +12,7 @@
 
 import { Hono } from 'hono';
 import type { AuthEnv } from '../auth/middleware.js';
-import { TIERS, MODEL_ALIASES, PROVIDER_META } from '../config.js';
+import { TIERS, MODEL_ALIASES, PROVIDER_META, EMBEDDING_MODELS, EMBEDDING_ALIASES } from '../config.js';
 import type { UsageStore } from '../tracking/store.js';
 import type { ModelsListResponse, ModelInfo, ModelConfig, ProviderName } from '../types.js';
 import { BENCHMARK_LABELS, BENCHMARK_WEIGHTS } from '../benchmarks.js';
@@ -230,6 +230,52 @@ function renderSelectionGrid(): string {
   </div>`;
 }
 
+/** Build the embeddings section listing available embedding models and aliases. */
+function renderEmbeddingsSection(): string {
+  const aliasRows = Object.entries(EMBEDDING_ALIASES)
+    .map(([alias, target]) =>
+      `<tr><td><code>${alias}</code></td><td><code>${target}</code></td></tr>`,
+    ).join('\n      ');
+
+  const modelRows = Object.entries(EMBEDDING_MODELS)
+    .map(([id, cfg]) => `
+      <tr>
+        <td><code>${id}</code></td>
+        <td>${cfg.dimensions.toLocaleString()}</td>
+        <td>${cfg.maxInputTokens.toLocaleString()}</td>
+        <td>$${cfg.inputPer1M.toFixed(2)}</td>
+        <td style="color:var(--muted); font-size:12px;">${cfg.description}</td>
+      </tr>`)
+    .join('');
+
+  return `
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Model ID</th><th>Dimensions</th><th>Max Input Tokens</th><th>Price / 1M tokens</th><th>Notes</th></tr></thead>
+      <tbody>${modelRows}
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:13px; color:var(--text); margin:16px 0 8px;">Aliases</p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Alias</th><th>Resolves to</th></tr></thead>
+      <tbody>
+      ${aliasRows}
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:13px; color:var(--text); margin-top:16px;">
+    Use <code>POST /v1/embeddings</code> with the same API key — no separate account needed.
+  </p>
+  <code style="display:block;background:var(--code-bg);padding:12px 14px;font-size:12px;line-height:1.8;">
+    curl https://api.lxg2it.com/v1/embeddings \\<br>
+    &nbsp;&nbsp;-H "Authorization: Bearer YOUR_API_KEY" \\<br>
+    &nbsp;&nbsp;-d '{"model":"embed-small","input":"Your text here"}'
+  </code>`;
+}
+
+
 /** Build the scoring methodology section. */
 function renderMethodology(): string {
   const benchmarkRows = (Object.keys(BENCHMARK_WEIGHTS) as (keyof typeof BENCHMARK_WEIGHTS)[])
@@ -333,6 +379,12 @@ function renderModelsHtml(models: ModelInfo[]): string {
     ${renderSelectionGrid()}
 
     ${tierSections}
+
+    <div class="section-head">Embeddings</div>
+    <p style="font-size:13px; color:var(--text); margin-bottom:16px;">
+      Generate embeddings using the same API key — no separate account or provider setup needed.
+    </p>
+    ${renderEmbeddingsSection()}
 
     <div class="section-head">Quality Scoring</div>
     ${renderMethodology()}
