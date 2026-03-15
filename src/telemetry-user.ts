@@ -32,6 +32,7 @@ export interface UserOtelConfig {
 export interface UserSpanData {
   decision: RouteDecision;
   keyId: string;
+  requestId: string;
   statusCode: number;
   promptTokens: number;
   completionTokens: number;
@@ -81,6 +82,7 @@ export async function exportUserSpan(
       strAttr('model_router.model', span.decision.model),
       strAttr('model_router.tier', span.decision.tier),
       strAttr('model_router.prefer', span.decision.prefer),
+      strAttr('model_router.request_id', span.requestId),
       strAttr('model_router.key_id', span.keyId),
       intAttr('http.status_code', span.statusCode),
       intAttr('model_router.prompt_tokens', span.promptTokens),

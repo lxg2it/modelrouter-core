@@ -86,6 +86,7 @@ export function startRequestSpan(
   decision: RouteDecision,
   keyId: string,
   headers?: Record<string, string>,
+  requestId?: string,
 ): RequestSpan {
   ensureMetrics();
 
@@ -107,6 +108,7 @@ export function startRequestSpan(
       'model_router.key_id': keyId,
       'model_router.estimated_cost_per_1m': decision.estimatedCostPer1M,
       ...(decision.pinned ? { 'model_router.pinned': true } : {}),
+      ...(requestId ? { 'model_router.request_id': requestId } : {}),
       ...(decision.isThinkingModel ? { 'model_router.thinking_model': true } : {}),
       ...(decision.autoTier ? {
         'model_router.auto_score': decision.autoTier.score,

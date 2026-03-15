@@ -248,6 +248,10 @@ describe('POST /v1/chat/completions — non-streaming', () => {
     expect(res.headers.get('X-Model-Router-Provider')).toBe('google');
     expect(res.headers.get('X-Model-Router-Model')).toBeTruthy();
     expect(res.headers.get('X-Model-Router-Tier')).toBeTruthy();
+    // Request ID for telemetry correlation
+    const requestId = res.headers.get('X-Request-Id');
+    expect(requestId).toBeTruthy();
+    expect(requestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     // Response body should NOT contain _router (non-standard field would pollute OpenAI compat)
     expect((body as any)._router).toBeUndefined();
     expect(googleAdapter.complete).toHaveBeenCalledOnce();

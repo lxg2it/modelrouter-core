@@ -21,6 +21,7 @@ import type { StripeService } from '../billing/stripe.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
 import { startRequestSpan, type RequestSpan } from '../telemetry-instruments.js';
 import { exportUserSpan, parseOtelHeaders, type UserOtelConfig, type UserSpanData } from '../telemetry-user.js';
+import { randomUUID } from 'node:crypto';
 
 interface ChatDeps {
   router: RoutingEngine;
@@ -81,16 +82,20 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
     }
 
     const startTime = Date.now();
+    const requestId = randomUUID();
+
+    // Set request ID header early — available on all response paths
+    c.header('X-Request-Id', requestId);
 
     // Start OTEL span (no-op when unconfigured)
     const reqHeaders: Record<string, string> = {};
     for (const [k, v] of Object.entries(c.req.header())) {
       if (typeof v === 'string') reqHeaders[k] = v;
     }
-    const rawSpan = startRequestSpan(decision, apiKey.id, reqHeaders);
+    const rawSpan = startRequestSpan(decision, apiKey.id, reqHeaders, requestId);
 
     // Wrap the server-level span to also export to the user's OTEL endpoint
-    const telemetrySpan = wrapSpanWithUserOtel(rawSpan, user, decision, apiKey.id, startTime);
+    const telemetrySpan = wrapSpanWithUserOtel(rawSpan, user, decision, apiKey.id, startTime, requestId);
 
     if (body.stream) {
       return handleStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user, userBlockedProviders, telemetrySpan);
@@ -789,6 +794,7 @@ function wrapSpanWithUserOtel(
   decision: RouteDecision,
   keyId: string,
   startTime: number,
+  requestId: string,
 ): RequestSpan {
   if (!user?.otelEndpoint) return inner;
 
@@ -796,12 +802,12 @@ function wrapSpanWithUserOtel(
     span: inner.span,
     end(params) {
       inner.end(params);
-      exportToUserOtel(user, decision, keyId, startTime, params);
+      exportToUserOtel(user, decision, keyId, startTime, requestId, params);
     },
     error(err) {
       inner.error(err);
       // Also send error as a span to user's endpoint
-      exportToUserOtel(user, decision, keyId, startTime, {
+      exportToUserOtel(user, decision, keyId, startTime, requestId, {
         statusCode: 500,
         promptTokens: 0,
         completionTokens: 0,
@@ -824,6 +830,7 @@ function exportToUserOtel(
   decision: RouteDecision,
   keyId: string,
   startTime: number,
+  requestId: string,
   params: {
     statusCode: number;
     promptTokens: number;
@@ -844,6 +851,7 @@ function exportToUserOtel(
   const spanData: UserSpanData = {
     decision,
     keyId,
+    requestId,
     statusCode: params.statusCode,
     promptTokens: params.promptTokens,
     completionTokens: params.completionTokens,
