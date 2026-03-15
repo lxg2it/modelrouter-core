@@ -15,6 +15,8 @@ import type { ModelConfig, Tier, ProviderName, ChatCompletionRequest, ChatMessag
 import { CircuitBreaker } from './circuit-breaker.js';
 import { getModelsForTier, resolveTier, findModelById } from './tiers.js';
 import { computeCodingScores } from '../benchmarks.js';
+import { classifyAutoTier } from './auto-tier.js';
+import type { AutoTierResult } from './auto-tier.js';
 
 export interface RouteDecision {
   provider: ProviderName;
@@ -26,6 +28,8 @@ export interface RouteDecision {
   isThinkingModel: boolean;
   /** True when the client explicitly pinned a specific model ID, bypassing tier routing. */
   pinned?: boolean;
+  /** Present when auto-routing was used. Contains the classification result for transparency. */
+  autoTier?: AutoTierResult;
 }
 
 export interface RoutingEngineConfig {
@@ -90,10 +94,33 @@ export class RoutingEngine {
     // ── tier resolution — same for all prefer values ──────────────
     // Tier establishes the capability floor: which pool of models to select from.
     // prefer operates within this pool to control the optimisation direction.
-    const tier = request.tier
-      ?? resolveTier(request.model)
-      ?? keyTier
-      ?? this.config.defaultTier;
+    //
+    // Auto-routing: when model is 'auto' or no tier can be resolved, classify
+    // the conversation context to infer the right tier. The full messages array
+    // is analysed — not just the last message — because "yes please" in an
+    // ongoing architecture discussion should route to premium, not economy.
+    let autoResult: AutoTierResult | undefined;
+    const isAutoRequested = request.model?.toLowerCase().trim() === 'auto';
+
+    let tier: Tier;
+    if (request.tier) {
+      // Explicit tier in request body — always honoured
+      tier = request.tier;
+    } else if (!isAutoRequested && resolveTier(request.model)) {
+      // Model alias resolved to a tier
+      tier = resolveTier(request.model)!;
+    } else if (isAutoRequested) {
+      // Explicit auto-routing: classify from conversation context
+      autoResult = classifyAutoTier(request.messages);
+      tier = autoResult.tier;
+    } else if (keyTier) {
+      // Key has a configured default tier
+      tier = keyTier;
+    } else {
+      // No model specified, or model specified but didn't resolve —
+      // fall through to the engine default tier.
+      tier = this.config.defaultTier;
+    }
 
     const candidates = this.filterByContext(
       this.filterBlocked(getModelsForTier(tier, this.config.availableProviders), blockedProviders),
@@ -107,7 +134,7 @@ export class RoutingEngine {
     if (available.length === 0) {
       // All context-compatible models in tier are circuit-broken.
       // Return the first candidate anyway — circuit breaker will allow a test request if cooldown has passed.
-      return this.toDecision(candidates[0], tier, undefined, prefer);
+      return this.toDecision(candidates[0], tier, undefined, prefer, autoResult);
     }
 
     const ratio = this.config.defaultOutputRatio;
@@ -118,7 +145,7 @@ export class RoutingEngine {
         b.quality - a.quality
         || (a.inputPer1M + a.outputPer1M * ratio) - (b.inputPer1M + b.outputPer1M * ratio),
       );
-      return this.toDecision(sorted[0], tier, undefined, prefer);
+      return this.toDecision(sorted[0], tier, undefined, prefer, autoResult);
     }
 
     if (prefer === 'coding') {
@@ -133,7 +160,7 @@ export class RoutingEngine {
         return scoreB - scoreA
           || (a.inputPer1M + a.outputPer1M * ratio) - (b.inputPer1M + b.outputPer1M * ratio);
       });
-      return this.toDecision(sorted[0], tier, undefined, prefer);
+      return this.toDecision(sorted[0], tier, undefined, prefer, autoResult);
     }
 
     if (prefer === 'fast') {
@@ -141,7 +168,7 @@ export class RoutingEngine {
       const sorted = [...available].sort((a, b) =>
         a.latencyMs - b.latencyMs || b.quality - a.quality,
       );
-      return this.toDecision(sorted[0], tier, undefined, prefer);
+      return this.toDecision(sorted[0], tier, undefined, prefer, autoResult);
     }
 
     // cheap / balanced: cheapest in tier, break ties by quality (descending)
@@ -153,7 +180,7 @@ export class RoutingEngine {
       a.estimatedCost - b.estimatedCost || b.config.quality - a.config.quality,
     );
 
-    return this.toDecision(scored[0].config, tier, scored[0].estimatedCost, prefer);
+    return this.toDecision(scored[0].config, tier, scored[0].estimatedCost, prefer, autoResult);
   }
 
   /**
@@ -266,6 +293,7 @@ export class RoutingEngine {
     tier: Tier,
     estimatedCost?: number,
     prefer: RouteDecision['prefer'] = 'balanced',
+    autoTier?: AutoTierResult,
   ): RouteDecision {
     const ratio = this.config.defaultOutputRatio;
     return {
@@ -275,6 +303,7 @@ export class RoutingEngine {
       estimatedCostPer1M: estimatedCost ?? (config.inputPer1M + config.outputPer1M * ratio),
       prefer,
       isThinkingModel: config.isThinkingModel ?? false,
+      ...(autoTier ? { autoTier } : {}),
     };
   }
 }

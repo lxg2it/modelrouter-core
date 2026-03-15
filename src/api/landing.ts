@@ -300,7 +300,9 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     <div class="param-row">
       <div class="param-name">model</div>
       <div class="param-body">
-        <div class="param-desc">The capability tier — sets the floor for what models are eligible.</div>
+        <div class="param-desc">The capability tier — sets the floor for what models are eligible.
+          <strong>auto</strong> analyses your conversation context (system prompt, code blocks, message history)
+          to pick the right tier automatically.</div>
         <div class="param-values">${tierValues()}</div>
       </div>
     </div>

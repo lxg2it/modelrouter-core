@@ -446,3 +446,13 @@ The V1 algorithm is intentionally simple. Its job is to:
 3. **Handle failures** — circuit breaker + failover chain
 
 The intelligence comes from data, not from clever initial heuristics.
+
+## Auto-Routing (Added 2026-03-15)
+
+In addition to explicit tier selection, the router supports `model: "auto"` which
+analyses the full conversation context to infer the right tier. This uses a
+deterministic heuristic scorer — not ML classification — across 7 signals
+(system prompt length, code blocks, technical keywords, conversation depth,
+tool usage, message complexity, reasoning markers).
+
+See **[auto-routing.md](./auto-routing.md)** for the complete design document.

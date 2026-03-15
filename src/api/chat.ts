@@ -170,6 +170,10 @@ async function handleNonStreaming(
     c.header('X-Model-Router-Model', decision.model);
     c.header('X-Model-Router-Tier', decision.tier);
     c.header('X-Model-Router-Latency-Ms', String(Date.now() - startTime));
+    if (decision.autoTier) {
+      c.header('X-Model-Router-Auto-Score', String(decision.autoTier.score));
+      c.header('X-Model-Router-Auto-Tier', decision.autoTier.tier);
+    }
 
     return c.json(result.response);
   } catch (err) {
@@ -356,6 +360,10 @@ async function handleStreaming(
   c.header('X-Model-Router-Provider', activeDecision.provider);
   c.header('X-Model-Router-Model', activeDecision.model);
   c.header('X-Model-Router-Tier', activeDecision.tier);
+  if (activeDecision.autoTier) {
+    c.header('X-Model-Router-Auto-Score', String(activeDecision.autoTier.score));
+    c.header('X-Model-Router-Auto-Tier', activeDecision.autoTier.tier);
+  }
 
   const streamCompletion = completion;
 
