@@ -20,6 +20,12 @@ export interface LogParams {
   latencyMs: number;
   streaming: boolean;
   statusCode: number;
+  /** Auto-routing complexity score (0–100). Present when auto-routing was used. */
+  autoScore?: number;
+  /** Auto-routing tier classification. Present when auto-routing was used. */
+  autoTier?: string;
+  /** JSON-serialised signal breakdown. Present when auto-routing was used. */
+  autoSignals?: string;
 }
 
 export class UsageLogger {
@@ -47,6 +53,9 @@ export class UsageLogger {
         streaming: params.streaming,
         statusCode: params.statusCode,
         createdAt: new Date().toISOString(),
+        autoScore: params.autoScore,
+        autoTier: params.autoTier,
+        autoSignals: params.autoSignals,
       });
     } catch (err) {
       // Never let logging failures break the request path

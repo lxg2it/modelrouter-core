@@ -272,7 +272,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   app.route('/', createLegalRouter());
 
   // Admin dashboard — session auth + admin email required
-  app.route('/admin', createAdminRouter({ db, adminEmails: config.adminEmails, userStore }));
+  app.route('/admin', createAdminRouter({ db, adminEmails: config.adminEmails, userStore, usageStore }));
 
   // Global error handler
   app.onError((err, c) => {

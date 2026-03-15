@@ -235,4 +235,10 @@ export interface UsageRecord {
   streaming: boolean;
   statusCode: number;
   createdAt: string;
+  /** Present when auto-routing was used. Complexity score 0–100. */
+  autoScore?: number;
+  /** Present when auto-routing was used. The tier chosen by the classifier. */
+  autoTier?: string;
+  /** Present when auto-routing was used. JSON-serialised signal breakdown. */
+  autoSignals?: string;
 }

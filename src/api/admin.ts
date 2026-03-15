@@ -21,6 +21,7 @@ import { randomBytes } from 'crypto';
 import Database from 'better-sqlite3';
 import type { AuthEnv } from '../auth/middleware.js';
 import type { UserStore } from '../auth/users.js';
+import type { UsageStore, AutoRoutingStats } from '../tracking/store.js';
 import { SHARED_HEAD, SHARED_CSS, pageFooter } from './shared-styles.js';
 
 // ─── Public interface ──────────────────────────────────
@@ -29,6 +30,7 @@ export interface AdminDeps {
   db: Database.Database;
   adminEmails: string[];
   userStore: UserStore;
+  usageStore?: UsageStore;
 }
 
 export interface AdminStats {
@@ -50,6 +52,7 @@ export interface AdminStats {
   };
   creditBalanceHeldCents: number;
   recentUsers: RecentUser[];
+  autoRouting?: AutoRoutingStats;
 }
 
 export interface DayStat {
@@ -108,7 +111,7 @@ export function createAdminRouter(deps: AdminDeps): Hono<AuthEnv> {
     if (!deps.adminEmails.includes(user.email.toLowerCase())) {
       return c.json({ error: { message: 'Forbidden', type: 'forbidden', code: 'forbidden' } }, 403);
     }
-    return c.json(queryAdminStats(deps.db));
+    return c.json(queryAdminStats(deps.db, deps.usageStore));
   });
 
   /**
@@ -182,7 +185,7 @@ export function createAdminRouter(deps: AdminDeps): Hono<AuthEnv> {
 
 // ─── Stats queries ─────────────────────────────────────
 
-function queryAdminStats(db: Database.Database): AdminStats {
+function queryAdminStats(db: Database.Database, usageStore?: UsageStore): AdminStats {
   // ── Users ──
   const totalUsers = (db.prepare(`SELECT COUNT(*) as n FROM users`).get() as { n: number }).n;
 
@@ -289,6 +292,7 @@ function queryAdminStats(db: Database.Database): AdminStats {
       creditBalanceCents: u.credit_balance_cents,
       createdAt: u.created_at,
     })),
+    autoRouting: usageStore?.getAutoRoutingStats(30),
   };
 }
 
@@ -459,6 +463,32 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
       </div>\`).join('');
     }
 
+    function autoRoutingSection(ar) {
+      if (!ar || ar.totalAutoRequests === 0) {
+        return \`<div class="section-head">Auto-Routing</div>
+          <p style="color:var(--muted);font-size:13px;padding:8px 0">No auto-routed requests yet. Clients can use <code>model: "auto"</code> to enable smart routing.</p>\`;
+      }
+      const pct = ar.totalRequests > 0 ? ((ar.totalAutoRequests / ar.totalRequests) * 100).toFixed(1) : '0';
+      const tiers = ar.tierDistribution.map(t => \`<tr>
+        <td>\${t.tier}</td>
+        <td>\${t.count.toLocaleString()}</td>
+        <td>\${t.avgScore}</td>
+        <td>\${cents(t.totalCostCents)}</td>
+      </tr>\`).join('');
+      return \`<div class="section-head">Auto-Routing (last 30 days)</div>
+        <div class="metric-grid">
+          \${metric('Auto Requests', '<span class="accent">' + ar.totalAutoRequests.toLocaleString() + '</span>', pct + '% of all requests')}
+          \${metric('Avg Score', ar.avgScore !== null ? '<span class="green">' + ar.avgScore + '</span>' : '—', 'range: ' + (ar.minScore ?? '—') + ' – ' + (ar.maxScore ?? '—'))}
+        </div>
+        <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Tier</th><th>Requests</th><th>Avg Score</th><th>Cost</th></tr></thead>
+          <tbody>\${tiers}</tbody>
+        </table>
+        </div>\`;
+    }
+
+
     function render(s, token) {
       root.innerHTML = \`
         <div class="metric-grid">
@@ -475,6 +505,8 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
           <tbody>\${modelRows(s.requests.topModels)}</tbody>
         </table>
         </div>
+
+        \${autoRoutingSection(s.autoRouting)}
 
         <div class="section-head">Recent Users</div>
         <div class="user-list">\${userCards(s.recentUsers)}</div>

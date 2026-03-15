@@ -22,8 +22,9 @@ export class UsageStore {
       INSERT INTO usage_log (
         key_id, provider, model, tier,
         prompt_tokens, completion_tokens, total_tokens,
-        cost_cents, latency_ms, streaming, status_code, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        cost_cents, latency_ms, streaming, status_code,
+        auto_score, auto_tier, auto_signals, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `);
   }
 
@@ -49,6 +50,21 @@ export class UsageStore {
       CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_log(created_at);
       CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage_log(provider);
     `);
+
+    // ── Migration: add auto-routing columns to existing DBs ──
+    // SQLite ADD COLUMN is idempotent-safe via try/catch.
+    const autoColumns = [
+      ['auto_score', 'INTEGER'],
+      ['auto_tier', 'TEXT'],
+      ['auto_signals', 'TEXT'],
+    ] as const;
+    for (const [col, type] of autoColumns) {
+      try {
+        this.db.exec(`ALTER TABLE usage_log ADD COLUMN ${col} ${type}`);
+      } catch {
+        // Column already exists — expected on non-first run
+      }
+    }
   }
 
   /**
@@ -67,6 +83,9 @@ export class UsageStore {
       usage.latencyMs,
       usage.streaming ? 1 : 0,
       usage.statusCode,
+      usage.autoScore ?? null,
+      usage.autoTier ?? null,
+      usage.autoSignals ?? null,
     );
   }
 
@@ -139,6 +158,64 @@ export class UsageStore {
   /**
    * Get the average output ratio for a key (for routing optimization).
    */
+  /**
+   * Get auto-routing analytics — tier distribution, average score, request count.
+   * Only includes requests where auto-routing was used (auto_tier IS NOT NULL).
+   */
+  getAutoRoutingStats(sinceDays: number = 30): AutoRoutingStats {
+    const summary = this.db.prepare(`
+      SELECT
+        COUNT(*) as total_auto_requests,
+        AVG(auto_score) as avg_score,
+        MIN(auto_score) as min_score,
+        MAX(auto_score) as max_score
+      FROM usage_log
+      WHERE auto_tier IS NOT NULL AND created_at > datetime('now', ?)
+    `).get(`-${sinceDays} days`) as {
+      total_auto_requests: number;
+      avg_score: number | null;
+      min_score: number | null;
+      max_score: number | null;
+    };
+
+    const tierDist = this.db.prepare(`
+      SELECT
+        auto_tier as tier,
+        COUNT(*) as count,
+        AVG(auto_score) as avg_score,
+        SUM(cost_cents) as total_cost_cents
+      FROM usage_log
+      WHERE auto_tier IS NOT NULL AND created_at > datetime('now', ?)
+      GROUP BY auto_tier
+      ORDER BY count DESC
+    `).all(`-${sinceDays} days`) as {
+      tier: string;
+      count: number;
+      avg_score: number;
+      total_cost_cents: number;
+    }[];
+
+    const totalRequests = (this.db.prepare(`
+      SELECT COUNT(*) as n FROM usage_log
+      WHERE created_at > datetime('now', ?)
+    `).get(`-${sinceDays} days`) as { n: number }).n;
+
+    return {
+      totalAutoRequests: summary.total_auto_requests ?? 0,
+      totalRequests,
+      avgScore: summary.avg_score !== null ? Math.round(summary.avg_score * 10) / 10 : null,
+      minScore: summary.min_score ?? null,
+      maxScore: summary.max_score ?? null,
+      tierDistribution: tierDist.map((t) => ({
+        tier: t.tier,
+        count: t.count,
+        avgScore: Math.round(t.avg_score * 10) / 10,
+        totalCostCents: t.total_cost_cents ?? 0,
+      })),
+    };
+  }
+
+
   getOutputRatio(keyId: string, sinceDays: number = 30): number | null {
     const row = this.db.prepare(`
       SELECT
@@ -184,6 +261,21 @@ interface DbDailyRow {
   request_count: number;
   total_tokens: number | null;
   cost_cents: number | null;
+}
+
+
+export interface AutoRoutingStats {
+  totalAutoRequests: number;
+  totalRequests: number;
+  avgScore: number | null;
+  minScore: number | null;
+  maxScore: number | null;
+  tierDistribution: Array<{
+    tier: string;
+    count: number;
+    avgScore: number;
+    totalCostCents: number;
+  }>;
 }
 
 

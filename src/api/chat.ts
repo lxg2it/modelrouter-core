@@ -149,6 +149,7 @@ async function handleNonStreaming(
       latencyMs: Date.now() - startTime,
       streaming: false,
       statusCode: 200,
+      ...autoLogFields(decision),
     });
 
     // Satbill deduction — fire-and-forget. A billing failure must not fail the user's request.
@@ -210,6 +211,7 @@ async function handleNonStreaming(
             latencyMs: Date.now() - startTime,
             streaming: false,
             statusCode: 200,
+      ...autoLogFields(decision),
           });
 
           // Satbill deduction for fallback path
@@ -254,6 +256,7 @@ async function handleNonStreaming(
       latencyMs: Date.now() - startTime,
       streaming: false,
       statusCode: 502,
+      ...autoLogFields(decision),
     });
 
     return c.json({
@@ -343,6 +346,7 @@ async function handleStreaming(
       latencyMs: Date.now() - startTime,
       streaming: true,
       statusCode: 502,
+      ...autoLogFields(activeDecision),
     });
     return c.json({
       error: {
@@ -399,6 +403,7 @@ async function handleStreaming(
           latencyMs: Date.now() - startTime,
           streaming: true,
           statusCode: 200,
+      ...autoLogFields(activeDecision),
         });
 
         // Satbill deduction for streaming path
@@ -427,6 +432,7 @@ async function handleStreaming(
           latencyMs: Date.now() - startTime,
           streaming: true,
           statusCode: 200,
+      ...autoLogFields(activeDecision),
         });
       }
     } catch (err) {
@@ -457,6 +463,7 @@ async function handleStreaming(
         latencyMs: Date.now() - startTime,
         streaming: true,
         statusCode: 502,
+      ...autoLogFields(activeDecision),
       });
     }
   });
@@ -672,6 +679,22 @@ function applyThinkingTokenFloor(
     `Set max_tokens >= ${MIN_THINKING_OUTPUT_TOKENS} to silence this warning.`,
   );
   return { ...request, max_tokens: MIN_THINKING_OUTPUT_TOKENS };
+}
+
+
+
+/**
+ * Extract auto-routing fields from a route decision for usage logging.
+ * Returns an object with autoScore, autoTier, autoSignals if auto-routing was used,
+ * or an empty object otherwise.
+ */
+function autoLogFields(decision: RouteDecision): { autoScore?: number; autoTier?: string; autoSignals?: string } {
+  if (!decision.autoTier) return {};
+  return {
+    autoScore: decision.autoTier.score,
+    autoTier: decision.autoTier.tier,
+    autoSignals: JSON.stringify(decision.autoTier.signals),
+  };
 }
 
 
