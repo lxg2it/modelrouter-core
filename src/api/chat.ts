@@ -19,6 +19,7 @@ import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../co
 import type { ApiKey, User, ChatCompletionRequest, ProviderName } from '../types.js';
 import type { StripeService } from '../billing/stripe.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
+import { startRequestSpan, type RequestSpan } from '../telemetry-instruments.js';
 
 interface ChatDeps {
   router: RoutingEngine;
@@ -80,10 +81,17 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
 
     const startTime = Date.now();
 
+    // Start OTEL span (no-op when unconfigured)
+    const reqHeaders: Record<string, string> = {};
+    for (const [k, v] of Object.entries(c.req.header())) {
+      if (typeof v === 'string') reqHeaders[k] = v;
+    }
+    const telemetrySpan = startRequestSpan(decision, apiKey.id, reqHeaders);
+
     if (body.stream) {
-      return handleStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user, userBlockedProviders);
+      return handleStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user, userBlockedProviders, telemetrySpan);
     } else {
-      return handleNonStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user, userBlockedProviders);
+      return handleNonStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user, userBlockedProviders, telemetrySpan);
     }
   });
 
@@ -100,6 +108,7 @@ async function handleNonStreaming(
   satbillAccountId: string | undefined,
   user?: User,
   blockedProviders?: Set<string>,
+  telemetrySpan?: RequestSpan,
 ) {
   const keyId = apiKey.id;
   const adapter = deps.providers.get(decision.provider);
@@ -176,6 +185,15 @@ async function handleNonStreaming(
       c.header('X-Model-Router-Auto-Tier', decision.autoTier.tier);
     }
 
+    telemetrySpan?.end({
+      statusCode: 200,
+      promptTokens: result.usage.prompt_tokens,
+      completionTokens: result.usage.completion_tokens,
+      costCents,
+      latencyMs: Date.now() - startTime,
+      streaming: false,
+    });
+
     return c.json(result.response);
   } catch (err) {
     deps.router.recordFailure(decision.provider, decision.model);
@@ -232,6 +250,16 @@ async function handleNonStreaming(
           c.header('X-Model-Router-Tier', fallback.tier);
           c.header('X-Model-Router-Latency-Ms', String(Date.now() - startTime));
 
+          telemetrySpan?.end({
+            statusCode: 200,
+            promptTokens: result.usage.prompt_tokens,
+            completionTokens: result.usage.completion_tokens,
+            costCents,
+            latencyMs: Date.now() - startTime,
+            streaming: false,
+            failoverFrom: decision.provider,
+          });
+
           return c.json(result.response);
         } catch (fallbackErr) {
           deps.router.recordFailure(fallback.provider, fallback.model);
@@ -259,6 +287,15 @@ async function handleNonStreaming(
       ...autoLogFields(decision),
     });
 
+    telemetrySpan?.end({
+      statusCode: 502,
+      promptTokens: 0,
+      completionTokens: 0,
+      costCents: 0,
+      latencyMs: Date.now() - startTime,
+      streaming: false,
+    });
+
     return c.json({
       error: {
         message: 'All providers failed for this request.',
@@ -279,6 +316,7 @@ async function handleStreaming(
   satbillAccountId: string | undefined,
   user?: User,
   blockedProviders?: Set<string>,
+  telemetrySpan?: RequestSpan,
 ) {
   const keyId = apiKey.id;
 
@@ -335,6 +373,14 @@ async function handleStreaming(
   // All providers failed before sending any data — refund the reservation and return a clean JSON error.
   if (!completion) {
     fullRefundReservation(deps, reservedCents, user);
+    telemetrySpan?.end({
+      statusCode: 502,
+      promptTokens: 0,
+      completionTokens: 0,
+      costCents: 0,
+      latencyMs: Date.now() - startTime,
+      streaming: true,
+    });
     deps.logger.log({
       keyId,
       provider: decision.provider,
@@ -418,9 +464,27 @@ async function handleStreaming(
 
         // Settle reservation to actual cost for streaming path
         settleStripeCredits(deps, apiKey, reservedCents, costCents, user);
+
+        telemetrySpan?.end({
+          statusCode: 200,
+          promptTokens: usage.prompt_tokens,
+          completionTokens: usage.completion_tokens,
+          costCents,
+          latencyMs: Date.now() - startTime,
+          streaming: true,
+          ...(activeDecision !== decision ? { failoverFrom: decision.provider } : {}),
+        });
       } catch {
         // finalize() failed — we don't know actual cost, refund the full reservation
         fullRefundReservation(deps, reservedCents, user);
+        telemetrySpan?.end({
+          statusCode: 200,
+          promptTokens: 0,
+          completionTokens: 0,
+          costCents: 0,
+          latencyMs: Date.now() - startTime,
+          streaming: true,
+        });
         deps.logger.log({
           keyId,
           provider: activeDecision.provider,
@@ -441,6 +505,7 @@ async function handleStreaming(
       // Refund the reservation since we have no usage data.
       deps.router.recordFailure(activeDecision.provider, activeDecision.model);
       fullRefundReservation(deps, reservedCents, user);
+      telemetrySpan?.error(err);
 
       const errorChunk = {
         error: {

@@ -3,7 +3,12 @@
  */
 
 import { serve } from '@hono/node-server';
+import { initTelemetry, shutdownTelemetry, isTelemetryEnabled } from './telemetry.js';
 import { createApp } from './server.js';
+
+// Initialise OTEL before creating the app — the SDK must be active
+// before any tracer/meter calls are made.
+initTelemetry();
 
 const { app, ctx } = createApp();
 
@@ -18,6 +23,7 @@ console.log(`
   Providers: ${providers.length > 0 ? providers.join(', ') : '(none configured)'}
   Default:   ${ctx.config.defaultTier} tier
   Log level: ${ctx.config.logLevel}
+  Telemetry: ${isTelemetryEnabled() ? `enabled → ${process.env.OTEL_EXPORTER_OTLP_ENDPOINT}` : 'disabled (set OTEL_EXPORTER_OTLP_ENDPOINT to enable)'}
 
   Endpoints:
     POST /v1/chat/completions
@@ -39,14 +45,12 @@ serve({
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
+async function shutdown() {
   console.log('Shutting down...');
+  await shutdownTelemetry();
   ctx.db.close();
   process.exit(0);
-});
+}
 
-process.on('SIGINT', () => {
-  console.log('Shutting down...');
-  ctx.db.close();
-  process.exit(0);
-});
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

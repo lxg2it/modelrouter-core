@@ -7,6 +7,7 @@ import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
 import Database from 'better-sqlite3';
 import { loadConfig, type Config } from './config.js';
+import { isTelemetryEnabled } from './telemetry.js';
 import { KeyStore } from './auth/keys.js';
 import { UserStore } from './auth/users.js';
 import { authMiddleware, sessionMiddleware } from './auth/middleware.js';
@@ -160,6 +161,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
         satbill: billing ? 'enabled' : 'disabled',
         stripe: stripeService ? 'enabled' : 'disabled',
       },
+      telemetry: isTelemetryEnabled() ? 'enabled' : 'disabled',
     };
 
     const accept = c.req.header('Accept') ?? '';
