@@ -20,6 +20,7 @@ import type { ApiKey, User, ChatCompletionRequest, ProviderName } from '../types
 import type { StripeService } from '../billing/stripe.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
 import { startRequestSpan, type RequestSpan } from '../telemetry-instruments.js';
+import { exportUserSpan, parseOtelHeaders, type UserOtelConfig, type UserSpanData } from '../telemetry-user.js';
 
 interface ChatDeps {
   router: RoutingEngine;
@@ -86,7 +87,10 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
     for (const [k, v] of Object.entries(c.req.header())) {
       if (typeof v === 'string') reqHeaders[k] = v;
     }
-    const telemetrySpan = startRequestSpan(decision, apiKey.id, reqHeaders);
+    const rawSpan = startRequestSpan(decision, apiKey.id, reqHeaders);
+
+    // Wrap the server-level span to also export to the user's OTEL endpoint
+    const telemetrySpan = wrapSpanWithUserOtel(rawSpan, user, decision, apiKey.id, startTime);
 
     if (body.stream) {
       return handleStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user, userBlockedProviders, telemetrySpan);
@@ -770,4 +774,87 @@ function findModelConfig(provider: ProviderName, model: string, tier: string) {
   const tierConfig = TIERS[tier];
   if (!tierConfig) return null;
   return tierConfig.models.find((m) => m.provider === provider && m.model === model) ?? null;
+}
+
+
+
+
+/**
+ * Wrap a server-level RequestSpan so that .end() and .error() also fire
+ * the per-user OTLP export. This avoids touching every span-end callsite.
+ */
+function wrapSpanWithUserOtel(
+  inner: RequestSpan,
+  user: User | undefined,
+  decision: RouteDecision,
+  keyId: string,
+  startTime: number,
+): RequestSpan {
+  if (!user?.otelEndpoint) return inner;
+
+  return {
+    span: inner.span,
+    end(params) {
+      inner.end(params);
+      exportToUserOtel(user, decision, keyId, startTime, params);
+    },
+    error(err) {
+      inner.error(err);
+      // Also send error as a span to user's endpoint
+      exportToUserOtel(user, decision, keyId, startTime, {
+        statusCode: 500,
+        promptTokens: 0,
+        completionTokens: 0,
+        costCents: 0,
+        latencyMs: Date.now() - startTime,
+        streaming: false,
+      });
+    },
+  };
+}
+
+/**
+ * Fire-and-forget export of span data to a user's personal OTLP endpoint.
+ *
+ * Called alongside the server-level telemetrySpan.end() at each completion point.
+ * Does nothing if the user has no OTEL config.
+ */
+function exportToUserOtel(
+  user: User | undefined,
+  decision: RouteDecision,
+  keyId: string,
+  startTime: number,
+  params: {
+    statusCode: number;
+    promptTokens: number;
+    completionTokens: number;
+    costCents: number;
+    latencyMs: number;
+    streaming: boolean;
+    failoverFrom?: string;
+  },
+): void {
+  if (!user?.otelEndpoint) return;
+
+  const config: UserOtelConfig = {
+    endpoint: user.otelEndpoint,
+    headers: parseOtelHeaders(user.otelHeaders),
+  };
+
+  const spanData: UserSpanData = {
+    decision,
+    keyId,
+    statusCode: params.statusCode,
+    promptTokens: params.promptTokens,
+    completionTokens: params.completionTokens,
+    costCents: params.costCents,
+    latencyMs: params.latencyMs,
+    streaming: params.streaming,
+    failoverFrom: params.failoverFrom,
+    startTimeMs: startTime,
+    endTimeMs: startTime + params.latencyMs,
+  };
+
+  // Fire-and-forget — never blocks the response
+  exportUserSpan(config, spanData).catch(() => {});
 }

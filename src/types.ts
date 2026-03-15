@@ -183,6 +183,18 @@ export interface User {
    * When set, overrides the system-level MAX_DAILY_SPEND_CENTS for this user.
    * This is a user-managed safety cap — use it to prevent accidental overspend.
    */
+  /**
+   * User-configured OTLP endpoint for personal telemetry export.
+   * When set, routing decisions and metrics are sent to this endpoint.
+   * e.g. "https://api.honeycomb.io" or "https://otel.example.com"
+   */
+  otelEndpoint?: string;
+  /**
+   * Headers for the user's OTLP endpoint, in standard OTEL format: "key=value,key2=value2".
+   * Typically used for auth tokens (e.g. "x-honeycomb-team=abc123").
+   */
+  otelHeaders?: string;
+
   dailySpendLimitCents: number;
 }
 

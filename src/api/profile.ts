@@ -507,6 +507,26 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
         </div>
         <div id="spendLimitMsg" class="text-sm mt-2 hidden"></div>
       </div>
+
+      <!-- Telemetry export -->
+      <div style="border-top:1px solid var(--border); padding-top:16px; margin-top:16px;">
+        <label style="font-size:13px; font-weight:600; color:var(--text); display:block; margin-bottom:4px;">Telemetry export (OpenTelemetry)</label>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">Send request traces to your own observability platform. Supports any OTLP/HTTP backend (Axiom, Grafana Cloud, Honeycomb, Datadog, etc.).</p>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">OTLP Endpoint</label>
+          <input type="url" id="otelEndpointInput" placeholder="https://api.honeycomb.io" style="width:100%; max-width:400px;" />
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px; color:var(--muted); display:block; margin-bottom:4px;">Headers <span style="font-weight:normal;">(key=value, comma-separated)</span></label>
+          <input type="text" id="otelHeadersInput" placeholder="x-honeycomb-team=your-api-key" style="width:100%; max-width:400px;" />
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-secondary" onclick="saveOtelConfig()">Save</button>
+          <button class="btn btn-secondary" onclick="clearOtelConfig()">Disable</button>
+        </div>
+        <div id="otelMsg" class="text-sm mt-2 hidden"></div>
+        <div id="otelStatus" style="font-size:12px; margin-top:8px;"></div>
+      </div>
     </div>
 
   </div> <!-- /dashboard -->
@@ -614,6 +634,18 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       limitEl.value = p.dailySpendLimitCents > 0
         ? String(Math.round(p.dailySpendLimitCents / 100))
         : '';
+    }
+
+    // Populate OTEL config
+    const otelEndpointEl = document.getElementById('otelEndpointInput');
+    const otelStatusEl = document.getElementById('otelStatus');
+    if (otelEndpointEl && p.otelEndpoint) {
+      otelEndpointEl.value = p.otelEndpoint;
+    }
+    if (otelStatusEl) {
+      otelStatusEl.innerHTML = p.otelConfigured
+        ? '<span style="color:#4ade80;">● Telemetry active</span> — traces are being sent to your endpoint'
+        : '<span style="color:var(--muted);">○ Not configured</span>';
     }
 
     renderProviderToggles(p.blockedProviders || []);
@@ -1391,6 +1423,70 @@ async function loadAutoRecharge() {
       msgEl.classList.remove('hidden');
     }
   }
+
+
+  async function saveOtelConfig() {
+    const msgEl = document.getElementById('otelMsg');
+    msgEl.classList.add('hidden');
+    const endpoint = document.getElementById('otelEndpointInput').value.trim();
+    const headers = document.getElementById('otelHeadersInput').value.trim();
+    if (!endpoint) {
+      msgEl.textContent = 'Please enter an OTLP endpoint URL.';
+      msgEl.className = 'text-sm mt-2 error-msg';
+      msgEl.classList.remove('hidden');
+      return;
+    }
+    const payload = { otelEndpoint: endpoint };
+    if (headers) payload.otelHeaders = headers;
+    const res = await apiFetch('PATCH', '/v1/account/settings', payload);
+    const data = await res.json();
+    if (res.ok) {
+      if (profileData) {
+        profileData.otelEndpoint = endpoint;
+        profileData.otelConfigured = true;
+      }
+      const statusEl = document.getElementById('otelStatus');
+      if (statusEl) {
+        statusEl.innerHTML = '<span style="color:#4ade80;">● Telemetry active</span> — traces are being sent to your endpoint';
+      }
+      msgEl.textContent = data.message || 'Telemetry export enabled.';
+      msgEl.className = 'text-sm mt-2 success-msg';
+      msgEl.classList.remove('hidden');
+      // Clear the headers input after save (security — don't leave secrets visible)
+      document.getElementById('otelHeadersInput').value = '';
+    } else {
+      msgEl.textContent = data.error?.message || 'Failed to save telemetry config';
+      msgEl.className = 'text-sm mt-2 error-msg';
+      msgEl.classList.remove('hidden');
+    }
+  }
+
+  async function clearOtelConfig() {
+    const msgEl = document.getElementById('otelMsg');
+    msgEl.classList.add('hidden');
+    const res = await apiFetch('PATCH', '/v1/account/settings', { otelEndpoint: null });
+    const data = await res.json();
+    if (res.ok) {
+      document.getElementById('otelEndpointInput').value = '';
+      document.getElementById('otelHeadersInput').value = '';
+      if (profileData) {
+        profileData.otelEndpoint = null;
+        profileData.otelConfigured = false;
+      }
+      const statusEl = document.getElementById('otelStatus');
+      if (statusEl) {
+        statusEl.innerHTML = '<span style="color:var(--muted);">○ Not configured</span>';
+      }
+      msgEl.textContent = 'Telemetry export disabled.';
+      msgEl.className = 'text-sm mt-2 success-msg';
+      msgEl.classList.remove('hidden');
+    } else {
+      msgEl.textContent = data.error?.message || 'Failed to disable telemetry';
+      msgEl.className = 'text-sm mt-2 error-msg';
+      msgEl.classList.remove('hidden');
+    }
+  }
+
 
   // ─── Helpers ──────────────────────────────────────────────
 

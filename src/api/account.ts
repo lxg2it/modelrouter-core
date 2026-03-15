@@ -69,6 +69,8 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
       stripeEnabled: !!user.stripeCustomerId,
       blockedProviders: user.blockedProviders,
       dailySpendLimitCents: user.dailySpendLimitCents,
+      otelEndpoint: user.otelEndpoint ?? null,
+      otelConfigured: !!user.otelEndpoint,
       keyCount: keys.length,
       activeKeyCount: keys.filter((k) => k.active).length,
       usage: {
@@ -219,45 +221,87 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
 
   // ─── PATCH /v1/account/settings ───────────────────────────
   //
-  // Update user-configurable account settings. Currently supports:
+  // Update user-configurable account settings. Supports:
   //   dailySpendLimitCents — personal daily spend cap. 0 = use system default.
+  //   otelEndpoint — OTLP HTTP endpoint for personal telemetry export.
+  //   otelHeaders — headers for the OTLP endpoint (e.g. auth tokens).
   //
-  // Body: { dailySpendLimitCents: number }
-  //   - Pass 0 to clear any user-set limit (system default applies).
-  //   - Any positive integer sets a per-user daily spend cap (in cents).
-  //   - Maximum allowed value: 50000 ($500.00) to prevent accidental runaway.
+  // Body fields are independently optional — send only what you want to change.
   //
   router.patch('/settings', async (c: Context<SessionEnv>) => {
     const user = c.get('user');
 
-    let body: { dailySpendLimitCents?: unknown };
+    let body: { dailySpendLimitCents?: unknown; otelEndpoint?: unknown; otelHeaders?: unknown };
     try {
-      body = await c.req.json() as { dailySpendLimitCents?: unknown };
+      body = await c.req.json() as typeof body;
     } catch {
       return c.json({ error: { message: 'Invalid JSON body', code: 'invalid_request' } }, 400);
     }
 
-    if (!('dailySpendLimitCents' in body)) {
+    const hasSpendLimit = 'dailySpendLimitCents' in body;
+    const hasOtel = 'otelEndpoint' in body;
+
+    if (!hasSpendLimit && !hasOtel) {
       return c.json({ error: { message: 'No settings to update', code: 'invalid_request' } }, 400);
     }
 
-    const raw = body.dailySpendLimitCents;
-    if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 0 || raw > 50000) {
-      return c.json({
-        error: {
-          message: 'dailySpendLimitCents must be a non-negative integer (0–50000)',
-          code: 'invalid_request',
-        },
-      }, 400);
+    const messages: string[] = [];
+
+    // ── Daily spend limit ──
+    if (hasSpendLimit) {
+      const raw = body.dailySpendLimitCents;
+      if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 0 || raw > 50000) {
+        return c.json({
+          error: {
+            message: 'dailySpendLimitCents must be a non-negative integer (0–50000)',
+            code: 'invalid_request',
+          },
+        }, 400);
+      }
+      userStore.setDailySpendLimit(user.id, raw);
+      messages.push(
+        raw === 0
+          ? 'Daily spend limit cleared. System default applies.'
+          : `Daily spend limit set to $${(raw / 100).toFixed(2)}.`,
+      );
     }
 
-    userStore.setDailySpendLimit(user.id, raw);
+    // ── OTEL endpoint ──
+    if (hasOtel) {
+      const endpoint = body.otelEndpoint;
+      const headers = body.otelHeaders;
 
+      // null or empty string clears the config
+      if (endpoint === null || endpoint === '') {
+        userStore.setOtelConfig(user.id, null, null);
+        messages.push('Telemetry export disabled.');
+      } else if (typeof endpoint === 'string') {
+        // Basic URL validation
+        try {
+          new URL(endpoint);
+        } catch {
+          return c.json({
+            error: { message: 'otelEndpoint must be a valid URL', code: 'invalid_request' },
+          }, 400);
+        }
+
+        const headersStr = typeof headers === 'string' ? headers : null;
+        userStore.setOtelConfig(user.id, endpoint, headersStr);
+        messages.push(`Telemetry export enabled → ${endpoint}`);
+      } else {
+        return c.json({
+          error: { message: 'otelEndpoint must be a string URL or null', code: 'invalid_request' },
+        }, 400);
+      }
+    }
+
+    // Return current state
+    const updated = userStore.findById(user.id)!;
     return c.json({
-      dailySpendLimitCents: raw,
-      message: raw === 0
-        ? 'Daily spend limit cleared. System default applies.'
-        : `Daily spend limit set to $${(raw / 100).toFixed(2)}.`,
+      dailySpendLimitCents: updated.dailySpendLimitCents,
+      otelEndpoint: updated.otelEndpoint ?? null,
+      otelHeaders: updated.otelHeaders ? '••••••' : null,
+      message: messages.join(' '),
     });
   });
 

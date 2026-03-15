@@ -83,6 +83,9 @@ function mockUserStore(overrides: Partial<UserStore> = {}): UserStore {
   return {
     updateAccountName: vi.fn(),
     setBlockedProviders: vi.fn(),
+    setDailySpendLimit: vi.fn(),
+    setOtelConfig: vi.fn(),
+    findById: vi.fn().mockReturnValue(fakeUser()),
     ...overrides,
   } as unknown as UserStore;
 }
@@ -387,5 +390,96 @@ describe('PATCH /v1/account/providers', () => {
     });
 
     expect(res.status).toBe(400);
+  });
+});
+
+describe('PATCH /v1/account/settings — OTEL config', () => {
+  it('saves OTEL endpoint and headers', async () => {
+    const user = fakeUser();
+    const userStore = mockUserStore({
+      findById: vi.fn().mockReturnValue({ ...user, otelEndpoint: 'https://api.honeycomb.io', otelHeaders: 'x-key=abc' }),
+    });
+    const app = buildApp(user, { userStore });
+
+    const res = await app.request('/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ otelEndpoint: 'https://api.honeycomb.io', otelHeaders: 'x-key=abc' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.otelEndpoint).toBe('https://api.honeycomb.io');
+    // Headers are masked in response
+    expect(body.otelHeaders).toBe('••••••');
+    expect(userStore.setOtelConfig).toHaveBeenCalledWith(user.id, 'https://api.honeycomb.io', 'x-key=abc');
+  });
+
+  it('clears OTEL config with null endpoint', async () => {
+    const user = fakeUser({ otelEndpoint: 'https://old.endpoint.com' });
+    const userStore = mockUserStore({
+      findById: vi.fn().mockReturnValue({ ...user, otelEndpoint: undefined }),
+    });
+    const app = buildApp(user, { userStore });
+
+    const res = await app.request('/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ otelEndpoint: null }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.otelEndpoint).toBeNull();
+    expect(userStore.setOtelConfig).toHaveBeenCalledWith(user.id, null, null);
+  });
+
+  it('clears OTEL config with empty string endpoint', async () => {
+    const user = fakeUser();
+    const userStore = mockUserStore({
+      findById: vi.fn().mockReturnValue({ ...user, otelEndpoint: undefined }),
+    });
+    const app = buildApp(user, { userStore });
+
+    const res = await app.request('/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ otelEndpoint: '' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(userStore.setOtelConfig).toHaveBeenCalledWith(user.id, null, null);
+  });
+
+  it('rejects invalid URL', async () => {
+    const app = buildApp(fakeUser());
+
+    const res = await app.request('/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ otelEndpoint: 'not-a-url' }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as any;
+    expect(body.error.message).toContain('valid URL');
+  });
+
+  it('allows setting OTEL and spend limit in same request', async () => {
+    const user = fakeUser();
+    const userStore = mockUserStore({
+      findById: vi.fn().mockReturnValue({ ...user, otelEndpoint: 'https://example.com', dailySpendLimitCents: 5000 }),
+    });
+    const app = buildApp(user, { userStore });
+
+    const res = await app.request('/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ otelEndpoint: 'https://example.com', dailySpendLimitCents: 5000 }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(userStore.setOtelConfig).toHaveBeenCalled();
+    expect(userStore.setDailySpendLimit).toHaveBeenCalledWith(user.id, 5000);
   });
 });

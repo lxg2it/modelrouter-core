@@ -136,6 +136,15 @@ export class UserStore {
         UPDATE users SET welcome_email_sent = 1;
       `);
     }
+
+    // Migration: add per-user OTEL endpoint columns (v0.6)
+    const userColsV5 = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>;
+    if (!userColsV5.some((c) => c.name === 'otel_endpoint')) {
+      this.db.exec(`
+        ALTER TABLE users ADD COLUMN otel_endpoint TEXT;
+        ALTER TABLE users ADD COLUMN otel_headers TEXT;
+      `);
+    }
   }
 
   // ─── Passwordless auth ────────────────────────────────
@@ -505,8 +514,21 @@ export class UserStore {
       autoRechargeAmountCents: row.auto_recharge_amount_cents ?? 1000,
       autoRechargeLastAt: row.auto_recharge_last_at ?? undefined,
       dailySpendLimitCents: row.daily_spend_limit_cents ?? 0,
+      otelEndpoint: row.otel_endpoint ?? undefined,
+      otelHeaders: row.otel_headers ?? undefined,
     };
   }
+
+  /**
+   * Update the user's OTEL export configuration.
+   * Pass null endpoint to disable. Headers are optional.
+   */
+  setOtelConfig(userId: string, endpoint: string | null, headers: string | null): void {
+    this.db.prepare(`
+      UPDATE users SET otel_endpoint = ?, otel_headers = ? WHERE id = ?
+    `).run(endpoint, headers, userId);
+  }
+
 
   /**
    * Set the user's personal daily spend limit.
@@ -552,4 +574,6 @@ interface DbUserRow {
   auto_recharge_amount_cents: number;
   auto_recharge_last_at: string | null;
   daily_spend_limit_cents: number;
+  otel_endpoint: string | null;
+  otel_headers: string | null;
 }
