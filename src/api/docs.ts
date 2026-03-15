@@ -363,6 +363,20 @@ const API_HTML = `${docsHead('API Reference')}
     <code class="inline-code">usage</code>, etc. The <code class="inline-code">model</code>
     field in the response contains the actual model that served the request.</p>
 
+    <p><strong>Response headers:</strong></p>
+    <table class="param-table">
+      <thead>
+        <tr><th>Header</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>X-Model-Router-Model</code></td><td>The model that served the request.</td></tr>
+        <tr><td><code>X-Model-Router-Provider</code></td><td>The provider that served the request.</td></tr>
+        <tr><td><code>X-Request-Id</code></td><td>Unique request ID. Use this to correlate with telemetry traces.</td></tr>
+        <tr><td><code>X-Model-Router-Auto-Score</code></td><td>Auto-routing score (0&ndash;100). Only present when <code>model: "auto"</code>.</td></tr>
+        <tr><td><code>X-Model-Router-Auto-Tier</code></td><td>Tier selected by auto-routing. Only present when <code>model: "auto"</code>.</td></tr>
+      </tbody>
+    </table>
+
     <div class="code-block"><span class="c">// Example response</span>
 {
   <span class="n">"id"</span>: <span class="s">"chatcmpl-abc123"</span>,
@@ -414,8 +428,8 @@ const API_HTML = `${docsHead('API Reference')}
         </tr>
         <tr>
           <td><code>auto</code></td>
-          <td>Alias for <code>standard</code></td>
-          <td>&mdash;</td>
+          <td>Analyses conversation context (system prompt, code blocks, message history, tool use) to select the appropriate tier automatically. Defaults to standard when uncertain.</td>
+          <td>Varies by context</td>
         </tr>
       </tbody>
     </table>
@@ -645,6 +659,53 @@ const API_HTML = `${docsHead('API Reference')}
   }],
   <span class="n">"usage"</span>: { <span class="n">"prompt_tokens"</span>: 9, <span class="n">"total_tokens"</span>: 9 }
 }</div>
+
+
+
+    <!-- Observability -->
+    <div class="section-head">Observability</div>
+
+    <p>
+      Export request traces to your own observability platform. Model Router supports
+      <strong>OTLP/HTTP</strong> &mdash; the OpenTelemetry standard &mdash; so you can use any compatible
+      backend: Axiom, Grafana Cloud, Honeycomb, Datadog, and more.
+    </p>
+
+    <p>
+      Configure your OTLP endpoint and auth headers in your
+      <a href="/profile">profile settings</a>. Once enabled, every request generates a span
+      with full routing metadata:
+    </p>
+
+    <table class="param-table">
+      <thead>
+        <tr><th>Span attribute</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>model_router.request_id</code></td><td>Unique request ID (matches <code>X-Request-Id</code> response header)</td></tr>
+        <tr><td><code>model_router.provider</code></td><td>Provider that served the request</td></tr>
+        <tr><td><code>model_router.model</code></td><td>Model that served the request</td></tr>
+        <tr><td><code>model_router.tier</code></td><td>Tier used for routing</td></tr>
+        <tr><td><code>model_router.prefer</code></td><td>Prefer value used</td></tr>
+        <tr><td><code>model_router.prompt_tokens</code></td><td>Input token count</td></tr>
+        <tr><td><code>model_router.completion_tokens</code></td><td>Output token count</td></tr>
+        <tr><td><code>model_router.cost_cents</code></td><td>Cost of the request in cents</td></tr>
+        <tr><td><code>model_router.latency_ms</code></td><td>Total request latency</td></tr>
+        <tr><td><code>model_router.streaming</code></td><td>Whether the request was streamed</td></tr>
+        <tr><td><code>model_router.auto_score</code></td><td>Auto-routing score (when using <code>auto</code>)</td></tr>
+        <tr><td><code>model_router.failover_from</code></td><td>Original provider if a failover occurred</td></tr>
+      </tbody>
+    </table>
+
+    <p>
+      Telemetry export is <strong>fully async</strong> &mdash; it never adds latency to your API calls.
+      If your OTLP endpoint is unreachable, requests proceed normally.
+    </p>
+
+    <p style="font-size:13px; color:var(--muted);">
+      Use the <code class="inline-code">X-Request-Id</code> response header to correlate
+      any individual request with its trace in your observability platform.
+    </p>
 
 
     <!-- Other endpoints -->

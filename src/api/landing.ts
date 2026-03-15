@@ -368,8 +368,8 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     <strong>4% fee on credit deposits.</strong> Requests billed at actual provider market
     rates — you pay what the model costs, nothing more.<br><br>
     Every response includes:<br>
-    <code>X-Model-Router-Model</code> and <code>X-Model-Router-Provider</code><br>
-    You always know exactly what ran and what it cost.
+    <code>X-Model-Router-Model</code>, <code>X-Model-Router-Provider</code>, and <code>X-Request-Id</code><br>
+    You always know exactly what ran, what it cost, and can trace it.
   </div>
 
   <hr class="hr">
@@ -382,6 +382,8 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     <li>Per-user daily spend limits (configurable)</li>
     <li>Streaming and tool calls supported</li>
     <li>Embeddings via <code>POST /v1/embeddings</code> — same key, <code>embed-small</code> ($0.02/1M), <code>embed-large</code> ($0.13/1M), or <code>embed-titan</code> ($0.10/1M)</li>
+    <li>Bring your own observability — export request traces to any OTLP backend (Axiom, Grafana, Honeycomb, Datadog) via your profile</li>
+    <li>Every response includes <code>X-Request-Id</code> for correlating requests with traces and logs</li>
   </ul>
 
   <hr class="hr">
