@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "tsx tests/e2e/smoke.ts",
-    "check-prices": "tsx src/scripts/check-prices.ts"
+    "check-prices": "tsx src/scripts/check-prices.ts",
+    "predeploy": "npm run build && npm test && npm run check-prices"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

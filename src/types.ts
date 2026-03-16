@@ -147,6 +147,16 @@ export interface ModelConfig {
    * for these models. See MIN_THINKING_OUTPUT_TOKENS in config.ts.
    */
   isThinkingModel?: boolean;
+  /**
+   * How the prices for this model are maintained:
+   *   'litellm' — verified automatically by check-prices.ts against LiteLLM's
+   *               community-maintained pricing JSON. Drift will fail CI.
+   *   'manual'  — set by hand (preview/new models not yet in LiteLLM). Must be
+   *               reviewed manually before deploy. check-prices.ts will print a
+   *               reminder with a link to the relevant pricing page.
+   * Defaults to 'manual' if omitted (safe — unknown = unverified).
+   */
+  priceSource?: 'litellm' | 'manual';
 }
 
 export interface TierConfig {
