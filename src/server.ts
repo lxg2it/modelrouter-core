@@ -23,6 +23,7 @@ import { GoogleAdapter } from './providers/google.js';
 import { SHARED_HEAD, SHARED_CSS, pageFooter } from './api/shared-styles.js';
 import { GrokAdapter } from './providers/grok.js';
 import { BedrockAdapter } from './providers/bedrock.js';
+import { VertexAdapter } from './providers/vertex.js';
 import { SatbillClient } from './billing/satbill-client.js';
 import { StripeService } from './billing/stripe.js';
 import { BillingTransactionStore } from './billing/transactions.js';
@@ -90,6 +91,12 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   }
   if (config.providers.bedrock) {
     providers.set('bedrock', new BedrockAdapter(config.providers.bedrock.apiKey));
+  }
+  if (config.providers.vertex) {
+    providers.set('vertex', new VertexAdapter(
+      config.providers.vertex.serviceAccountJsonPath,
+      config.providers.vertex.projectId,
+    ));
   }
 
   // Routing engine

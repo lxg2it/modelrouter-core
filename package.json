@@ -25,6 +25,7 @@
     "@opentelemetry/sdk-trace-node": "^2.6.0",
     "@opentelemetry/semantic-conventions": "^1.40.0",
     "better-sqlite3": "^11.8.0",
+    "google-auth-library": "^10.6.1",
     "hono": "^4.7.0",
     "nanoid": "^5.1.0",
     "openai": "^4.80.0",

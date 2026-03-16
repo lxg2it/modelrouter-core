@@ -128,7 +128,7 @@ export interface ModelsListResponse {
 
 export type Tier = 'economy' | 'standard' | 'premium' | 'embeddings';
 
-export type ProviderName = 'anthropic' | 'openai' | 'google' | 'grok' | 'bedrock';
+export type ProviderName = 'anthropic' | 'openai' | 'google' | 'grok' | 'bedrock' | 'vertex';
 
 export interface ModelConfig {
   provider: ProviderName;

@@ -126,6 +126,20 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
   },
 
   // ── Bedrock Economy ────────────────────────────────────
+  'nvidia.nemotron-3-nano-30b': {
+    arenaElo: 1380,    // estimated — not yet in Arena leaderboard
+    gpqaDiamond: 75.7, // thinking mode
+    sweBench: 74.1,    // HumanEval proxy (coding benchmark from pricepertoken.com)
+    mmluPro: 79.4,
+    simpleBench: 42.0, // estimated
+  },
+  'nvidia.nemotron-nano-9b-v2': {
+    arenaElo: 1330,    // estimated
+    gpqaDiamond: 57.0, // thinking mode
+    sweBench: 72.4,    // HumanEval proxy
+    mmluPro: 74.2,
+    simpleBench: 36.0, // estimated
+  },
   'zai.glm-4.7-flash': {
     arenaElo: 1366,
     gpqaDiamond: 55.0,

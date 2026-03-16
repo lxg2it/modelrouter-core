@@ -21,6 +21,7 @@ export interface Config {
     google?: { apiKey: string };
     grok?: { apiKey: string };
     bedrock?: { apiKey: string };
+    vertex?: { serviceAccountJsonPath: string; projectId: string };
   };
 
   // Router defaults
@@ -85,6 +86,9 @@ export function loadConfig(): Config {
         : undefined,
       bedrock: process.env.BEDROCK_API_KEY
         ? { apiKey: process.env.BEDROCK_API_KEY }
+        : undefined,
+      vertex: process.env.VERTEX_SERVICE_ACCOUNT_JSON && process.env.VERTEX_PROJECT_ID
+        ? { serviceAccountJsonPath: process.env.VERTEX_SERVICE_ACCOUNT_JSON, projectId: process.env.VERTEX_PROJECT_ID }
         : undefined,
     },
 
@@ -154,6 +158,8 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', quality: 0.60, inputPer1M: 1.00,  outputPer1M: 5.00,  latencyMs: 320,  maxContextTokens: 200_000   },
       { provider: 'grok',      model: 'grok-3-mini-beta',          quality: 0.50, inputPer1M: 0.30,  outputPer1M: 0.50,  latencyMs: 250,  maxContextTokens: 131_072,   isThinkingModel: true },
       // Bedrock economy models
+      { provider: 'bedrock',   model: 'nvidia.nemotron-3-nano-30b',  quality: 0.63, inputPer1M: 0.06,  outputPer1M: 0.24,  latencyMs: 350,  maxContextTokens: 262_144, isThinkingModel: true },
+      { provider: 'bedrock',   model: 'nvidia.nemotron-nano-9b-v2',  quality: 0.45, inputPer1M: 0.06,  outputPer1M: 0.23,  latencyMs: 250,  maxContextTokens: 128_000  },
       { provider: 'bedrock',   model: 'zai.glm-4.7-flash',          quality: 0.51, inputPer1M: 0.072, outputPer1M: 0.412, latencyMs: 350,  maxContextTokens: 202_752  },
       { provider: 'bedrock',   model: 'deepseek.v3.1',              quality: 0.68, inputPer1M: 0.30,  outputPer1M: 0.87,  latencyMs: 400,  maxContextTokens: 128_000  },
       { provider: 'bedrock',   model: 'qwen.qwen3-32b',             quality: 0.48, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 300,  maxContextTokens: 131_072  },
@@ -289,6 +295,9 @@ export const MODEL_ALIASES: Record<string, string> = {
   'glm': 'standard',
   'glm-5': 'premium',
   'glm-4.7': 'standard',
+  'nemotron-nano-30b': 'economy',
+  'nemotron-3-nano': 'economy',
+  'nemotron-nano-9b': 'economy',
   'glm-4.7-flash': 'economy',
 
   // GPT-OSS aliases (OpenAI open-source via Bedrock)
@@ -322,7 +331,8 @@ export const PROVIDER_META: Record<ProviderName, { label: string; models: string
   openai:    { label: 'OpenAI',           models: 'GPT, o-series' },
   google:    { label: 'Google',           models: 'Gemini family' },
   grok:      { label: 'xAI / Grok',       models: 'Grok family' },
-  bedrock:   { label: 'AWS Bedrock',       models: 'GLM, DeepSeek, Qwen, Kimi, Mistral, MiniMax' },
+  bedrock:   { label: 'AWS Bedrock',       models: 'Nemotron, GLM, DeepSeek, Qwen, Kimi, Mistral, MiniMax' },
+  vertex:    { label: 'Google Vertex AI',  models: 'Nemotron 3 Super, Meta Llama, third-party models' },
 };
 
 
@@ -332,6 +342,7 @@ export const PROVIDER_URLS: Record<ProviderName, string> = {
   google: 'https://generativelanguage.googleapis.com',
   grok: 'https://api.x.ai/v1',
   bedrock: 'https://bedrock-mantle.ap-southeast-2.api.aws/v1',
+  vertex:  'https://aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/global/endpoints/openapi',
 };
 
 // ─── Grok aliases ──────────────────────────────────────
