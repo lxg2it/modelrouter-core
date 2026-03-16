@@ -10,7 +10,8 @@
     "keygen": "tsx src/cli/keygen.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "tsx tests/e2e/smoke.ts"
+    "test:e2e": "tsx tests/e2e/smoke.ts",
+    "check-prices": "tsx src/scripts/check-prices.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
