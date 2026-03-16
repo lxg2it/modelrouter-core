@@ -174,7 +174,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'openai',    model: 'gpt-5.3-chat-latest', quality: 0.88, inputPer1M: 1.75,  outputPer1M: 14.00, latencyMs: 600,  maxContextTokens: 1_047_576,                         priceSource: 'manual'  },
       { provider: 'openai',    model: 'gpt-5.3-codex',       quality: 0.91, inputPer1M: 1.75,  outputPer1M: 14.00, latencyMs: 800,  maxContextTokens: 400_000,                           priceSource: 'manual'  },
       { provider: 'openai',    model: 'o3',                  quality: 0.85, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 3500, maxContextTokens: 200_000,   isThinkingModel: true,  priceSource: 'litellm' },
-      { provider: 'anthropic', model: 'claude-sonnet-4-6',   quality: 0.85, inputPer1M: 3.00,  outputPer1M: 15.00, latencyMs: 650,  maxContextTokens: 200_000,                          priceSource: 'litellm' },
+      { provider: 'anthropic', model: 'claude-sonnet-4-6',   quality: 0.85, inputPer1M: 3.00,  outputPer1M: 15.00, latencyMs: 650,  maxContextTokens: 1_000_000,                        priceSource: 'litellm' },
       { provider: 'grok',      model: 'grok-3-beta',         quality: 0.74, inputPer1M: 3.00,  outputPer1M: 15.00, latencyMs: 580,  maxContextTokens: 131_072,                          priceSource: 'litellm' },
       // Bedrock standard models — manual: verify prices at https://aws.amazon.com/bedrock/pricing/ (US West Oregon)
       { provider: 'bedrock',   model: 'zai.glm-4.7',                quality: 0.90, inputPer1M: 0.62, outputPer1M: 2.27,  latencyMs: 550,  maxContextTokens: 202_752,                         priceSource: 'manual'  },
@@ -190,7 +190,7 @@ export const TIERS: Record<string, TierConfig> = {
   premium: {
     models: [
       { provider: 'google',    model: 'gemini-3.1-pro-preview', quality: 1.00, inputPer1M: 2.00, outputPer1M: 12.00, latencyMs: 900,  maxContextTokens: 1_048_576, priceSource: 'manual'  },
-      { provider: 'anthropic', model: 'claude-opus-4-6',        quality: 1.00, inputPer1M: 5.00, outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 200_000,   priceSource: 'litellm' },
+      { provider: 'anthropic', model: 'claude-opus-4-6',        quality: 1.00, inputPer1M: 5.00, outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 1_000_000, priceSource: 'litellm' },
       { provider: 'openai',    model: 'gpt-5.4',                quality: 0.96, inputPer1M: 2.50, outputPer1M: 15.00, latencyMs: 900,  maxContextTokens: 1_050_000, priceSource: 'manual'  },
     ],
     description: 'Maximum capability. For complex reasoning, creative work, difficult tasks.',
