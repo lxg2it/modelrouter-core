@@ -105,7 +105,7 @@ At 10,000 users we need infrastructure rethink (move off SQLite, auto-scaling). 
 **Gross margins are effectively 100% of our fee revenue** until infrastructure scales up.
 
 ### Key observation
-We never advance funds to providers. Users pre-load credits, we deduct on each call. Provider payments happen via users' own API keys. Our capital risk is zero.
+We never advance funds to providers. Users pre-load credits, we deduct on each call. We hold all provider API keys server-side and call providers on behalf of users. Our capital risk is zero — we collect credits before spending them.
 
 Actually — we hold user credit balances. That means we collect money first, pay it out (as API calls) gradually. Float! Minor but real.
 
