@@ -371,6 +371,21 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       <div id="usageChartEmpty" class="hidden" style="font-size:13px; color:var(--muted); margin-top:8px;">No request data yet. Make your first API call to see usage charts.</div>
     </div>
 
+    <!-- First-call nudge banner (hidden until JS decides to show) -->
+    <div id="firstCallNudge" class="hidden" style="background:#0d1f3c; border:1px solid #1e3a6e; border-radius:8px; padding:16px 20px; display:flex; flex-wrap:wrap; gap:12px; align-items:flex-start;">
+      <div style="flex:1; min-width:220px;">
+        <div style="font-size:14px; font-weight:600; color:#7eb3f5; margin-bottom:6px;">👋 Make your first API call</div>
+        <div style="font-size:13px; color:#aac4e8; line-height:1.5;">You have an API key — try it out! Copy and run this in your terminal:</div>
+        <pre id="firstCallCurlExample" style="font-family:var(--mono); font-size:12px; color:#b3cff5; background:#071428; padding:10px 12px; margin:8px 0 0; overflow-x:auto; white-space:pre; border-radius:4px;"></pre>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px; align-self:flex-end;">
+        <button class="btn btn-secondary btn-sm" onclick="copyFirstCallCurl()">Copy curl</button>
+        <a href="/docs/integrations" style="font-size:13px; color:#7eb3f5; text-decoration:none; text-align:center;">Integration guides →</a>
+        <button class="btn btn-secondary btn-sm" onclick="dismissFirstCallNudge()" style="font-size:11px; opacity:0.6;">Dismiss</button>
+      </div>
+    </div>
+
+
     <!-- API Keys -->
     <div class="card">
       <div class="card-header">
@@ -401,7 +416,15 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
           <code id="newKeyValue" class="key-reveal-value" style="flex:1; min-width:0;"></code>
           <button class="btn btn-secondary btn-sm" onclick="copyNewKey()">Copy</button>
         </div>
-        <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="dismissNewKey()">Dismiss</button>
+        <div style="margin-top:14px; padding-top:14px; border-top:1px solid #2a4a2a;">
+          <div style="font-size:12px; color:var(--muted); margin-bottom:8px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Try it now</div>
+          <pre id="newKeyCurlExample" style="font-family:var(--mono); font-size:12px; color:#b3d9b3; background:#0c1a0c; padding:10px 12px; overflow-x:auto; white-space:pre; margin:0 0 10px;"></pre>
+          <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="copyNewKeyCurl()">Copy curl</button>
+            <a href="/docs/integrations" style="font-size:13px; color:var(--green); text-decoration:none;">Integration guides →</a>
+          </div>
+        </div>
+        <button class="btn btn-secondary btn-sm" style="margin-top:12px;" onclick="dismissNewKey()">Dismiss</button>
       </div>
 
       <div style="overflow-x:auto;" id="keysTableWrap">
@@ -605,6 +628,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
       renderDashboard();
       renderKeys();
+      renderFirstCallNudge();
       loadBillingHistory();
       loadAutoRecharge();
       loadUsageCharts();
@@ -696,6 +720,45 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
              '<td>' + requests + '</td><td>' + status + '</td><td>' + actions + '</td></tr>';
     }).join('');
   }
+
+  function renderFirstCallNudge() {
+    var nudge = document.getElementById('firstCallNudge');
+    if (!nudge) return;
+
+    if (sessionStorage.getItem('mr_nudge_dismissed')) return;
+
+    var keys = keysData && keysData.keys || [];
+    var activeKeys = keys.filter(function(k) { return k.active; });
+    if (!activeKeys.length) return;
+
+    var anyUsed = activeKeys.some(function(k) { return k.lastUsedAt != null; });
+    if (anyUsed) return;
+
+    document.getElementById('firstCallCurlExample').textContent = buildCurlExample('YOUR_KEY');
+    nudge.style.display = 'flex';
+    nudge.classList.remove('hidden');
+  }
+
+  function buildCurlExample(apiKey) {
+    var nl = '\\n';
+    var body = '{"model":"standard","messages":[{"role":"user","content":"Hello!"}]}';
+    return 'curl https://api.lxg2it.com/v1/chat/completions' + nl +
+      '  -H "Authorization: Bearer ' + apiKey + '"' + nl +
+      '  -H "Content-Type: application/json"' + nl +
+      "  -d '" + body + "'";
+  }
+
+  function copyFirstCallCurl() {
+    const val = document.getElementById('firstCallCurlExample').textContent;
+    navigator.clipboard.writeText(val).catch(() => {});
+  }
+
+  function dismissFirstCallNudge() {
+    const nudge = document.getElementById('firstCallNudge');
+    if (nudge) nudge.classList.add('hidden');
+    sessionStorage.setItem('mr_nudge_dismissed', '1');
+  }
+
 
   async function loadBillingHistory() {
     try {
@@ -1022,8 +1085,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
     if (data.apiKey?.key) {
       // New account — show the API key before dashboard loads
-      document.getElementById('newKeyValue').textContent = data.apiKey.key;
-      document.getElementById('newKeyReveal').classList.remove('hidden');
+      showNewKeyReveal(data.apiKey.key);
     }
 
     await loadDashboard();
@@ -1077,8 +1139,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
     hideCreateKey();
 
     // Show the key value
-    document.getElementById('newKeyValue').textContent = data.key;
-    document.getElementById('newKeyReveal').classList.remove('hidden');
+    showNewKeyReveal(data.key);
 
     // Reload keys list
     const keysRes = await apiFetch('GET', '/v1/keys');
@@ -1088,8 +1149,19 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
     }
   }
 
+  function showNewKeyReveal(key) {
+    document.getElementById('newKeyValue').textContent = key;
+    document.getElementById('newKeyCurlExample').textContent = buildCurlExample(key);
+    document.getElementById('newKeyReveal').classList.remove('hidden');
+  }
+
   function copyNewKey() {
     const val = document.getElementById('newKeyValue').textContent;
+    navigator.clipboard.writeText(val).catch(() => {});
+  }
+
+  function copyNewKeyCurl() {
+    const val = document.getElementById('newKeyCurlExample').textContent;
     navigator.clipboard.writeText(val).catch(() => {});
   }
 

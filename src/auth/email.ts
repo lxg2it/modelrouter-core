@@ -56,17 +56,22 @@ export class ResendEmailSender implements EmailSender {
     const { error } = await this.resend.emails.send({
       from: this.welcomeFromEmail,
       to,
-      subject: 'Hey, welcome to Model Router',
+      subject: 'Hey, quick start for Model Router',
       html: `
-        <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; color: #111827;">
+        <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px; color: #111827;">
           <p>Hey,</p>
-          <p>Noticed you signed up recently — just wanted to say hi and let you know there's a real person here if you need anything.</p>
-          <p>We've got setup guides for Cursor, RooCode, and OpenClaw at <a href="https://api.lxg2it.com/docs/integrations">api.lxg2it.com/docs/integrations</a> if that's useful.</p>
-          <p>Otherwise, just reply if you run into anything.</p>
+          <p>You just signed up for Model Router — here's the fastest way to make your first call:</p>
+          <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 20px 0; font-family: monospace; font-size: 13px; color: #1f2937; white-space: pre-wrap; overflow-x: auto;">curl https://api.lxg2it.com/v1/chat/completions \\
+  -H "Authorization: Bearer YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"standard","messages":[{"role":"user","content":"Hello!"}]}'</div>
+          <p>Grab your key from your <a href="https://api.lxg2it.com/profile" style="color: #1d4ed8;">profile page</a>. The <code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">standard</code> tier routes to GPT-4o / Claude Sonnet depending on your preference setting.</p>
+          <p>If you're using Cursor, RooCode, or OpenClaw, there are <a href="https://api.lxg2it.com/docs/integrations" style="color: #1d4ed8;">step-by-step integration guides</a> that take about 2 minutes.</p>
+          <p>Just reply here if you run into anything.</p>
           <p>Scott</p>
         </div>
       `,
-      text: `Hey,\n\nNoticed you signed up recently — just wanted to say hi and let you know there's a real person here if you need anything.\n\nWe've got setup guides for Cursor, RooCode, and OpenClaw at https://api.lxg2it.com/docs/integrations if that's useful.\n\nOtherwise, just reply if you run into anything.\n\nScott`,
+      text: `Hey,\n\nYou just signed up for Model Router — here's the fastest way to make your first call:\n\ncurl https://api.lxg2it.com/v1/chat/completions \\\n  -H "Authorization: Bearer YOUR_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"standard","messages":[{"role":"user","content":"Hello!"}]}'\n\nGrab your key from your profile page: https://api.lxg2it.com/profile\n\nThe standard tier routes to GPT-4o / Claude Sonnet depending on your preference setting.\n\nIf you're using Cursor, RooCode, or OpenClaw, there are step-by-step integration guides that take about 2 minutes: https://api.lxg2it.com/docs/integrations\n\nJust reply here if you run into anything.\n\nScott`,
     });
 
     if (error) {

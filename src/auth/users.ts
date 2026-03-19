@@ -358,14 +358,14 @@ export class UserStore {
   // ─── Welcome email ────────────────────────────────────
 
   /**
-   * Returns users who registered at least 24 hours ago and haven't yet
+   * Returns users who registered at least 1 hour ago and haven't yet
    * received a welcome email.
    */
   getUsersPendingWelcomeEmail(): Array<{ id: string; email: string }> {
     return this.db.prepare(`
       SELECT id, email FROM users
       WHERE welcome_email_sent = 0
-        AND created_at <= datetime('now', '-24 hours')
+        AND created_at <= datetime('now', '-1 hours')
     `).all() as Array<{ id: string; email: string }>;
   }
 
