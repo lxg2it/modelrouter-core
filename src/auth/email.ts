@@ -13,6 +13,7 @@ import { Resend } from 'resend';
 export interface EmailSender {
   sendLoginCode(to: string, code: string): Promise<void>;
   sendWelcomeEmail(to: string): Promise<void>;
+  sendFreeTierNotification(to: string): Promise<void>;
 }
 
 /**
@@ -49,6 +50,39 @@ export class ResendEmailSender implements EmailSender {
 
     if (error) {
       throw new Error(`Email send failed: ${error.message}`);
+    }
+  }
+
+  async sendFreeTierNotification(to: string): Promise<void> {
+    const { error } = await this.resend.emails.send({
+      from: this.welcomeFromEmail,
+      to,
+      subject: 'Your Model Router balance hit $0 — routed to free models',
+      html: `
+        <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px; color: #111827;">
+          <p>Hey,</p>
+          <p>Your Model Router credit balance just hit <strong>$0</strong>.</p>
+          <p>To keep things running, we've automatically switched your requests to <strong>free-tier models</strong>
+          (Llama 3.3 70B via Groq and Cerebras). These are fast and capable, but you won't have access
+          to GPT-4o, Claude, or Gemini Pro until you top up.</p>
+          <p>
+            <a href="https://api.lxg2it.com/billing" style="display:inline-block; background:#1d4ed8; color:#fff; padding:10px 20px; border-radius:6px; text-decoration:none; font-weight:600;">
+              Add Credits →
+            </a>
+          </p>
+          <p style="color:#6b7280; font-size:13px; margin-top:24px;">
+            <strong>Note:</strong> We won't send this email every time — please monitor your balance at
+            <a href="https://api.lxg2it.com/profile" style="color:#1d4ed8;">api.lxg2it.com/profile</a>.
+            If this keeps happening, you may receive a reminder after 7 days.
+          </p>
+          <p>Scott</p>
+        </div>
+      `,
+      text: `Hey,\n\nYour Model Router credit balance just hit $0.\n\nTo keep things running, we've switched your requests to free-tier models (Llama 3.3 70B via Groq and Cerebras). You won't have access to GPT-4o, Claude, or Gemini Pro until you top up.\n\nAdd credits: https://api.lxg2it.com/billing\n\nNote: We won't send this every time — please monitor your balance at https://api.lxg2it.com/profile. If this keeps happening, you may receive a reminder after 7 days.\n\nScott`,
+    });
+
+    if (error) {
+      throw new Error(`Free-tier notification email failed: ${error.message}`);
     }
   }
 
@@ -91,5 +125,9 @@ export class ConsoleEmailSender implements EmailSender {
 
   async sendWelcomeEmail(to: string): Promise<void> {
     console.log(`[Email:dev] Welcome email for ${to}`);
+  }
+
+  async sendFreeTierNotification(to: string): Promise<void> {
+    console.log(`[Email:dev] Free-tier notification for ${to}`);
   }
 }

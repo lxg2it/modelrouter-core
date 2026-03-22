@@ -145,6 +145,24 @@ export class UserStore {
         ALTER TABLE users ADD COLUMN otel_headers TEXT;
       `);
     }
+
+    // Migration: add free-tier notification tracking columns (v0.7)
+    //
+    // free_tier_notified_at — ISO timestamp of the last time we emailed the user
+    //   that their balance hit $0 and they were routed to free-tier models.
+    //   NULL = never sent. Used to enforce cooldown and avoid spam.
+    //
+    // last_credit_added_at — ISO timestamp of the last successful credit top-up.
+    //   Set whenever addCredits() is called. Used to detect "topped up since
+    //   last notification" so that a new notification can fire if they drain
+    //   their balance again after topping up.
+    const userColsV6 = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>;
+    if (!userColsV6.some((c) => c.name === 'free_tier_notified_at')) {
+      this.db.exec(`
+        ALTER TABLE users ADD COLUMN free_tier_notified_at TEXT;
+        ALTER TABLE users ADD COLUMN last_credit_added_at TEXT;
+      `);
+    }
   }
 
   // ─── Passwordless auth ────────────────────────────────
@@ -385,13 +403,57 @@ export class UserStore {
   addCredits(userId: string, amountCents: number): number {
     const result = this.db.prepare(`
       UPDATE users
-      SET credit_balance_cents = credit_balance_cents + ?
+      SET credit_balance_cents = credit_balance_cents + ?,
+          last_credit_added_at = datetime('now')
       WHERE id = ?
       RETURNING credit_balance_cents
     `).get(amountCents, userId) as { credit_balance_cents: number } | undefined;
 
     if (!result) throw new Error(`User not found: ${userId}`);
     return result.credit_balance_cents;
+  }
+
+  /**
+   * Record that a free-tier notification email was sent to this user.
+   * Sets free_tier_notified_at to now.
+   */
+  recordFreeTierNotification(userId: string): void {
+    this.db.prepare(`
+      UPDATE users SET free_tier_notified_at = datetime('now') WHERE id = ?
+    `).run(userId);
+  }
+
+  /**
+   * Determine whether a free-tier notification email should be sent.
+   *
+   * Returns true when ALL of the following hold:
+   *   1. free_tier_notified_at IS NULL (never been notified)
+   *      OR last_credit_added_at > free_tier_notified_at (topped up since last notification)
+   *   2. free_tier_notified_at IS NULL
+   *      OR more than 7 days have passed since the last notification
+   *
+   * In SQL terms:
+   *   free_tier_notified_at IS NULL
+   *   OR (
+   *     last_credit_added_at > free_tier_notified_at
+   *     AND free_tier_notified_at < datetime('now', '-7 days')
+   *   )
+   */
+  shouldSendFreeTierNotification(userId: string): boolean {
+    const row = this.db.prepare(`
+      SELECT
+        CASE
+          WHEN free_tier_notified_at IS NULL THEN 1
+          WHEN (
+            last_credit_added_at > free_tier_notified_at
+            AND free_tier_notified_at < datetime('now', '-7 days')
+          ) THEN 1
+          ELSE 0
+        END AS should_notify
+      FROM users WHERE id = ?
+    `).get(userId) as { should_notify: number } | undefined;
+
+    return (row?.should_notify ?? 0) === 1;
   }
 
   /**
@@ -516,6 +578,8 @@ export class UserStore {
       dailySpendLimitCents: row.daily_spend_limit_cents ?? 0,
       otelEndpoint: row.otel_endpoint ?? undefined,
       otelHeaders: row.otel_headers ?? undefined,
+      freeTierNotifiedAt: row.free_tier_notified_at ?? undefined,
+      lastCreditAddedAt: row.last_credit_added_at ?? undefined,
     };
   }
 
@@ -576,4 +640,6 @@ interface DbUserRow {
   daily_spend_limit_cents: number;
   otel_endpoint: string | null;
   otel_headers: string | null;
+  free_tier_notified_at: string | null;
+  last_credit_added_at: string | null;
 }

@@ -22,7 +22,27 @@ export interface Config {
     grok?: { apiKey: string };
     bedrock?: { apiKey: string };
     vertex?: { serviceAccountJsonPath: string; projectId: string };
+    /** Groq free tier — permanent free models (Llama 3.3 70B, Llama 4 Scout, etc.) */
+    groq?: { apiKey: string };
+    /** Cerebras free tier — permanent free models (Llama 3.3 70B, Qwen3 235B, etc.) */
+    cerebras?: { apiKey: string };
   };
+
+  /**
+   * Credit balance threshold (in cents) above which users get elevated rate limits.
+   * Defaults to $10.00 (1000 cents). Set to 0 to disable tiered rate limiting.
+   */
+  elevatedRateLimitThresholdCents: number;
+  /**
+   * Rate limit (RPM) for users with credit balance >= elevatedRateLimitThresholdCents.
+   * Defaults to 60 RPM.
+   */
+  elevatedRateLimitPerMinute: number;
+  /**
+   * Rate limit (RPM) for users with balance below the threshold (or no Stripe account).
+   * Defaults to 10 RPM.
+   */
+  baseRateLimitPerMinute: number;
 
   // Router defaults
   defaultTier: 'economy' | 'standard' | 'premium';
@@ -90,7 +110,17 @@ export function loadConfig(): Config {
       vertex: process.env.VERTEX_SERVICE_ACCOUNT_JSON && process.env.VERTEX_PROJECT_ID
         ? { serviceAccountJsonPath: process.env.VERTEX_SERVICE_ACCOUNT_JSON, projectId: process.env.VERTEX_PROJECT_ID }
         : undefined,
+      groq: process.env.GROQ_API_KEY
+        ? { apiKey: process.env.GROQ_API_KEY }
+        : undefined,
+      cerebras: process.env.CEREBRAS_API_KEY
+        ? { apiKey: process.env.CEREBRAS_API_KEY }
+        : undefined,
     },
+
+    elevatedRateLimitThresholdCents: parseInt(process.env.ELEVATED_RATE_LIMIT_THRESHOLD_CENTS ?? '1000', 10),
+    elevatedRateLimitPerMinute: parseInt(process.env.ELEVATED_RATE_LIMIT_PER_MINUTE ?? '60', 10),
+    baseRateLimitPerMinute: parseInt(process.env.BASE_RATE_LIMIT_PER_MINUTE ?? '10', 10),
 
     defaultTier: (env('DEFAULT_TIER', 'standard')) as Config['defaultTier'],
     defaultOutputRatio: parseFloat(env('DEFAULT_OUTPUT_RATIO', '0.33')),
@@ -164,6 +194,14 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'bedrock',   model: 'zai.glm-4.7-flash',          quality: 0.51, inputPer1M: 0.070, outputPer1M: 0.400, latencyMs: 350,  maxContextTokens: 202_752,                         priceSource: 'manual' },
       { provider: 'bedrock',   model: 'qwen.qwen3-32b',             quality: 0.48, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 300,  maxContextTokens: 131_072,                         priceSource: 'manual' },
       { provider: 'bedrock',   model: 'openai.gpt-oss-120b',        quality: 0.50, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 450,  maxContextTokens: 128_000,                         priceSource: 'litellm' },
+      // Free-provider models — hosted by providers with permanent free tiers.
+      // isFreeProvider: true means these are routed to zero-balance users and are never billed.
+      // Quality/latency estimates are approximate; inputPer1M/outputPer1M are 0 (free to us).
+      // Groq: permanent free tier, 30 RPM / 14,400 RPD. Wafer-scale silicon — very fast inference.
+      { provider: 'groq',     model: 'llama-3.3-70b-versatile',   quality: 0.63, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 200,  maxContextTokens: 128_000,   isFreeProvider: true,  priceSource: 'manual' },
+      { provider: 'groq',     model: 'llama-4-scout-17b-16e-instruct', quality: 0.58, inputPer1M: 0, outputPer1M: 0,    latencyMs: 180,  maxContextTokens: 131_072,   isFreeProvider: true,  priceSource: 'manual' },
+      // Cerebras: permanent free tier, 30 RPM / 14,400 RPD. Wafer-scale silicon — fastest inference.
+      { provider: 'cerebras', model: 'llama-3.3-70b',             quality: 0.63, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 150,  maxContextTokens: 128_000,   isFreeProvider: true,  priceSource: 'manual' },
     ],
     description: 'Fast and cheap. Good for classification, extraction, simple generation.',
   },
@@ -332,6 +370,8 @@ export const PROVIDER_META: Record<ProviderName, { label: string; models: string
   grok:      { label: 'xAI / Grok',       models: 'Grok family' },
   bedrock:   { label: 'AWS Bedrock',       models: 'Nemotron, GLM, DeepSeek, Qwen, Kimi, Mistral, MiniMax' },
   vertex:    { label: 'Google Vertex AI',  models: 'Nemotron 3 Super, Meta Llama, third-party models' },
+  groq:      { label: 'Groq',             models: 'Llama (free tier)' },
+  cerebras:  { label: 'Cerebras',         models: 'Llama (free tier)' },
 };
 
 
@@ -342,6 +382,8 @@ export const PROVIDER_URLS: Record<ProviderName, string> = {
   grok: 'https://api.x.ai/v1',
   bedrock: 'https://bedrock-mantle.ap-southeast-2.api.aws/v1',
   vertex:  'https://aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/global/endpoints/openapi',
+  groq:    'https://api.groq.com/openai/v1',
+  cerebras: 'https://api.cerebras.ai/v1',
 };
 
 // ─── Grok aliases ──────────────────────────────────────

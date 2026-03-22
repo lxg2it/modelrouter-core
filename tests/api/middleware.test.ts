@@ -5,8 +5,10 @@
  *   - Valid key → 200
  *   - Missing / malformed Authorization header → 401
  *   - Unknown API key → 401
- *   - Legacy Stripe credit check (key-level): zero balance with stripeCustomerId → 402
- *   - Legacy Stripe credit check: negative balance → 402
+ *   - Legacy Stripe credit check (key-level): zero balance with stripeCustomerId
+ *       → 200 but routeToFreeTierOnly=true (no longer hard-blocked)
+ *   - Legacy Stripe credit check: negative balance
+ *       → 200 but routeToFreeTierOnly=true
  *   - Legacy Stripe credit check: billing route exempt from check
  *   - Legacy Stripe credit check: key without stripeCustomerId passes even at zero balance
  *   - Satbill check: canAccess false → 402
@@ -96,8 +98,9 @@ function makeApp(
 ) {
   const app = new Hono<AuthEnv>();
   app.use('*', authMiddleware(keyStore as KeyStore, userStore as UserStore, satbill, rateLimiter));
-  app.get('*', (c) => c.json({ ok: true }));
-  app.post('*', (c) => c.json({ ok: true }));
+  // Echo back routeToFreeTierOnly in the response body so tests can assert on it
+  app.get('*', (c) => c.json({ ok: true, routeToFreeTierOnly: c.get('routeToFreeTierOnly') ?? false }));
+  app.post('*', (c) => c.json({ ok: true, routeToFreeTierOnly: c.get('routeToFreeTierOnly') ?? false }));
   return app;
 }
 
@@ -178,7 +181,10 @@ describe('authMiddleware — satbill balance check', () => {
 describe('authMiddleware — legacy Stripe credit check (key-level)', () => {
   // Legacy keys have no userId — credit balance is checked on the key itself.
 
-  it('returns 402 when stripeCustomerId is set and creditBalanceCents is 0', async () => {
+  it('passes through with routeToFreeTierOnly=true when stripeCustomerId is set and creditBalanceCents is 0', async () => {
+    // Changed in free-tier feature: zero balance no longer hard-blocks with 402.
+    // Instead, the request is allowed through and routing is restricted to
+    // free-provider models (isFreeProvider: true). The chat handler enforces this.
     const key = makeApiKey({ stripeCustomerId: 'cus_test', creditBalanceCents: 0 });
     const app = makeApp(makeKeyStore(key), makeUserStore(null));
 
@@ -186,12 +192,12 @@ describe('authMiddleware — legacy Stripe credit check (key-level)', () => {
       headers: { Authorization: 'Bearer mr_sk_valid' },
     }));
 
-    expect(res.status).toBe(402);
+    expect(res.status).toBe(200);
     const body = await res.json() as any;
-    expect(body.error.code).toBe('insufficient_credits');
+    expect(body.routeToFreeTierOnly).toBe(true);
   });
 
-  it('returns 402 when creditBalanceCents is negative', async () => {
+  it('passes through with routeToFreeTierOnly=true when creditBalanceCents is negative', async () => {
     const key = makeApiKey({ stripeCustomerId: 'cus_test', creditBalanceCents: -50 });
     const app = makeApp(makeKeyStore(key), makeUserStore(null));
 
@@ -199,9 +205,9 @@ describe('authMiddleware — legacy Stripe credit check (key-level)', () => {
       headers: { Authorization: 'Bearer mr_sk_valid' },
     }));
 
-    expect(res.status).toBe(402);
+    expect(res.status).toBe(200);
     const body = await res.json() as any;
-    expect(body.error.code).toBe('insufficient_credits');
+    expect(body.routeToFreeTierOnly).toBe(true);
   });
 
   it('passes through when stripeCustomerId is set and balance is positive', async () => {
@@ -246,7 +252,10 @@ describe('authMiddleware — legacy Stripe credit check (key-level)', () => {
 describe('authMiddleware — user-owned key balance check', () => {
   // User-owned keys check the user's balance, not the key's.
 
-  it('returns 402 when user stripeCustomerId is set and user balance is 0', async () => {
+  it('passes through with routeToFreeTierOnly=true when user stripeCustomerId is set and user balance is 0', async () => {
+    // Changed in free-tier feature: zero balance no longer hard-blocks with 402.
+    // Instead, the request is allowed through and routing is restricted to
+    // free-provider models. The chat handler enforces this at routing time.
     const key = makeApiKey({ userId: 'user-id', creditBalanceCents: 0 });
     const user = makeUser({ id: 'user-id', stripeCustomerId: 'cus_test', creditBalanceCents: 0 });
     const app = makeApp(makeKeyStore(key), makeUserStore(user));
@@ -255,9 +264,9 @@ describe('authMiddleware — user-owned key balance check', () => {
       headers: { Authorization: 'Bearer mr_sk_valid' },
     }));
 
-    expect(res.status).toBe(402);
+    expect(res.status).toBe(200);
     const body = await res.json() as any;
-    expect(body.error.code).toBe('insufficient_credits');
+    expect(body.routeToFreeTierOnly).toBe(true);
   });
 
   it('passes through when user balance is positive even if key balance is 0', async () => {

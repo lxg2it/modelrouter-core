@@ -73,6 +73,7 @@ export class RoutingEngine {
     request: ChatCompletionRequest,
     keyTier?: Tier,
     blockedProviders?: Set<string>,
+    freeProvidersOnly?: boolean,
   ): RouteDecision | null {
     const prefer = request.prefer ?? 'balanced';
     const estimatedTokens = this.estimateInputTokens(request.messages);
@@ -122,8 +123,23 @@ export class RoutingEngine {
       tier = this.config.defaultTier;
     }
 
+    // When routing to free tier only, we search across ALL tiers for free-provider models.
+    // This ensures zero-balance users always get a result, regardless of which tier was requested.
+    const modelsToSearch = freeProvidersOnly
+      ? (() => {
+          // Gather free-provider models from all tiers, favouring the requested tier first.
+          const allTiers: Tier[] = [tier, ...(['economy', 'standard', 'premium'] as Tier[]).filter(t => t !== tier)];
+          for (const t of allTiers) {
+            const freeInTier = getModelsForTier(t, this.config.availableProviders)
+              .filter((m) => m.isFreeProvider);
+            if (freeInTier.length > 0) return freeInTier;
+          }
+          return [];
+        })()
+      : getModelsForTier(tier, this.config.availableProviders);
+
     const candidates = this.filterByContext(
-      this.filterBlocked(getModelsForTier(tier, this.config.availableProviders), blockedProviders),
+      this.filterBlocked(modelsToSearch, blockedProviders),
       estimatedTokens,
     );
     if (candidates.length === 0) return null;
@@ -194,10 +210,14 @@ export class RoutingEngine {
     tier: Tier,
     messages: ChatMessage[] = [],
     blockedProviders?: Set<string>,
+    freeProvidersOnly?: boolean,
   ): RouteDecision | null {
     const estimatedTokens = this.estimateInputTokens(messages);
+    const modelsToSearch = freeProvidersOnly
+      ? getModelsForTier(tier, this.config.availableProviders).filter((m) => m.isFreeProvider)
+      : getModelsForTier(tier, this.config.availableProviders);
     const candidates = this.filterByContext(
-      this.filterBlocked(getModelsForTier(tier, this.config.availableProviders), blockedProviders),
+      this.filterBlocked(modelsToSearch, blockedProviders),
       estimatedTokens,
     )
       .filter((m) => !(m.provider === failedProvider && m.model === failedModel))

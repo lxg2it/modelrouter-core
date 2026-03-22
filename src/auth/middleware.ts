@@ -33,6 +33,16 @@ export interface AuthEnv {
      * Present when apiKey.userId is set.
      */
     user: User | undefined;
+    /**
+     * When true, the user has a Stripe account but their credit balance is $0.
+     * Routing is restricted to free-provider models only (isFreeProvider: true).
+     * No credit reservation is attempted for these requests.
+     *
+     * This is distinct from no Stripe account at all (no billing relationship).
+     * Users with no billing relationship also route freely, but for a different reason:
+     * they've never added payment info, so we treat them as free-tier by default too.
+     */
+    routeToFreeTierOnly: boolean;
   };
 }
 
@@ -47,18 +57,36 @@ export interface SessionEnv {
 }
 
 /**
+ * Two-tier rate limit configuration.
+ *
+ * Users with creditBalanceCents >= thresholdCents receive the elevated limit.
+ * Everyone else (zero balance, no billing relationship) gets the base limit.
+ * Per-key overrides (apiKey.rateLimitPerMinute) still take priority over both.
+ */
+export interface RateLimitTiers {
+  /** Credit balance threshold (cents) for elevated limits. Default: $10.00 = 1000 cents. */
+  thresholdCents: number;
+  /** RPM for users meeting the threshold. Default: 60. */
+  elevatedPerMinute: number;
+  /** RPM for everyone else. Default: 10. */
+  basePerMinute: number;
+}
+
+/**
  * Create API key auth middleware.
  *
- * @param keyStore     Key storage for validation
- * @param userStore    User storage — needed to load user balance for user-owned keys
- * @param satbill      Optional satbill client for Bitcoin balance checks
- * @param rateLimiter  Optional rate limiter — enforces per-key RPM limits
+ * @param keyStore        Key storage for validation
+ * @param userStore       User storage — needed to load user balance for user-owned keys
+ * @param satbill         Optional satbill client for Bitcoin balance checks
+ * @param rateLimiter     Optional rate limiter — enforces per-key RPM limits
+ * @param rateLimitTiers  Optional two-tier rate limit config (elevated vs base RPM by balance)
  */
 export function authMiddleware(
   keyStore: KeyStore,
   userStore: UserStore,
   satbill?: SatbillClient,
   rateLimiter?: RateLimiter,
+  rateLimitTiers?: RateLimitTiers,
 ) {
   return async (c: Context<AuthEnv>, next: Next) => {
     const authHeader = c.req.header('Authorization');
@@ -95,13 +123,32 @@ export function authMiddleware(
       }, 401);
     }
 
+    // Load the owning user eagerly — needed for balance-aware rate limits and
+    // routing decisions below. (Synchronous SQLite read, negligible overhead.)
+    const user = apiKey.userId ? userStore.findById(apiKey.userId) ?? undefined : undefined;
+
     // ── Per-key rate limiting ──────────────────────────────────────────────
     //
     // Checked immediately after authentication, before any billing or
-    // provider logic. Headers are added to both allowed and rejected responses
-    // so clients can track their consumption.
+    // provider logic. Priority order for the limit used:
+    //   1. Per-key override (apiKey.rateLimitPerMinute) — always respected
+    //   2. Elevated tier — user has ≥ threshold balance (default $10)
+    //   3. Base tier — everyone else (zero balance, no billing relationship)
+    //
+    // Headers are added to both allowed and rejected responses so clients can
+    // track their consumption.
     if (rateLimiter) {
-      const rl = rateLimiter.consume(apiKey.id, apiKey.rateLimitPerMinute);
+      // Determine effective RPM: per-key override takes absolute priority.
+      // Otherwise use balance-aware tiers if configured.
+      let effectiveRpm: number | undefined = apiKey.rateLimitPerMinute;
+      if (effectiveRpm === undefined && rateLimitTiers) {
+        const balanceCents = user?.creditBalanceCents ?? apiKey.creditBalanceCents ?? 0;
+        effectiveRpm = balanceCents >= rateLimitTiers.thresholdCents
+          ? rateLimitTiers.elevatedPerMinute
+          : rateLimitTiers.basePerMinute;
+      }
+
+      const rl = rateLimiter.consume(apiKey.id, effectiveRpm);
 
       // Always attach rate limit headers, regardless of outcome.
       c.header('X-RateLimit-Limit', String(rl.limit));
@@ -121,9 +168,6 @@ export function authMiddleware(
       }
     }
 
-    // Load the owning user if this is a user-owned key
-    const user = apiKey.userId ? userStore.findById(apiKey.userId) ?? undefined : undefined;
-
     // Satbill access check (if this key is linked to a Bitcoin billing account)
     if (satbill && apiKey.satbillAccountId) {
       const access = await satbill.checkAccess(apiKey.satbillAccountId);
@@ -139,39 +183,33 @@ export function authMiddleware(
       }
     }
 
-    // Stripe credit check — enforce balance if billing is enabled.
+    // Stripe credit check — determine routing mode for the request.
     // Billing routes (/billing/*) are exempt: users must be able to top up
     // even when balance is zero.
     //
+    // Instead of hard-blocking $0 users with 402, we route them to free-provider
+    // models only. This allows continuous operation without requiring a top-up for
+    // every request. The chat handler will filter to isFreeProvider models and skip
+    // credit reservation.
+    //
     // For user-owned keys: check the user's balance.
-    // For legacy keys: check the key's own balance.
+    // For legacy keys (no userId): check the key's own balance.
+    let routeToFreeTierOnly = false;
     const isBillingPath = c.req.path.includes('/billing');
     if (!isBillingPath) {
       if (user && user.stripeCustomerId && user.creditBalanceCents <= 0) {
-        return c.json({
-          error: {
-            message: 'Insufficient credits. Add more at POST /v1/billing/top-up or visit your billing dashboard.',
-            type: 'insufficient_quota',
-            code: 'insufficient_credits',
-            creditBalanceCents: user.creditBalanceCents,
-          },
-        }, 402);
+        // User has a Stripe account but is out of credits — route to free tier.
+        routeToFreeTierOnly = true;
       } else if (!user && apiKey.stripeCustomerId && apiKey.creditBalanceCents <= 0) {
-        // Legacy key — check key-level balance
-        return c.json({
-          error: {
-            message: 'Insufficient credits. Add more at POST /v1/billing/top-up or visit your billing dashboard.',
-            type: 'insufficient_quota',
-            code: 'insufficient_credits',
-            creditBalanceCents: apiKey.creditBalanceCents,
-          },
-        }, 402);
+        // Legacy key — key has billing but is out of credits — route to free tier.
+        routeToFreeTierOnly = true;
       }
     }
 
     c.set('apiKey', apiKey);
     c.set('satbillAccountId', apiKey.satbillAccountId);
     c.set('user', user);
+    c.set('routeToFreeTierOnly', routeToFreeTierOnly);
     await next();
   };
 }

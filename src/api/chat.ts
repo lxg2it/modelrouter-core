@@ -15,6 +15,7 @@ import { UsageLogger as UsageLoggerClass } from '../tracking/logger.js';
 import type { SatbillClient } from '../billing/satbill-client.js';
 import type { KeyStore } from '../auth/keys.js';
 import type { UserStore } from '../auth/users.js';
+import type { EmailSender } from '../auth/email.js';
 import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../config.js';
 import type { ApiKey, User, ChatCompletionRequest, ProviderName } from '../types.js';
 import type { StripeService } from '../billing/stripe.js';
@@ -55,6 +56,11 @@ interface ChatDeps {
    * 0 means no limit. Defaults to 3000 ($30.00) if not specified.
    */
   maxDailySpendCents?: number;
+  /**
+   * Email sender for free-tier routing notifications.
+   * When set, users whose balance hits $0 receive a one-time email (with 7-day cooldown).
+   */
+  emailSender?: EmailSender;
 }
 
 export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
@@ -64,14 +70,28 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
     const apiKey = c.get('apiKey');
     const satbillAccountId = c.get('satbillAccountId');
     const user = c.get('user');
+    const routeToFreeTierOnly = c.get('routeToFreeTierOnly') ?? false;
     const body = await c.req.json<ChatCompletionRequest>();
 
-    // Route the request, respecting any provider blocks the user has set
+    // Route the request, respecting any provider blocks the user has set.
+    // When routeToFreeTierOnly is true (balance is $0), restrict routing to
+    // isFreeProvider models — providers with a permanent free tier (Groq, Cerebras, etc.)
     const userBlockedProviders = user?.blockedProviders?.length
       ? new Set(user.blockedProviders)
       : undefined;
-    const decision = deps.router.selectModel(body, apiKey.tier, userBlockedProviders);
+    const decision = deps.router.selectModel(body, apiKey.tier, userBlockedProviders, routeToFreeTierOnly);
     if (!decision) {
+      // Free-tier routing found nothing — no free providers configured or available.
+      // Return a descriptive error rather than a generic 503.
+      if (routeToFreeTierOnly) {
+        return c.json({
+          error: {
+            message: 'Your credit balance is $0 and no free-tier models are currently available. Please add credits at https://api.lxg2it.com/billing to continue.',
+            type: 'insufficient_quota',
+            code: 'no_free_models_available',
+          },
+        }, 402);
+      }
       return c.json({
         error: {
           message: 'No available models for the requested tier. All providers may be experiencing issues.',
@@ -79,6 +99,24 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
           code: 'no_available_models',
         },
       }, 503);
+    }
+
+    // ── Free-tier notification email ───────────────────────────────────────
+    // When routing to free tier, check whether we should send a notification.
+    // This is best-effort (fire-and-forget) — a failed email never blocks the request.
+    if (routeToFreeTierOnly && user && deps.userStore && deps.emailSender) {
+      try {
+        if (deps.userStore.shouldSendFreeTierNotification(user.id)) {
+          deps.userStore.recordFreeTierNotification(user.id);
+          // Fire async — don't await in the hot path
+          deps.emailSender.sendFreeTierNotification(user.email).catch((err: unknown) => {
+            console.error('[chat] Free-tier notification email failed:', err);
+          });
+        }
+      } catch (err) {
+        // Notification logic must never crash the request
+        console.error('[chat] Free-tier notification check failed:', err);
+      }
     }
 
     const startTime = Date.now();
@@ -98,9 +136,9 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
     const telemetrySpan = wrapSpanWithUserOtel(rawSpan, user, decision, apiKey.id, startTime, requestId);
 
     if (body.stream) {
-      return handleStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user, userBlockedProviders, telemetrySpan);
+      return handleStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user, userBlockedProviders, telemetrySpan, routeToFreeTierOnly);
     } else {
-      return handleNonStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user, userBlockedProviders, telemetrySpan);
+      return handleNonStreaming(c, body, decision, deps, apiKey, startTime, satbillAccountId, user, userBlockedProviders, telemetrySpan, routeToFreeTierOnly);
     }
   });
 
@@ -118,6 +156,7 @@ async function handleNonStreaming(
   user?: User,
   blockedProviders?: Set<string>,
   telemetrySpan?: RequestSpan,
+  freeProvidersOnly?: boolean,
 ) {
   const keyId = apiKey.id;
   const adapter = deps.providers.get(decision.provider);
@@ -133,7 +172,17 @@ async function handleNonStreaming(
   // This prevents concurrent overdraft: if two requests arrive simultaneously
   // with the same key, only the one whose reservation succeeds will proceed.
   // The reserved amount is settled to the actual cost after the response.
-  const reservedCents = await reserveCreditsForRequest(c, deps, decision.tier, user);
+  //
+  // Free-provider models (isFreeProvider: true) are never billed — skip reservation.
+  const isFreeTierModel = decision ? (() => {
+    const tierConfig = TIERS[decision.tier];
+    const modelConfig = tierConfig?.models.find(
+      (m) => m.provider === decision.provider && m.model === decision.model,
+    );
+    return modelConfig?.isFreeProvider ?? false;
+  })() : false;
+
+  const reservedCents = isFreeTierModel ? 0 : await reserveCreditsForRequest(c, deps, decision.tier, user);
   if (reservedCents === null) {
     // reserveCreditsForRequest has already written the 402 response
     return c.res;
@@ -208,7 +257,7 @@ async function handleNonStreaming(
     deps.router.recordFailure(decision.provider, decision.model);
 
     // Try failover
-    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages, blockedProviders);
+    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
     if (fallback) {
       const fallbackAdapter = deps.providers.get(fallback.provider);
       if (fallbackAdapter) {
@@ -326,13 +375,24 @@ async function handleStreaming(
   user?: User,
   blockedProviders?: Set<string>,
   telemetrySpan?: RequestSpan,
+  freeProvidersOnly?: boolean,
 ) {
   const keyId = apiKey.id;
 
   // ── Pre-request credit reservation (user-owned keys only) ──────────────
   // Reserve before attempting any provider connection. If reservation fails
   // we return a clean 402 (no SSE response has been committed yet).
-  const reservedCents = await reserveCreditsForRequest(c, deps, decision.tier, user);
+  //
+  // Free-provider models (isFreeProvider: true) are never billed — skip reservation.
+  const isFreeTierModel = (() => {
+    const tierConfig = TIERS[decision.tier];
+    const modelConfig = tierConfig?.models.find(
+      (m) => m.provider === decision.provider && m.model === decision.model,
+    );
+    return modelConfig?.isFreeProvider ?? false;
+  })();
+
+  const reservedCents = isFreeTierModel ? 0 : await reserveCreditsForRequest(c, deps, decision.tier, user);
   if (reservedCents === null) {
     return c.res;
   }
@@ -364,7 +424,7 @@ async function handleStreaming(
 
   // If primary failed, try one fallback (matches non-streaming behaviour)
   if (!completion) {
-    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages, blockedProviders);
+    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
     if (fallback) {
       const fallbackAdapter = deps.providers.get(fallback.provider);
       if (fallbackAdapter) {

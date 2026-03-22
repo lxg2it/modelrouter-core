@@ -168,6 +168,32 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     mmluPro: 90.0,
     simpleBench: 45.0,
   },
+  // Free-provider models — hosted by Groq and Cerebras at no cost.
+  // Benchmarks for base Llama 3.3 70B (published by Meta / Chatbot Arena).
+  // Llama 4 Scout and Cerebras's Llama share the same base model weights.
+  'llama-3.3-70b-versatile': {
+    arenaElo: 1257,
+    gpqaDiamond: 50.7,
+    sweBench: 26.0,
+    mmluPro: 68.9,
+    simpleBench: 39.0,
+  },
+  'llama-4-scout-17b-16e-instruct': {
+    // Llama 4 Scout: 17B active params, mixture of experts (16 experts).
+    // Arena Elo estimated from early leaderboard data — verify when stable.
+    // SWE-bench and SimpleBench not yet published for this model.
+    arenaElo: 1225,
+    gpqaDiamond: 46.0,
+    mmluPro: 64.0,
+  },
+  'llama-3.3-70b': {
+    // Cerebras model — same base weights as Groq llama-3.3-70b-versatile.
+    arenaElo: 1257,
+    gpqaDiamond: 50.7,
+    sweBench: 26.0,
+    mmluPro: 68.9,
+    simpleBench: 39.0,
+  },
 
   // ── Bedrock Standard ──────────────────────────────────
   'zai.glm-4.7': {

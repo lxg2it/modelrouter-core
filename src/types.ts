@@ -128,7 +128,7 @@ export interface ModelsListResponse {
 
 export type Tier = 'economy' | 'standard' | 'premium' | 'embeddings';
 
-export type ProviderName = 'anthropic' | 'openai' | 'google' | 'grok' | 'bedrock' | 'vertex';
+export type ProviderName = 'anthropic' | 'openai' | 'google' | 'grok' | 'bedrock' | 'vertex' | 'groq' | 'cerebras';
 
 export interface ModelConfig {
   provider: ProviderName;
@@ -157,6 +157,16 @@ export interface ModelConfig {
    * Defaults to 'manual' if omitted (safe — unknown = unverified).
    */
   priceSource?: 'litellm' | 'manual';
+  /**
+   * When true, this model is hosted by a provider that offers a permanent free
+   * tier (e.g. Groq, Cerebras, Google AI Studio). Free-provider models are:
+   *   - Available to any authenticated user regardless of credit balance
+   *   - The only models routed to zero-balance users
+   *   - Not billed against user credits (no cost reservation)
+   *
+   * Models without this flag require a positive credit balance for routing.
+   */
+  isFreeProvider?: boolean;
 }
 
 export interface TierConfig {
@@ -206,6 +216,20 @@ export interface User {
   otelHeaders?: string;
 
   dailySpendLimitCents: number;
+
+  /**
+   * ISO timestamp of the last time we emailed the user about their balance
+   * hitting $0 and being routed to free-tier models. NULL = never notified.
+   * Used to enforce the 7-day cooldown and detect "topped up since last notified".
+   */
+  freeTierNotifiedAt?: string;
+
+  /**
+   * ISO timestamp of the last successful credit addition (top-up or promotional).
+   * Used to determine whether the user has topped up since the last free-tier
+   * notification — enabling re-notification if they drain again.
+   */
+  lastCreditAddedAt?: string;
 }
 
 export interface ApiKey {

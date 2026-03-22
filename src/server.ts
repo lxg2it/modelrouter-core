@@ -10,7 +10,7 @@ import { loadConfig, type Config } from './config.js';
 import { isTelemetryEnabled } from './telemetry.js';
 import { KeyStore } from './auth/keys.js';
 import { UserStore } from './auth/users.js';
-import { authMiddleware, sessionMiddleware } from './auth/middleware.js';
+import { authMiddleware, sessionMiddleware, type RateLimitTiers } from './auth/middleware.js';
 import { RoutingEngine } from './routing/engine.js';
 import { createChatRouter } from './api/chat.js';
 import { createEmbeddingsRouter } from './api/embeddings.js';
@@ -22,6 +22,8 @@ import { OpenAIAdapter } from './providers/openai.js';
 import { GoogleAdapter } from './providers/google.js';
 import { SHARED_HEAD, SHARED_CSS, pageFooter } from './api/shared-styles.js';
 import { GrokAdapter } from './providers/grok.js';
+import { GroqAdapter } from './providers/groq.js';
+import { CerebrasAdapter } from './providers/cerebras.js';
 import { BedrockAdapter } from './providers/bedrock.js';
 import { VertexAdapter } from './providers/vertex.js';
 import { SatbillClient } from './billing/satbill-client.js';
@@ -97,6 +99,12 @@ export function createApp(): { app: Hono; ctx: AppContext } {
       config.providers.vertex.serviceAccountJsonPath,
       config.providers.vertex.projectId,
     ));
+  }
+  if (config.providers.groq) {
+    providers.set('groq', new GroqAdapter(config.providers.groq.apiKey));
+  }
+  if (config.providers.cerebras) {
+    providers.set('cerebras', new CerebrasAdapter(config.providers.cerebras.apiKey));
   }
 
   // Routing engine
@@ -204,7 +212,12 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   // Chat, models, and usage — authenticated with API keys (mr_sk_...).
   // Middleware is applied per-path to avoid intercepting management routes.
   //
-  const apiAuth = authMiddleware(keyStore, userStore, billing, rateLimiter);
+  const rateLimitTiers: RateLimitTiers = {
+    thresholdCents: config.elevatedRateLimitThresholdCents,
+    elevatedPerMinute: config.elevatedRateLimitPerMinute,
+    basePerMinute: config.baseRateLimitPerMinute,
+  };
+  const apiAuth = authMiddleware(keyStore, userStore, billing, rateLimiter, rateLimitTiers);
 
   const chatRouter = createChatRouter({
     router,
@@ -216,6 +229,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     stripe: stripeService,
     billingTxStore: stripeService ? billingTxStore : undefined,
     maxDailySpendCents: config.maxDailySpendCents,
+    emailSender: emailSender ?? undefined,
   });
   app.use('/v1/chat/*', apiAuth);
   app.route('/v1/chat', chatRouter);
