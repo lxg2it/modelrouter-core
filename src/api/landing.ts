@@ -381,7 +381,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     No heuristics on individual messages; it reads the whole picture.
     Every auto-routed response includes <code>X-Model-Router-Auto-Tier</code> and <code>X-Model-Router-Auto-Score</code>
     headers so you can see exactly why a tier was chosen.
-    <a href="/docs#auto-routing">How it works →</a>
+    <a href="/docs/api#auto-routing">How it works →</a>
   </p>
 
   <hr class="hr">
