@@ -24,7 +24,7 @@ import { startRequestSpan, type RequestSpan } from '../telemetry-instruments.js'
 import { exportUserSpan, parseOtelHeaders, type UserOtelConfig, type UserSpanData } from '../telemetry-user.js';
 import { randomUUID } from 'node:crypto';
 
-interface ChatDeps {
+export interface ChatDeps {
   router: RoutingEngine;
   providers: Map<ProviderName, ProviderAdapter>;
   logger: UsageLogger;

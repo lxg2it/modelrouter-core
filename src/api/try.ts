@@ -1,20 +1,31 @@
 /**
- * GET /try — interactive playground.
+ * GET  /try       — interactive playground UI.
+ * POST /try/run   — execute a completion, session-authenticated.
  *
- * Lets authenticated users send a prompt and see a real response from the
- * routing engine. Requires a session token (same as /profile). If the user
- * has no API keys they are prompted to create one first.
+ * The /try/run endpoint accepts a session token (mr_st_...) and charges the
+ * request directly against the user's credit balance — no API key needed.
+ * A synthetic ApiKey stub is constructed for attribution/logging purposes.
  *
- * Uses the user's first active API key to make the completion request so the
- * call is attributed correctly and counted against their balance.
- *
- * Non-streaming: simpler, lets us display routing metadata (provider, model,
- * tier) alongside the response once it arrives.
+ * Non-streaming only: lets us display routing metadata alongside the response.
  */
 
 import { Hono } from 'hono';
+import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../config.js';
+import { UsageLogger } from '../tracking/logger.js';
+import type { ChatDeps } from './chat.js';
+import type { KeyStore } from '../auth/keys.js';
+import type { UserStore } from '../auth/users.js';
+import type { ApiKey, User, ChatCompletionRequest } from '../types.js';
+import type { RouteDecision } from '../routing/engine.js';
+import { randomUUID } from 'node:crypto';
 
-export function createTryRouter(): Hono {
+export interface TryRouterDeps {
+  chatDeps: ChatDeps;
+  keyStore: KeyStore;
+  userStore: UserStore;
+}
+
+export function createTryRouter(deps?: TryRouterDeps): Hono {
   const router = new Hono();
 
   router.get('/', (c) => {
@@ -22,8 +33,263 @@ export function createTryRouter(): Hono {
     return c.body(TRY_HTML);
   });
 
+  // POST /try/run — session-authenticated playground execution
+  router.post('/run', async (c) => {
+    if (!deps) {
+      return c.json({ error: { message: 'Playground not configured.', type: 'server_error' } }, 503);
+    }
+
+    // ── Session auth ───────────────────────────────────────────────────────
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader?.startsWith('Bearer mr_st_')) {
+      return c.json({
+        error: { message: 'Sign in to use the playground.', type: 'authentication_error', code: 'missing_session' },
+      }, 401);
+    }
+    const token = authHeader.slice(7); // strip 'Bearer '
+    const user = deps.userStore.validateSession(token);
+    if (!user) {
+      return c.json({
+        error: { message: 'Session expired. Please sign in again.', type: 'authentication_error', code: 'invalid_session' },
+      }, 401);
+    }
+
+    // ── Parse request ──────────────────────────────────────────────────────
+    let body: ChatCompletionRequest;
+    try {
+      body = await c.req.json<ChatCompletionRequest>();
+    } catch {
+      return c.json({ error: { message: 'Invalid JSON body.', type: 'invalid_request_error' } }, 400);
+    }
+
+    if (!body.messages?.length) {
+      return c.json({ error: { message: 'messages is required.', type: 'invalid_request_error' } }, 400);
+    }
+
+    // ── Determine routing ──────────────────────────────────────────────────
+    const routeToFreeOnly = (user.creditBalanceCents ?? 0) <= 0;
+    const userBlockedProviders = user.blockedProviders?.length
+      ? new Set(user.blockedProviders)
+      : undefined;
+
+    const decision = deps.chatDeps.router.selectModel(body, userBlockedProviders, routeToFreeOnly);
+    if (!decision) {
+      if (routeToFreeOnly) {
+        return c.json({
+          error: {
+            message: 'Your balance is $0 and no free models are available. Add credits to continue.',
+            type: 'insufficient_quota',
+            code: 'no_free_models_available',
+          },
+        }, 402);
+      }
+      return c.json({
+        error: { message: 'No models available for this request.', type: 'service_unavailable', code: 'no_available_models' },
+      }, 503);
+    }
+
+    // ── Synthetic key for attribution ──────────────────────────────────────
+    // The playground bills against the user's balance directly (same as a
+    // user-owned API key). We construct a stub key for logging attribution.
+    const syntheticKey: ApiKey = {
+      id:                'playground',
+      keyHash:           'playground',
+      keyPrefix:         'playground',
+      tier:              'standard',
+      name:              'Playground',
+      active:            true,
+      userId:            user.id,
+      creditBalanceCents: 0, // unused — billing is via user record
+      createdAt:         new Date().toISOString(),
+    };
+
+    // ── Free-tier notification ─────────────────────────────────────────────
+    if (routeToFreeOnly && deps.chatDeps.userStore && deps.chatDeps.emailSender) {
+      try {
+        if (deps.chatDeps.userStore.shouldSendFreeTierNotification(user.id)) {
+          deps.chatDeps.userStore.recordFreeTierNotification(user.id);
+          deps.chatDeps.emailSender.sendFreeTierNotification(user.email).catch((err: unknown) => {
+            console.error('[try/run] Free-tier notification email failed:', err);
+          });
+        }
+      } catch (err) {
+        console.error('[try/run] Free-tier notification check failed:', err);
+      }
+    }
+
+    const startTime = Date.now();
+
+    // ── Credit reservation ─────────────────────────────────────────────────
+    const isFreeTierModel = isFreeProvider(decision);
+    let reservedCents = 0;
+
+    if (!isFreeTierModel && user.stripeCustomerId && deps.chatDeps.userStore) {
+      // Daily spend cap check
+      const systemDefault = deps.chatDeps.maxDailySpendCents ?? 3000;
+      const userLimit = user.dailySpendLimitCents ?? 0;
+      const maxDaily = userLimit > 0 ? userLimit : systemDefault;
+      if (maxDaily > 0) {
+        const todaySpend = deps.chatDeps.userStore.getDailySpendCents(user.id);
+        if (todaySpend >= maxDaily) {
+          return c.json({
+            error: {
+              message: `Daily spending limit of $${(maxDaily / 100).toFixed(2)} reached.`,
+              type: 'rate_limit_error',
+              code: 'daily_spend_limit_exceeded',
+            },
+          }, 429);
+        }
+      }
+
+      const reserveCents = TIER_MAX_RESERVE_CENTS[decision.tier] ?? 200;
+      const reserved = deps.chatDeps.userStore.tryReserveCredits(user.id, reserveCents);
+
+      if (!reserved) {
+        // Try auto-recharge
+        if (deps.chatDeps.stripe && deps.chatDeps.billingTxStore) {
+          const freshUser = deps.chatDeps.userStore.findById(user.id);
+          if (freshUser?.autoRechargeEnabled && freshUser.stripeCustomerId) {
+            const claimed = deps.chatDeps.userStore.tryClaimAutoRecharge(user.id);
+            if (claimed) {
+              try {
+                const amount = freshUser.autoRechargeAmountCents;
+                const result = await deps.chatDeps.stripe.charge(
+                  freshUser.stripeCustomerId, amount, `Auto-recharge for ${freshUser.email}`);
+                if (result.status === 'succeeded') {
+                  const credits = Math.floor(amount * 0.96);
+                  deps.chatDeps.userStore.addCredits(user.id, credits);
+                  deps.chatDeps.billingTxStore.record({
+                    userId: user.id, keyId: null,
+                    paymentIntentId: result.paymentIntentId,
+                    amountChargedCents: amount, creditsAddedCents: credits,
+                    status: 'succeeded', source: 'auto_recharge',
+                  });
+                  const retried = deps.chatDeps.userStore.tryReserveCredits(user.id, reserveCents);
+                  if (retried) reservedCents = reserveCents;
+                }
+              } catch (err) {
+                console.error('[try/run] Auto-recharge failed:', err);
+              }
+            }
+          }
+        }
+
+        if (reservedCents === 0) {
+          return c.json({
+            error: {
+              message: 'Insufficient credits. Add credits in your profile to use paid models.',
+              type: 'insufficient_quota',
+              code: 'insufficient_credits',
+            },
+          }, 402);
+        }
+      } else {
+        reservedCents = reserveCents;
+      }
+    }
+
+    // ── Provider call ──────────────────────────────────────────────────────
+    const adapter = deps.chatDeps.providers.get(decision.provider);
+    if (!adapter) {
+      if (reservedCents > 0 && deps.chatDeps.userStore) {
+        deps.chatDeps.userStore.refundCredits(user.id, reservedCents);
+      }
+      return c.json({
+        error: { message: `Provider ${decision.provider} not configured.`, type: 'server_error' },
+      }, 500);
+    }
+
+    try {
+      const effectiveRequest = applyThinkingFloor(body, decision);
+      const result = await adapter.complete(decision.model, effectiveRequest);
+      deps.chatDeps.router.recordSuccess(decision.provider, decision.model);
+
+      const modelConfig = findModel(decision.provider, decision.model, decision.tier);
+      const costCents = modelConfig
+        ? UsageLogger.calculateCost(
+            result.usage.prompt_tokens,
+            result.usage.completion_tokens,
+            modelConfig.inputPer1M,
+            modelConfig.outputPer1M,
+          )
+        : 0;
+
+      deps.chatDeps.logger.log({
+        keyId: syntheticKey.id,
+        provider: decision.provider,
+        model: decision.model,
+        tier: decision.tier,
+        promptTokens: result.usage.prompt_tokens,
+        completionTokens: result.usage.completion_tokens,
+        costCents,
+        latencyMs: Date.now() - startTime,
+        streaming: false,
+        statusCode: 200,
+      });
+
+      // Settle credits — return unused portion of reservation, or deduct directly if no reservation
+      if (deps.chatDeps.userStore && user.stripeCustomerId) {
+        if (reservedCents > 0) {
+          const refund = reservedCents - costCents;
+          if (refund > 0) deps.chatDeps.userStore.refundCredits(user.id, refund);
+          else if (refund < 0) deps.chatDeps.userStore.deductCredits(user.id, -refund);
+        } else if (costCents > 0) {
+          deps.chatDeps.userStore.deductCredits(user.id, costCents);
+        }
+      }
+
+      return c.json({
+        content: result.response.choices[0]?.message?.content ?? '',
+        usage: result.response.usage,
+        provider: decision.provider,
+        model: decision.model,
+        tier: decision.tier,
+        prefer: body.prefer ?? 'balanced',
+        latencyMs: Date.now() - startTime,
+        autoTier: decision.autoTier?.tier,
+        isFree: isFreeTierModel,
+      });
+
+    } catch (err) {
+      deps.chatDeps.router.recordFailure(decision.provider, decision.model);
+      if (reservedCents > 0 && deps.chatDeps.userStore) {
+        deps.chatDeps.userStore.refundCredits(user.id, reservedCents);
+      }
+      console.error('[try/run] Provider call failed:', err);
+      return c.json({
+        error: { message: 'Provider call failed. Try again or choose a different tier.', type: 'server_error' },
+      }, 502);
+    }
+  });
+
   return router;
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function isFreeProvider(decision: RouteDecision): boolean {
+  const tierConfig = TIERS[decision.tier];
+  const modelConfig = tierConfig?.models.find(
+    (m) => m.provider === decision.provider && m.model === decision.model,
+  );
+  return modelConfig?.isFreeProvider ?? false;
+}
+
+function findModel(provider: string, model: string, tier: string) {
+  return TIERS[tier]?.models.find((m) => m.provider === provider && m.model === model) ?? null;
+}
+
+function applyThinkingFloor(request: ChatCompletionRequest, decision: RouteDecision): ChatCompletionRequest {
+  if (!decision.isThinkingModel) return request;
+  const current = (request as any).thinking?.budget_tokens
+    ?? (request as any).max_completion_tokens
+    ?? (request as any).max_tokens
+    ?? 0;
+  if (current >= MIN_THINKING_OUTPUT_TOKENS) return request;
+  return { ...request, max_tokens: MIN_THINKING_OUTPUT_TOKENS };
+}
+
+// ── HTML ──────────────────────────────────────────────────────────────────────
 
 const TRY_HTML = /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -88,6 +354,12 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
       -webkit-appearance: none; min-width: 120px;
     }
     select:focus { outline: none; border-color: var(--accent); }
+    input[type="text"] {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); font-family: var(--sans); font-size: 13px;
+      padding: 7px 10px; width: 100%;
+    }
+    input[type="text"]:focus { outline: none; border-color: var(--accent); }
 
     /* ── Prompt area ── */
     .prompt-wrap { position: relative; margin-bottom: 12px; }
@@ -111,11 +383,6 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
     .btn-primary { background: var(--accent); color: #fff; }
     .btn-primary:hover { opacity: 0.85; }
     .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
-    .btn-secondary {
-      background: var(--surface); color: var(--text);
-      border: 1px solid var(--border); font-size: 12px; padding: 6px 14px;
-    }
-    .btn-secondary:hover { border-color: var(--muted); }
     .hint { font-size: 12px; color: var(--muted); font-family: var(--mono); }
 
     /* ── Response ── */
@@ -124,7 +391,7 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
       padding: 20px; min-height: 80px;
     }
     .response-meta {
-      display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+      display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
       margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
     }
     .meta-pill {
@@ -133,6 +400,7 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
       padding: 2px 8px; color: var(--muted);
     }
     .meta-pill span { color: var(--text); }
+    .meta-pill.free-badge { border-color: var(--green); color: var(--green); }
     .response-body {
       font-size: 15px; line-height: 1.7; color: var(--text);
       white-space: pre-wrap; word-break: break-word;
@@ -148,7 +416,7 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── Status / error ── */
+    /* ── Notices ── */
     .notice {
       padding: 14px 18px; font-size: 14px; line-height: 1.5; margin-bottom: 20px;
       border-left: 3px solid var(--border);
@@ -186,25 +454,19 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- Auth required notice (shown if not logged in) -->
+  <!-- Not logged in -->
   <div id="authNotice" class="notice notice-info hidden">
     <a href="/profile">Sign in or create an account</a> to use the playground.
     It only takes a minute — no credit card required.
   </div>
 
-  <!-- No keys notice -->
-  <div id="noKeysNotice" class="notice notice-info hidden">
-    You need an API key to use the playground.
-    <a href="/profile">Create one in your profile →</a>
-  </div>
-
-  <!-- Low / zero balance notice (shown alongside playground, not instead of it) -->
+  <!-- Zero balance notice (shown alongside playground, not instead of it) -->
   <div id="freeNotice" class="notice notice-warn hidden">
     Your balance is $0.00 — requests will be routed to free models (Groq / Cerebras).
     <a href="/profile">Add credits</a> to unlock the full model range.
   </div>
 
-  <!-- Main playground (hidden until session confirmed + key exists) -->
+  <!-- Main playground -->
   <div id="playground" class="hidden">
 
     <div class="controls">
@@ -227,11 +489,9 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
           <option value="coding">coding</option>
         </select>
       </div>
-      <div class="control-group" style="flex:1; min-width:140px;">
+      <div class="control-group" style="flex:1; min-width:160px;">
         <div class="control-label">System prompt <span style="font-weight:400; text-transform:none; letter-spacing:0;">(optional)</span></div>
-        <input type="text" id="systemPrompt" placeholder="e.g. You are a helpful assistant."
-          style="background:var(--surface); border:1px solid var(--border); color:var(--text);
-                 font-family:var(--sans); font-size:13px; padding:7px 10px; width:100%;" />
+        <input type="text" id="systemPrompt" placeholder="e.g. You are a helpful assistant." />
       </div>
     </div>
 
@@ -241,7 +501,7 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
 
     <div class="send-row">
       <button id="sendBtn" class="btn btn-primary" onclick="sendPrompt()">Send</button>
-      <span id="sendHint" class="hint">Ctrl+Enter to send</span>
+      <span class="hint">Ctrl+Enter to send</span>
     </div>
 
     <!-- Response area -->
@@ -268,17 +528,10 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
 </div>
 
 <script>
-  const BASE = '';
   let sessionToken = localStorage.getItem('mr_session') || '';
-  let activeApiKey = null; // full key string
-
-  // ─── Boot ─────────────────────────────────────────────────
 
   window.addEventListener('DOMContentLoaded', async () => {
-    if (!sessionToken) {
-      show('authNotice');
-      return;
-    }
+    if (!sessionToken) { show('authNotice'); return; }
     await boot();
   });
 
@@ -288,74 +541,27 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
 
   async function boot() {
     try {
-      const [profileRes, keysRes] = await Promise.all([
-        apiFetch('GET', '/v1/account/profile'),
-        apiFetch('GET', '/v1/keys'),
-      ]);
+      const res = await apiFetch('GET', '/v1/account/profile');
+      if (!res.ok) { show('authNotice'); return; }
 
-      if (!profileRes.ok) {
-        show('authNotice');
-        return;
-      }
-
-      const profile = await profileRes.json();
-      const keysData = keysRes.ok ? await keysRes.json() : { keys: [] };
-      const keys = keysData.keys ?? [];
-
-      // Update balance pill
+      const profile = await res.json();
       const balanceEl = document.getElementById('balancePill');
       balanceEl.textContent = profile.creditBalanceUsd ?? '$0.00';
       balanceEl.classList.remove('hidden');
 
-      // Show low-balance notice if $0
-      const balanceCents = profile.creditBalanceCents ?? 0;
-      if (balanceCents <= 0) show('freeNotice');
+      if ((profile.creditBalanceCents ?? 0) <= 0) show('freeNotice');
 
-      // Find first active key — we need the full key to call the API.
-      // The list endpoint returns only prefixes (security), so we read from
-      // localStorage where the key was stored at creation time.
-      const firstKey = getStoredKey(keys);
-
-      if (!firstKey) {
-        show('noKeysNotice');
-        return;
-      }
-
-      activeApiKey = firstKey;
       show('playground');
     } catch {
       show('authNotice');
     }
   }
 
-  // ─── Key retrieval ─────────────────────────────────────────
-  //
-  // The /v1/keys list only returns prefixes (mr_sk_xxxx...) for security.
-  // We persist the full key in localStorage at creation time (in /profile).
-  // Here we match stored keys against the user's active key list by prefix.
-
-  function getStoredKey(keys) {
-    const active = keys.filter(k => k.active);
-    if (active.length === 0) return null;
-
-    // Try to find a stored full key that matches any active key prefix
-    for (const k of active) {
-      const stored = localStorage.getItem('mr_key_' + k.id);
-      if (stored) return stored;
-    }
-
-    // No stored key found — user probably created the key in a different browser
-    // or cleared storage. Prompt them to create a new key.
-    return null;
-  }
-
-  // ─── Send ─────────────────────────────────────────────────
-
   async function sendPrompt() {
     const prompt = document.getElementById('promptInput').value.trim();
     if (!prompt) return;
 
-    const tier = document.getElementById('tierSelect').value;
+    const tier   = document.getElementById('tierSelect').value;
     const prefer = document.getElementById('preferSelect').value;
     const system = document.getElementById('systemPrompt').value.trim();
 
@@ -366,25 +572,18 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
     if (system) messages.push({ role: 'system', content: system });
     messages.push({ role: 'user', content: prompt });
 
-    const body = { messages, stream: false, prefer };
-    if (tier) body.model = tier; // tier name as model → resolved by alias map
+    const body = { messages, prefer };
+    if (tier) body.model = tier;
 
     try {
-      const res = await fetch(BASE + '/v1/chat/completions', {
+      const res = await fetch('/try/run', {
         method: 'POST',
         headers: {
-          'Authorization': 'Bearer ' + activeApiKey,
+          'Authorization': 'Bearer ' + sessionToken,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
       });
-
-      // Extract routing headers
-      const provider  = res.headers.get('X-Model-Router-Provider') ?? '';
-      const model     = res.headers.get('X-Model-Router-Model') ?? '';
-      const routedTier = res.headers.get('X-Model-Router-Tier') ?? '';
-      const latencyMs = res.headers.get('X-Model-Router-Latency-Ms') ?? '';
-      const autoTier  = res.headers.get('X-Model-Router-Auto-Tier') ?? '';
 
       const data = await res.json();
 
@@ -394,13 +593,10 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
         return;
       }
 
-      const content = data?.choices?.[0]?.message?.content ?? '';
-      showResponse(content, { provider, model, tier: routedTier, latencyMs, autoTier, prefer, usage: data.usage });
-
-      // Refresh balance after a successful call
+      showResponse(data);
       refreshBalance();
 
-    } catch (err) {
+    } catch {
       showError('Network error — check your connection and try again.');
     } finally {
       setLoading(false);
@@ -412,29 +608,21 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
       const res = await apiFetch('GET', '/v1/account/profile');
       if (res.ok) {
         const p = await res.json();
-        const balanceEl = document.getElementById('balancePill');
-        balanceEl.textContent = p.creditBalanceUsd ?? '$0.00';
-        // Show/hide free notice
+        document.getElementById('balancePill').textContent = p.creditBalanceUsd ?? '$0.00';
         if ((p.creditBalanceCents ?? 0) <= 0) show('freeNotice');
         else hide('freeNotice');
       }
     } catch { /* non-critical */ }
   }
 
-  // ─── UI helpers ───────────────────────────────────────────
+  // ── UI helpers ─────────────────────────────────────────────────────────────
 
   function setLoading(on) {
     const btn = document.getElementById('sendBtn');
     const ta  = document.getElementById('promptInput');
-    if (on) {
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span>Sending…';
-      ta.disabled = true;
-    } else {
-      btn.disabled = false;
-      btn.innerHTML = 'Send';
-      ta.disabled = false;
-    }
+    btn.disabled = on;
+    btn.innerHTML = on ? '<span class="spinner"></span>Sending…' : 'Send';
+    ta.disabled = on;
   }
 
   function clearResponse() {
@@ -448,23 +636,24 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
     document.getElementById('responseError').textContent = '';
   }
 
-  function showResponse(content, meta) {
+  function showResponse(data) {
     hide('responsePlaceholder');
     hide('responseError');
 
-    const metaEl = document.getElementById('responseMeta');
     const pills = [];
-    if (meta.provider) pills.push(pill('provider', meta.provider));
-    if (meta.model)    pills.push(pill('model', meta.model));
-    if (meta.tier)     pills.push(pill('tier', meta.tier));
-    if (meta.prefer)   pills.push(pill('prefer', meta.prefer));
-    if (meta.latencyMs) pills.push(pill('latency', meta.latencyMs + 'ms'));
-    if (meta.autoTier) pills.push(pill('auto→', meta.autoTier));
-    if (meta.usage?.total_tokens) pills.push(pill('tokens', meta.usage.total_tokens));
-    metaEl.innerHTML = pills.join('');
+    if (data.provider)  pills.push(pill('provider', data.provider));
+    if (data.model)     pills.push(pill('model', data.model));
+    if (data.tier)      pills.push(pill('tier', data.tier));
+    if (data.prefer)    pills.push(pill('prefer', data.prefer));
+    if (data.latencyMs) pills.push(pill('latency', data.latencyMs + 'ms'));
+    if (data.autoTier)  pills.push(pill('auto→', data.autoTier));
+    if (data.usage?.total_tokens) pills.push(pill('tokens', data.usage.total_tokens));
+    if (data.isFree)    pills.push('<span class="meta-pill free-badge">free</span>');
+
+    document.getElementById('responseMeta').innerHTML = pills.join('');
     show('responseMeta');
 
-    document.getElementById('responseBody').textContent = content;
+    document.getElementById('responseBody').textContent = data.content ?? '';
     show('responseBody');
   }
 
@@ -472,15 +661,11 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
     hide('responsePlaceholder');
     hide('responseBody');
     hide('responseMeta');
-
-    const el = document.getElementById('responseError');
     let extra = '';
-    if (status === 402) {
-      extra = ' <a href="/profile" style="color:#f87171;">Add credits →</a>';
-    } else if (status === 429) {
-      extra = ' (rate limited — try again in a moment)';
-    }
-    el.innerHTML = esc(msg) + extra;
+    if (status === 402) extra = ' <a href="/profile" style="color:#f87171;">Add credits →</a>';
+    else if (status === 429) extra = ' (rate limited — try again shortly)';
+    else if (status === 401) extra = ' — <a href="/profile" style="color:#f87171;">Sign in again →</a>';
+    document.getElementById('responseError').innerHTML = esc(msg) + extra;
     show('responseError');
   }
 
@@ -496,12 +681,9 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
   }
 
   function apiFetch(method, path, body) {
-    const opts = {
-      method,
-      headers: { 'Authorization': 'Bearer ' + sessionToken, 'Content-Type': 'application/json' },
-    };
+    const opts = { method, headers: { 'Authorization': 'Bearer ' + sessionToken, 'Content-Type': 'application/json' } };
     if (body !== undefined) opts.body = JSON.stringify(body);
-    return fetch(BASE + path, opts);
+    return fetch(path, opts);
   }
 <\/script>
 </body>
