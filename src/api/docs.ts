@@ -731,6 +731,136 @@ curl https://api.lxg2it.com/v1/chat/completions \\
 
 
 
+
+
+    <!-- Specialist models -->
+    <div class="section-head" id="specialist-models">Specialist models</div>
+
+    <p>
+      Most models route automatically through <code class="inline-code">POST /v1/chat/completions</code>.
+      Two models have different API surfaces and are excluded from auto-routing &mdash; they must be
+      pinned by name.
+    </p>
+
+    <!-- Text completions -->
+    <div class="endpoint">
+      <span class="endpoint-method">POST</span>
+      <span class="endpoint-path">/v1/completions</span>
+      <div class="endpoint-desc">
+        Legacy text-completion endpoint for models that complete a prompt rather than a conversation.
+        Currently: <code>gpt-5.1-codex-mini</code>.
+      </div>
+    </div>
+
+    <p>
+      Send a <code class="inline-code">prompt</code> string instead of a
+      <code class="inline-code">messages</code> array. The response shape is OpenAI's
+      <code class="inline-code">text_completion</code> object.
+    </p>
+
+    <table class="param-table">
+      <thead>
+        <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>model</code></td>
+          <td>string</td>
+          <td><strong>Required.</strong> Must be a completions-type model ID
+          (e.g. <code>gpt-5.1-codex-mini</code>). Chat models are rejected on this endpoint.</td>
+        </tr>
+        <tr>
+          <td><code>prompt</code></td>
+          <td>string</td>
+          <td><strong>Required.</strong> Text prefix to complete.</td>
+        </tr>
+        <tr>
+          <td><code>max_tokens</code></td>
+          <td>integer</td>
+          <td>Maximum tokens to generate.</td>
+        </tr>
+        <tr>
+          <td><code>temperature</code></td>
+          <td>number</td>
+          <td>Sampling temperature, 0&ndash;2.</td>
+        </tr>
+        <tr>
+          <td><code>stop</code></td>
+          <td>string | array</td>
+          <td>Stop sequences.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p><strong>Example:</strong></p>
+
+    <div class="code-block"><span class="c">curl</span> https://api.lxg2it.com/v1/completions \\
+  -H <span class="s">"Authorization: Bearer $KEY"</span> \\
+  -H <span class="s">"Content-Type: application/json"</span> \\
+  -d <span class="s">'{
+  "model": "gpt-5.1-codex-mini",
+  "prompt": "def fibonacci(n):",
+  "max_tokens": 256,
+  "temperature": 0
+}'</span></div>
+
+    <div class="code-block"><span class="c">// Response</span>
+{
+  <span class="n">"object"</span>: <span class="s">"text_completion"</span>,
+  <span class="n">"model"</span>: <span class="s">"gpt-5.1-codex-mini"</span>,
+  <span class="n">"choices"</span>: [{
+    <span class="n">"index"</span>: 0,
+    <span class="n">"text"</span>: <span class="s">"\\n    if n <= 1:\\n        return n\\n    return fibonacci(n-1) + fibonacci(n-2)"</span>,
+    <span class="n">"finish_reason"</span>: <span class="s">"stop"</span>
+  }],
+  <span class="n">"usage"</span>: { <span class="n">"prompt_tokens"</span>: 8, <span class="n">"completion_tokens"</span>: 42, <span class="n">"total_tokens"</span>: 50 }
+}</div>
+
+    <!-- Responses API -->
+    <div class="endpoint" style="margin-top: 28px;">
+      <span class="endpoint-method">POST</span>
+      <span class="endpoint-path">/v1/chat/completions <span style="font-size:11px; opacity:0.7;">(Responses API, auto-translated)</span></span>
+      <div class="endpoint-desc">
+        Coding-specialist models that use OpenAI&rsquo;s Responses API internally.
+        You send a normal chat request &mdash; the router translates it automatically.
+        Currently: <code>gpt-5.3-codex</code>.
+      </div>
+    </div>
+
+    <p>
+      Use <code class="inline-code">POST /v1/chat/completions</code> exactly as you would for any
+      chat model &mdash; pass a <code class="inline-code">messages</code> array, get back a
+      <code class="inline-code">chat.completion</code> object. The translation to OpenAI&rsquo;s
+      <a href="https://platform.openai.com/docs/api-reference/responses" target="_blank"
+         style="color:var(--accent);">/v1/responses</a> endpoint happens transparently.
+    </p>
+
+    <p>
+      <strong>Limitations:</strong> streaming (<code class="inline-code">stream: true</code>) is not
+      supported and will return a <code class="inline-code">400</code>. Multi-turn conversation history
+      is supported.
+    </p>
+
+    <p><strong>Example:</strong></p>
+
+    <div class="code-block"><span class="c">curl</span> https://api.lxg2it.com/v1/chat/completions \\
+  -H <span class="s">"Authorization: Bearer $KEY"</span> \\
+  -H <span class="s">"Content-Type: application/json"</span> \\
+  -d <span class="s">'{
+  "model": "gpt-5.3-codex",
+  "messages": [
+    { "role": "system", "content": "You are an expert software engineer." },
+    { "role": "user", "content": "Implement a binary search tree in Python." }
+  ]
+}'</span></div>
+
+    <p>
+      The system message becomes OpenAI&rsquo;s <code class="inline-code">instructions</code> field.
+      The response is a standard chat completion object.
+    </p>
+
+
+
     <!-- Observability -->
     <div class="section-head">Observability</div>
 

@@ -173,6 +173,52 @@ interface TierModelEntry {
   description: string;
 }
 
+
+function renderSpecialApiModels(tierEntries: TierModelEntry[]): string {
+  const special = tierEntries.flatMap(({ models: ms }) =>
+    ms.filter((m) => m.apiType === 'completions' || m.apiType === 'responses'),
+  );
+  if (special.length === 0) return '';
+
+  const rows = special.map((m) => {
+    const endpoint = m.apiType === 'responses' ? '/v1/chat/completions' : '/v1/completions';
+    const label = m.apiType === 'responses'
+      ? 'Responses API (auto-translated)'
+      : 'Legacy completions API';
+    return `
+      <tr>
+        <td><code>${displayModel(m.model)}</code></td>
+        <td>${m.provider}</td>
+        <td><code>${endpoint}</code></td>
+        <td>${label}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="section-head">Specialist models</div>
+    <p style="font-size:13px; color:var(--text); margin-bottom:16px;">
+      The following models have API differences and are excluded from automatic selection.
+      Pin them explicitly with a <code>model</code> field to use them.
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Provider</th>
+            <th>Endpoint</th>
+            <th>API type</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p style="font-size:12px; color:var(--muted); margin-top:10px;">
+      See <a href="/docs#specialist-models" style="color:var(--accent);">documentation</a> for usage details.
+    </p>`;
+}
+
+
 function formatContext(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(0)}M`;
   if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(0)}k`;
@@ -385,6 +431,8 @@ function renderModelsHtml(models: ModelInfo[]): string {
     ${renderSelectionGrid()}
 
     ${tierSections}
+
+    ${renderSpecialApiModels(tierEntries)}
 
     <div class="section-head">Embeddings</div>
     <p style="font-size:13px; color:var(--text); margin-bottom:16px;">
