@@ -439,8 +439,9 @@ describe('RoutingEngine', () => {
         expect(decision.tier).toBe('premium');
       });
 
-      it('picks the highest quality model in any tier when set explicitly', () => {
-        // tier:standard + prefer:quality → highest quality standard model
+      it('picks the highest quality chat model in any tier when set explicitly', () => {
+        // tier:standard + prefer:quality → highest quality standard chat model.
+        // Non-chat models (responses/completions apiType) are excluded from auto-routing.
         const engine = new RoutingEngine({
           availableProviders: new Set(['anthropic', 'openai', 'google']),
           defaultTier: 'economy',
@@ -448,8 +449,9 @@ describe('RoutingEngine', () => {
         });
 
         const decision = engine.selectModel(req({ tier: 'standard', prefer: 'quality' }))!;
-        // gpt-5.3-codex has quality: 0.91 — the highest in standard
-        expect(decision.model).toBe('gpt-5.3-codex');
+        // gpt-5.3-codex (quality 0.91) is excluded (responses type).
+        // gpt-5.3-chat-latest (quality 0.88) is the highest quality chat model in standard.
+        expect(decision.model).toBe('gpt-5.3-chat-latest');
         expect(decision.tier).toBe('standard');
         expect(decision.prefer).toBe('quality');
       });

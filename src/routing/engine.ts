@@ -135,7 +135,11 @@ export class RoutingEngine {
       : getModelsForTier(tier, this.config.availableProviders);
 
     const candidates = this.filterByContext(
-      this.filterBlocked(modelsToSearch, blockedProviders),
+      // Exclude non-chat models from auto-routing — completions/responses models
+      // require explicit endpoint selection and can't be transparently substituted.
+      this.filterBlocked(modelsToSearch, blockedProviders).filter(
+        (m) => (m.apiType ?? 'chat') === 'chat',
+      ),
       estimatedTokens,
     );
     if (candidates.length === 0) return null;
@@ -213,7 +217,9 @@ export class RoutingEngine {
       ? getModelsForTier(tier, this.config.availableProviders).filter((m) => m.isFreeProvider)
       : getModelsForTier(tier, this.config.availableProviders);
     const candidates = this.filterByContext(
-      this.filterBlocked(modelsToSearch, blockedProviders),
+      this.filterBlocked(modelsToSearch, blockedProviders).filter(
+        (m) => (m.apiType ?? 'chat') === 'chat',
+      ),
       estimatedTokens,
     )
       .filter((m) => !(m.provider === failedProvider && m.model === failedModel))

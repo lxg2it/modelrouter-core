@@ -161,7 +161,7 @@ export interface ModelInfo {
   created: number;
   owned_by: string;
   /** Which API surface this model uses. Omitted for tier/alias entries (defaults to 'chat'). */
-  api_type?: 'chat' | 'completions';
+  api_type?: 'chat' | 'completions' | 'responses';
 }
 
 export interface ModelsListResponse {
@@ -224,11 +224,12 @@ export interface ModelConfig {
    * Which API surface this model uses.
    *   'chat'        — POST /v1/chat/completions with a messages array (default)
    *   'completions' — POST /v1/completions with a prompt string
+   *   'responses'   — POST /v1/responses (OpenAI's new flagship surface)
    *
-   * Sending a chat request to a completions model (or vice versa) returns a
-   * 400 error pointing the client at the correct endpoint.
+   * Sending a request to the wrong endpoint returns a 400 pointing at
+   * the correct one.
    */
-  apiType?: 'chat' | 'completions';
+  apiType?: 'chat' | 'completions' | 'responses';
 }
 
 export interface TierConfig {

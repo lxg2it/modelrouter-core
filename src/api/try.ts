@@ -33,7 +33,7 @@ export function createTryRouter(deps?: TryRouterDeps): Hono {
   router.get('/', (c) => {
     c.header('Content-Type', 'text/html; charset=utf-8');
     // Build grouped model list from TIERS config, server-side
-    const groups: Array<{ tier: string; models: Array<{ id: string; apiType: 'chat' | 'completions' }> }> =
+    const groups: Array<{ tier: string; models: Array<{ id: string; apiType: 'chat' | 'completions' | 'responses' }> }> =
       (['economy', 'standard', 'premium'] as const).map((tier) => ({
         tier,
         models: (TIERS[tier]?.models ?? []).map((m) => ({ id: m.model, apiType: m.apiType ?? 'chat' })),
@@ -243,6 +243,7 @@ export function createTryRouter(deps?: TryRouterDeps): Hono {
         },
       }, 400);
     }
+    // 'responses' models are fine via chat-style requests — we translate internally
 
     try {
       let responseContent: string;
@@ -258,6 +259,15 @@ export function createTryRouter(deps?: TryRouterDeps): Hono {
         );
         deps.chatDeps.router.recordSuccess(decision.provider, decision.model);
         responseContent = result.response.choices[0]?.text ?? '';
+        usage = result.usage;
+      } else if (resolvedApiType === 'responses') {
+        if (!adapter.completeResponses) {
+          throw new Error(`Provider ${decision.provider} does not support the Responses API`);
+        }
+        const result = await adapter.completeResponses(decision.model, body);
+        deps.chatDeps.router.recordSuccess(decision.provider, decision.model);
+        const rawContent = result.response.choices[0]?.message?.content ?? '';
+        responseContent = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
         usage = result.usage;
       } else {
         const effectiveRequest = applyThinkingFloor(body, decision);
@@ -378,7 +388,7 @@ function applyThinkingFloor(request: ChatCompletionRequest, decision: RouteDecis
 
 // ── HTML ──────────────────────────────────────────────────────────────────────
 
-function tryHtml(groups: Array<{ tier: string; models: Array<{ id: string; apiType: 'chat' | 'completions' }> }>): string {
+function tryHtml(groups: Array<{ tier: string; models: Array<{ id: string; apiType: 'chat' | 'completions' | 'responses' }> }>): string {
   const optgroups = groups
     .map(({ tier, models }) =>
       `<optgroup label="${tier}">${models.map((m) => `<option value="${m.id}" data-api-type="${m.apiType}">${m.id}</option>`).join('')}</optgroup>`,

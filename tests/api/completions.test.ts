@@ -61,7 +61,7 @@ function makeTextCompletionsAdapter(name: ProviderName): ProviderAdapter {
         id: 'cmpl-test',
         object: 'text_completion',
         created: 1234567890,
-        model: 'gpt-5.3-codex',
+        model: 'gpt-5.1-codex-mini',
         choices: [{ index: 0, text: 'def hello():\n    print("world")', finish_reason: 'stop' }],
         usage: { prompt_tokens: 8, completion_tokens: 12, total_tokens: 20 },
       },
@@ -126,7 +126,7 @@ describe('POST /v1/completions', () => {
     const res = await app.request('http://test/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: 'def hello', model: 'gpt-5.3-codex' }),
+      body: JSON.stringify({ prompt: 'def hello', model: 'gpt-5.1-codex-mini' }),
     });
 
     expect(res.status).toBe(200);
@@ -143,7 +143,7 @@ describe('POST /v1/completions', () => {
     const res = await app.request('http://test/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-5.3-codex' }),
+      body: JSON.stringify({ model: 'gpt-5.1-codex-mini' }),
     });
 
     expect(res.status).toBe(400);
@@ -183,7 +183,7 @@ describe('POST /v1/completions', () => {
     const res = await app.request('http://test/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: 'def hello', model: 'gpt-5.3-codex' }),
+      body: JSON.stringify({ prompt: 'def hello', model: 'gpt-5.1-codex-mini' }),
     });
 
     expect(res.status).toBe(500);
@@ -203,7 +203,7 @@ describe('POST /v1/chat/completions — completions-model guard', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messages: [{ role: 'user', content: 'write some code' }],
-        model: 'gpt-5.3-codex',
+        model: 'gpt-5.1-codex-mini',
       }),
     });
 

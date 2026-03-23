@@ -80,6 +80,16 @@ export interface ProviderAdapter {
     model: string,
     request: TextCompletionRequest,
   ): Promise<TextCompletionResult>;
+
+  /**
+   * Responses API completion (for responses-type models like gpt-5.3-codex).
+   * Optional — only OpenAI supports /v1/responses.
+   * Accepts a chat-compatible request and translates internally.
+   */
+  completeResponses?(
+    model: string,
+    request: ChatCompletionRequest,
+  ): Promise<CompletionResult>;
 }
 
 export interface TextCompletionResult {

@@ -117,6 +117,16 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
         },
       }, 400);
     }
+    // Responses-type models don't support streaming (yet)
+    if (resolvedModelConfig?.apiType === 'responses' && body.stream) {
+      return c.json({
+        error: {
+          message: `Model '${decision.model}' uses the Responses API which does not support streaming. Remove stream: true from your request.`,
+          type: 'invalid_request_error',
+          param: 'stream',
+        },
+      }, 400);
+    }
 
 
     // ── Free-tier notification email ───────────────────────────────────────
@@ -207,8 +217,12 @@ async function handleNonStreaming(
   }
 
   try {
+    const resolvedModelConfig = findModelConfig(decision.provider, decision.model, decision.tier);
+    const resolvedApiTypeForCall = resolvedModelConfig?.apiType ?? 'chat';
     const effectiveRequest = applyThinkingTokenFloor(request, decision);
-    const result = await adapter.complete(decision.model, effectiveRequest);
+    const result = resolvedApiTypeForCall === 'responses' && adapter.completeResponses
+      ? await adapter.completeResponses(decision.model, effectiveRequest)
+      : await adapter.complete(decision.model, effectiveRequest);
 
     deps.router.recordSuccess(decision.provider, decision.model);
 

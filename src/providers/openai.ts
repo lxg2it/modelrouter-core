@@ -202,4 +202,71 @@ export class OpenAIAdapter implements ProviderAdapter {
       usage,
     };
   }
+
+  async completeResponses(model: string, request: ChatCompletionRequest): Promise<CompletionResult> {
+    if (!this.client) throw new Error('OpenAI adapter not configured');
+
+    type Msg = { role: string; content: string };
+    const messages = request.messages as Msg[];
+
+    // Extract system message → instructions, remaining messages → input
+    const systemMsg = messages.find((m) => m.role === 'system');
+    const nonSystemMessages = messages.filter((m) => m.role !== 'system');
+
+    // Single user message → plain string input; multi-turn → array
+    const input: OpenAI.Responses.ResponseCreateParamsNonStreaming['input'] =
+      nonSystemMessages.length === 1 && nonSystemMessages[0].role === 'user'
+        ? nonSystemMessages[0].content
+        : nonSystemMessages.map((m) => ({
+            type: 'message' as const,
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          }));
+
+    const params: OpenAI.Responses.ResponseCreateParamsNonStreaming = {
+      model,
+      input,
+      stream: false,
+      ...(systemMsg ? { instructions: systemMsg.content } : {}),
+      ...(request.max_tokens ? { max_output_tokens: request.max_tokens } : {}),
+      ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+      ...(request.top_p !== undefined ? { top_p: request.top_p } : {}),
+    };
+
+    const response = await this.client.responses.create(params);
+
+    // Extract text from output message items
+    const outputText = response.output
+      .flatMap((item: OpenAI.Responses.ResponseOutputItem) => {
+        if (item.type === 'message') {
+          return (item as OpenAI.Responses.ResponseOutputMessage).content
+            .filter((c): c is OpenAI.Responses.ResponseOutputText => c.type === 'output_text')
+            .map((c) => c.text);
+        }
+        return [];
+      })
+      .join('');
+
+    const usage: UsageInfo = {
+      prompt_tokens: response.usage?.input_tokens ?? 0,
+      completion_tokens: response.usage?.output_tokens ?? 0,
+      total_tokens: (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
+    };
+
+    return {
+      response: {
+        id: response.id,
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model: response.model,
+        choices: [{
+          index: 0,
+          message: { role: 'assistant' as const, content: outputText },
+          finish_reason: 'stop' as const,
+        }],
+        usage,
+      },
+      usage,
+    };
+  }
 }

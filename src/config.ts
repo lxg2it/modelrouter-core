@@ -211,7 +211,8 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'google',    model: 'gemini-2.5-pro',      quality: 0.87, inputPer1M: 1.25,  outputPer1M: 10.00, latencyMs: 600,  maxContextTokens: 1_048_576, isThinkingModel: true,  priceSource: 'litellm' },
       { provider: 'openai',    model: 'gpt-4.1',             quality: 0.79, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 750,  maxContextTokens: 1_047_576,                         priceSource: 'litellm' },
       { provider: 'openai',    model: 'gpt-5.3-chat-latest', quality: 0.88, inputPer1M: 1.75,  outputPer1M: 14.00, latencyMs: 600,  maxContextTokens: 1_047_576,                         priceSource: 'manual'  },
-      { provider: 'openai',    model: 'gpt-5.3-codex',       quality: 0.91, inputPer1M: 1.75,  outputPer1M: 14.00, latencyMs: 800,  maxContextTokens: 400_000, apiType: 'completions', priceSource: 'manual'  },
+      { provider: 'openai',    model: 'gpt-5.3-codex',       quality: 0.91, inputPer1M: 1.75,  outputPer1M: 14.00, latencyMs: 800,  maxContextTokens: 400_000, apiType: 'responses',   priceSource: 'manual'  },
+      { provider: 'openai',    model: 'gpt-5.1-codex-mini',  quality: 0.80, inputPer1M: 1.50,  outputPer1M: 6.00,  latencyMs: 600,  maxContextTokens: 100_000, apiType: 'completions', priceSource: 'manual'  },
       { provider: 'openai',    model: 'o3',                  quality: 0.85, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 3500, maxContextTokens: 200_000,   isThinkingModel: true,  priceSource: 'litellm' },
       { provider: 'anthropic', model: 'claude-sonnet-4-6',   quality: 0.85, inputPer1M: 3.00,  outputPer1M: 15.00, latencyMs: 650,  maxContextTokens: 1_000_000,                        priceSource: 'litellm' },
       { provider: 'grok',      model: 'grok-3-beta',         quality: 0.74, inputPer1M: 3.00,  outputPer1M: 15.00, latencyMs: 580,  maxContextTokens: 131_072,                          priceSource: 'litellm' },
@@ -333,6 +334,7 @@ export const MODEL_ALIASES: Record<string, string> = {
   'gpt-5.3-instant': 'standard',
   'gpt-5.3-chat-latest': 'standard',
   'gpt-5.3-codex': 'standard',
+  'gpt-5.1-codex-mini': 'standard',
   'codex': 'standard',
 
   // DeepSeek aliases

@@ -288,6 +288,16 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     mmluPro: 87.1,
     simpleBench: 63.0,
   },
+  // GPT-5.1-Codex-Mini: smaller legacy completions-API coding model.
+  // Benchmark data estimated relative to gpt-5.3-codex capability gap.
+  'gpt-5.1-codex-mini': {
+    arenaElo: 1340,
+    gpqaDiamond: 72.0,
+    sweBench: 55.0,  // estimated
+    mmluPro: 75.0,
+    simpleBench: 50.0,
+  },
+
   // GPT-5.3-Codex: OpenAI's dedicated coding model, powers gpt-5.4 coding capabilities.
   // SWE-bench not officially published; estimated conservatively at 78 based on OpenAI's
   // claim of "industry-leading coding" and gpt-5.4's published 57.7% (gpt-5.4 = codex + broader capabilities).
