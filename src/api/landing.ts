@@ -162,6 +162,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     /* ── Pitch ── */
     .pitch { font-size: 16px; color: var(--text); margin-bottom: 24px; line-height: 1.7; }
     .pitch strong { color: var(--accent); font-weight: 600; }
+    .feature-body { font-size: 15px; color: var(--text); line-height: 1.75; margin: 0; }
 
     /* ── Param table ── */
     .params { margin: 24px 0; }
@@ -280,8 +281,8 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       <a href="/profile" class="sign-in">sign in →</a>
     </div>
     <p class="subtitle">
-      Use powerful models for free. No credit card. No minimum.<br>
-      An OpenAI-compatible API that routes across ${providerSubtitle()}.
+      Access free and premium models through a single OpenAI-compatible endpoint.<br>
+      Smart routing across ${providerSubtitle()} — no model names to track.
     </p>
     <div class="status">
       <span class="dot" id="statusDot"></span>
@@ -350,205 +351,87 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
 
   <hr class="hr">
 
-  <!-- Getting started -->
-  <div class="section-head">Getting started</div>
+  <!-- Feature: Free models -->
+  <div class="section-head">Free models, no credit card</div>
+  <p class="feature-body">
+    Fast models via Groq and Cerebras are routed at no cost — no credits, no card required.
+    Sign up and start making requests immediately.
+    Add credits when you need the full range of premium models.
+  </p>
 
+  <hr class="hr">
+
+  <!-- Feature: Pricing -->
+  <div class="section-head">Transparent pricing</div>
+  <p class="feature-body">
+    A 4% fee on credit deposits. Requests are billed at actual provider market rates —
+    you pay what the model costs, nothing more.
+    Every response includes <code>X-Model-Router-Model</code> and <code>X-Model-Router-Provider</code>
+    headers so you always know exactly what ran and what it cost.
+  </p>
+
+  <hr class="hr">
+
+  <!-- Feature: Resilience -->
+  <div class="section-head">Automatic failover</div>
+  <p class="feature-body">
+    Circuit breakers detect provider outages and reroute requests in real time.
+    Context-window guards ensure requests never go to a model that can't handle them.
+    Your code doesn't change — routing adapts automatically.
+  </p>
+
+  <hr class="hr">
+
+  <!-- Feature: Control -->
+  <div class="section-head">You stay in control</div>
+  <p class="feature-body">
+    Block providers you don't want to fund. Set daily spend limits.
+    Enable auto-recharge so you never hit a wall mid-project.
+    Export request traces to any OTLP backend — Axiom, Grafana, Honeycomb, Datadog.
+  </p>
+
+  <hr class="hr">
+
+  <!-- Feature: Embeddings -->
+  <div class="section-head">Embeddings included</div>
+  <p class="feature-body">
+    Same key, same endpoint pattern. <code>embed-small</code>, <code>embed-large</code>,
+    and <code>embed-titan</code> aliases route to the best available embedding model.
+    Batch inputs, optional dimension truncation, billed at input tokens only.
+  </p>
+
+  <hr class="hr">
+
+  <!-- CTA -->
+  <div class="section-head">Get started</div>
   <div class="step">
     <div class="step-num">1</div>
     <div class="step-body">
-      Sign up at <a href="/profile">/profile</a> — no password, just an email code.
-      <span class="muted">Free to start. Fast models via Groq and Cerebras included at no cost.</span>
+      <a href="/profile">Create an account</a> — no password, just an email code.
     </div>
   </div>
   <div class="step">
     <div class="step-num">2</div>
     <div class="step-body">
-      Point any OpenAI-compatible client at
-      <code style="font-size:13px; color:var(--accent);">https://api.lxg2it.com</code>
+      Point any OpenAI-compatible client at <code style="color:var(--accent);">https://api.lxg2it.com</code>
     </div>
   </div>
   <div class="step">
     <div class="step-num">3</div>
     <div class="step-body">
-      That's it. <span class="muted">Add credits to unlock premium models (Claude, GPT-4o, Nova) when you need them.</span>
+      That's it. Free models work immediately. Add credits for the full range.
     </div>
   </div>
 
-  <hr class="hr">
-
-  <!-- Pricing -->
-  <div class="section-head">Pricing</div>
-
-  <div class="callout">
-    <strong>4% fee on credit deposits.</strong> Requests billed at actual provider market
-    rates — you pay what the model costs, nothing more.<br><br>
-    Every response includes:<br>
-    <code>X-Model-Router-Model</code>, <code>X-Model-Router-Provider</code>, and <code>X-Request-Id</code><br>
-    You always know exactly what ran, what it cost, and can trace it.
-  </div>
-
-  <hr class="hr">
-
-  <!-- Also -->
-  <div class="section-head">Also</div>
-  <ul class="features">
-    <li>Block providers you don't want to fund</li>
-    <li>Auto-recharge via Stripe when balance is low</li>
-    <li>Per-user daily spend limits (configurable)</li>
-    <li>Streaming and tool calls supported</li>
-    <li>Embeddings via <code>POST /v1/embeddings</code> — same key, <code>embed-small</code> ($0.02/1M), <code>embed-large</code> ($0.13/1M), or <code>embed-titan</code> ($0.10/1M)</li>
-    <li>Bring your own observability — export request traces to any OTLP backend (Axiom, Grafana, Honeycomb, Datadog) via your profile</li>
-    <li>Every response includes <code>X-Request-Id</code> for correlating requests with traces and logs</li>
-  </ul>
-
-  <hr class="hr">
-
-  <!-- API Reference -->
-  <div class="section-head">API reference</div>
-
-  <div style="margin-bottom:24px;">
-    <div style="font-weight:600; font-size:13px; color:var(--text); margin-bottom:8px;">
-      <span class="ep-method post" style="display:inline-block; margin-right:8px;">POST</span>
-      <code>/v1/chat/completions</code>
-    </div>
-    <pre class="hero" style="margin-top:8px;"><code><span class="c">$ curl</span> https://api.lxg2it.com/v1/chat/completions \\
-    -H <span class="s">"Authorization: Bearer $KEY"</span> \\
-    -H <span class="s">"Content-Type: application/json"</span> \\
-    -d <span class="s">'{
-      "model": "<span class="k">standard</span>",
-      "prefer": "<span class="k">coding</span>",
-      "messages": [{"role": "user", "content": "Hello"}]
-    }'</span></code></pre>
-    <div class="params" style="margin-top:12px;">
-      <div class="param-row">
-        <div class="param-name">model</div>
-        <div class="param-body">
-          <div class="param-desc">Capability tier or exact model name.</div>
-          <div class="param-values">${tierValues()}<span>·</span>or exact model ID</div>
-        </div>
-      </div>
-      <div class="param-row">
-        <div class="param-name">prefer</div>
-        <div class="param-body">
-          <div class="param-desc">Optimisation direction within the tier. Ignored when an exact model ID is used.</div>
-          <div class="param-values">cheap<span>·</span>fast<span>·</span>balanced<span>·</span>quality<span>·</span>coding</div>
-        </div>
-      </div>
-      <div class="param-row">
-        <div class="param-name">messages</div>
-        <div class="param-body">
-          <div class="param-desc">Standard OpenAI messages array. Streaming, tool calls, and vision inputs are all supported.</div>
-        </div>
-      </div>
-    </div>
-    <p style="font-size:13px; color:var(--muted); margin-top:10px;">
-      Response headers <code>X-Model-Router-Model</code> and <code>X-Model-Router-Provider</code>
-      tell you exactly what ran.
-    </p>
-  </div>
-
-  <div style="margin-bottom:24px;">
-    <div style="font-weight:600; font-size:13px; color:var(--text); margin-bottom:8px;">
-      <span class="ep-method post" style="display:inline-block; margin-right:8px;">POST</span>
-      <code>/v1/embeddings</code>
-    </div>
-    <pre class="hero" style="margin-top:8px;"><code><span class="c">$ curl</span> https://api.lxg2it.com/v1/embeddings \\
-    -H <span class="s">"Authorization: Bearer $KEY"</span> \\
-    -H <span class="s">"Content-Type: application/json"</span> \\
-    -d <span class="s">'{
-      "model": "<span class="k">embed-small</span>",
-      "input": "The quick brown fox"
-    }'</span></code></pre>
-    <div class="params" style="margin-top:12px;">
-      <div class="param-row">
-        <div class="param-name">model</div>
-        <div class="param-body">
-          <div class="param-desc">Embedding tier alias or exact model ID.</div>
-          <div class="param-values">embed-small<span>·</span>embed-large<span>·</span>embed-titan<span>·</span>or exact model ID</div>
-        </div>
-      </div>
-      <div class="param-row">
-        <div class="param-name">input</div>
-        <div class="param-body">
-          <div class="param-desc">Text to embed. A string, or an array of strings for batch requests.</div>
-        </div>
-      </div>
-      <div class="param-row">
-        <div class="param-name">dimensions</div>
-        <div class="param-body">
-          <div class="param-desc">Optional. Truncate output dimensions. Supported by <code>embed-large</code> (up to 3072) and <code>embed-titan</code> (256, 512, or 1024).</div>
-        </div>
-      </div>
-    </div>
-    <p style="font-size:13px; color:var(--muted); margin-top:10px;">
-      Returns a standard OpenAI embeddings response. Billed at input tokens only — no output token cost.
-    </p>
-  </div>
-
-  <hr class="hr">
-
-  <!-- Endpoints -->
-  <div class="section-head">Endpoints</div>
-
-  <table class="ep-table">
-    <tr>
-      <td class="ep-method post">POST</td>
-      <td class="ep-path" data-desc="Send a login code to your email">/v1/auth/request-code</td>
-      <td class="ep-desc">Send a login code to your email</td>
-    </tr>
-    <tr>
-      <td class="ep-method post">POST</td>
-      <td class="ep-path" data-desc="Verify code → session + API key">/v1/auth/verify-code</td>
-      <td class="ep-desc">Verify code → session + API key</td>
-    </tr>
-    <tr>
-      <td class="ep-method post">POST</td>
-      <td class="ep-path" data-desc="Chat completions with routing">/v1/chat/completions<span class="ep-auth">auth</span></td>
-      <td class="ep-desc">Chat completions with routing</td>
-    </tr>
-    <tr>
-      <td class="ep-method post">POST</td>
-      <td class="ep-path" data-desc="Generate embeddings (embed-small, embed-large)">/v1/embeddings<span class="ep-auth">auth</span></td>
-      <td class="ep-desc">Generate embeddings (embed-small, embed-large)</td>
-    </tr>
-    <tr>
-      <td class="ep-method">GET</td>
-      <td class="ep-path" data-desc="Available models and aliases">/v1/models<span class="ep-auth">auth</span></td>
-      <td class="ep-desc">Available models and aliases</td>
-    </tr>
-    <tr>
-      <td class="ep-method">GET</td>
-      <td class="ep-path" data-desc="Token and cost summary">/v1/usage<span class="ep-auth">auth</span></td>
-      <td class="ep-desc">Token and cost summary</td>
-    </tr>
-    <tr>
-      <td class="ep-method">GET</td>
-      <td class="ep-path" data-desc="Account info, balance, blocked providers">/v1/account<span class="ep-auth">session</span></td>
-      <td class="ep-desc">Account info, balance, blocked providers</td>
-    </tr>
-    <tr>
-      <td class="ep-method patch">PATCH</td>
-      <td class="ep-path" data-desc="Update blocked providers">/v1/account/providers<span class="ep-auth">session</span></td>
-      <td class="ep-desc">Update blocked providers</td>
-    </tr>
-    <tr>
-      <td class="ep-method patch">PATCH</td>
-      <td class="ep-path" data-desc="Update daily spend limit, defaults">/v1/account/settings<span class="ep-auth">session</span></td>
-      <td class="ep-desc">Update daily spend limit, defaults</td>
-    </tr>
-    <tr>
-      <td class="ep-method">GET</td>
-      <td class="ep-path" data-desc="Provider health, circuit breakers">/health</td>
-      <td class="ep-desc">Provider health, circuit breakers</td>
-    </tr>
-  </table>
+  <p style="margin-top:20px; font-size:14px;">
+    <a href="/docs">Full documentation →</a>
+  </p>
 
   <!-- Footer -->
-  <div class="footer">
+  <div class="footer" style="margin-top:48px;">
     <div class="footer-links">
       <a href="/profile">profile</a>
       <a href="/health">health</a>
-      <a href="/v1/models">models</a>
       <a href="/docs">docs</a>
       <a href="/privacy">privacy</a>
       <a href="/terms">terms</a>

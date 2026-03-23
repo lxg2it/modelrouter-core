@@ -600,7 +600,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       ? '<a href="/admin" class="btn btn-secondary" style="text-decoration:none;">Admin ↗</a>'
       : '';
     document.getElementById('headerActions').innerHTML =
-      adminLink + '<button class="btn btn-secondary" onclick="doLogout()">Log out</button>';
+      adminLink + '<a href="/try" class="btn btn-secondary" style="text-decoration:none;">Try →</a><button class="btn btn-secondary" onclick="doLogout()">Log out</button>';
   }
 
   async function loadDashboard() {
