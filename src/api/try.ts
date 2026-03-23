@@ -11,6 +11,7 @@
 
 import { Hono } from 'hono';
 import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../config.js';
+import { SHARED_CSS, SHARED_HEAD } from './shared-styles.js';
 import { UsageLogger } from '../tracking/logger.js';
 import type { ChatDeps } from './chat.js';
 import type { KeyStore } from '../auth/keys.js';
@@ -30,7 +31,12 @@ export function createTryRouter(deps?: TryRouterDeps): Hono {
 
   router.get('/', (c) => {
     c.header('Content-Type', 'text/html; charset=utf-8');
-    return c.body(TRY_HTML);
+    // Build grouped model list from TIERS config, server-side
+    const groups: Array<{ tier: string; models: string[] }> = (['economy', 'standard', 'premium'] as const).map((tier) => ({
+      tier,
+      models: (TIERS[tier]?.models ?? []).map((m) => m.model),
+    }));
+    return c.body(tryHtml(groups));
   });
 
   // POST /try/run — session-authenticated playground execution
@@ -291,36 +297,21 @@ function applyThinkingFloor(request: ChatCompletionRequest, decision: RouteDecis
 
 // ── HTML ──────────────────────────────────────────────────────────────────────
 
-const TRY_HTML = /* html */ `<!DOCTYPE html>
+function tryHtml(groups: Array<{ tier: string; models: string[] }>): string {
+  const optgroups = groups
+    .map(({ tier, models }) =>
+      `<optgroup label="${tier}">${models.map((m) => `<option value="${m}">${m}</option>`).join('')}</optgroup>`,
+    )
+    .join('');
+
+  return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  ${SHARED_HEAD}
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzFhMWExYSIvPjxwYXRoIGQ9Ik04IDE2IEwxNiAxNiIgc3Ryb2tlPSIjZmY2YjM1IiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTE2IDE2IEwyNCA4IiBzdHJva2U9IiNmZjZiMzUiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMTYgMTYgTDI0IDE2IiBzdHJva2U9IiNmZjZiMzUiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMTYgMTYgTDI0IDI0IiBzdHJva2U9IiNmZjZiMzUiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48Y2lyY2xlIGN4PSI4IiBjeT0iMTYiIHI9IjIuNSIgZmlsbD0iI2ZmNmIzNSIvPjxjaXJjbGUgY3g9IjI0IiBjeT0iOCIgcj0iMi41IiBmaWxsPSIjNGE5Ii8+PGNpcmNsZSBjeD0iMjQiIGN5PSIxNiIgcj0iMi41IiBmaWxsPSIjNGE5Ii8+PGNpcmNsZSBjeT0iMjQiIGN4PSIyNCIgcj0iMi41IiBmaWxsPSIjNGE5Ii8+PC9zdmc+">
   <title>Model Router — Try it</title>
   <style>
-    :root {
-      --bg: #111; --surface: #1a1a1a; --surface2: #222;
-      --text: #e8e6e3; --muted: #888; --accent: #ff6b35; --green: #4a9;
-      --border: #2a2a2a; --code-bg: #0c0c0c;
-      --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-    }
-    @media (prefers-color-scheme: light) {
-      :root {
-        --bg: #f9f8f6; --surface: #fff; --surface2: #f2f1ef;
-        --text: #1a1a1a; --muted: #666; --accent: #e85d20; --green: #2a7a4a;
-        --border: #e0ddd8; --code-bg: #f2f1ef;
-      }
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: var(--bg); color: var(--text);
-      font-family: var(--sans); font-size: 15px; line-height: 1.6;
-      min-height: 100vh; -webkit-font-smoothing: antialiased;
-    }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
+    ${SHARED_CSS}
     .hidden { display: none !important; }
 
     /* ── Layout ── */
@@ -337,6 +328,22 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
       background: var(--surface2); border: 1px solid var(--border);
       padding: 2px 10px; color: var(--text);
     }
+
+    /* ── Mode toggle ── */
+    .mode-toggle {
+      display: flex; gap: 0; margin-bottom: 16px;
+      border: 1px solid var(--border); width: fit-content;
+    }
+    .mode-btn {
+      font-family: var(--mono); font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.8px;
+      padding: 6px 16px; cursor: pointer; border: none;
+      background: var(--surface); color: var(--muted);
+      transition: background 0.15s, color 0.15s;
+    }
+    .mode-btn:first-child { border-right: 1px solid var(--border); }
+    .mode-btn.active { background: var(--accent); color: #fff; }
+    .mode-btn:hover:not(.active) { background: var(--surface2); color: var(--text); }
 
     /* ── Controls row ── */
     .controls {
@@ -469,7 +476,14 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
   <!-- Main playground -->
   <div id="playground" class="hidden">
 
-    <div class="controls">
+    <!-- Mode toggle -->
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="modeAuto" onclick="setMode('auto')">Auto routing</button>
+      <button class="mode-btn" id="modePin" onclick="setMode('pin')">Pin model</button>
+    </div>
+
+    <!-- Auto routing controls -->
+    <div class="controls" id="autoControls">
       <div class="control-group">
         <div class="control-label">Tier</div>
         <select id="tierSelect">
@@ -492,6 +506,18 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
       <div class="control-group" style="flex:1; min-width:160px;">
         <div class="control-label">System prompt <span style="font-weight:400; text-transform:none; letter-spacing:0;">(optional)</span></div>
         <input type="text" id="systemPrompt" placeholder="e.g. You are a helpful assistant." />
+      </div>
+    </div>
+
+    <!-- Pin model controls -->
+    <div class="controls hidden" id="pinControls">
+      <div class="control-group" style="min-width:240px;">
+        <div class="control-label">Model</div>
+        <select id="modelSelect">${optgroups}</select>
+      </div>
+      <div class="control-group" style="flex:1; min-width:160px;">
+        <div class="control-label">System prompt <span style="font-weight:400; text-transform:none; letter-spacing:0;">(optional)</span></div>
+        <input type="text" id="systemPromptPin" placeholder="e.g. You are a helpful assistant." />
       </div>
     </div>
 
@@ -557,13 +583,24 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
     }
   }
 
+  let activeMode = 'auto';
+
+  function setMode(mode) {
+    activeMode = mode;
+    document.getElementById('modeAuto').classList.toggle('active', mode === 'auto');
+    document.getElementById('modePin').classList.toggle('active', mode === 'pin');
+    document.getElementById('autoControls').classList.toggle('hidden', mode !== 'auto');
+    document.getElementById('pinControls').classList.toggle('hidden', mode !== 'pin');
+  }
+
   async function sendPrompt() {
     const prompt = document.getElementById('promptInput').value.trim();
     if (!prompt) return;
 
-    const tier   = document.getElementById('tierSelect').value;
-    const prefer = document.getElementById('preferSelect').value;
-    const system = document.getElementById('systemPrompt').value.trim();
+    const isPinMode = activeMode === 'pin';
+    const system = isPinMode
+      ? document.getElementById('systemPromptPin').value.trim()
+      : document.getElementById('systemPrompt').value.trim();
 
     setLoading(true);
     clearResponse();
@@ -572,8 +609,16 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
     if (system) messages.push({ role: 'system', content: system });
     messages.push({ role: 'user', content: prompt });
 
-    const body = { messages, prefer };
-    if (tier) body.model = tier;
+    let body;
+    if (isPinMode) {
+      const model = document.getElementById('modelSelect').value;
+      body = { messages, model };
+    } else {
+      const tier   = document.getElementById('tierSelect').value;
+      const prefer = document.getElementById('preferSelect').value;
+      body = { messages, prefer };
+      if (tier) body.model = tier;
+    }
 
     try {
       const res = await fetch('/try/run', {
@@ -689,3 +734,4 @@ const TRY_HTML = /* html */ `<!DOCTYPE html>
 </body>
 </html>
 `;
+}

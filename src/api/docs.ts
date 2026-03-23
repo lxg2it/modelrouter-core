@@ -498,6 +498,12 @@ curl https://api.lxg2it.com/v1/chat/completions \\
       It adds under 1 ms of overhead (no ML model, no embeddings, no external calls).
     </p>
 
+    <p>
+      Auto-routing analysis runs entirely in-process. No request content is stored, logged,
+      or used for training — only the derived numeric score and selected tier are recorded
+      for observability.
+    </p>
+
 
     <!-- Model pinning -->
     <div class="section-head" id="pinning">Model pinning</div>

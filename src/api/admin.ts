@@ -383,7 +383,6 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
   <title>Admin — model-router</title>
   <style>
     ${SHARED_CSS}
-    :root { --red: #f44; }
     .metric-grid {
       display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
       gap: 12px; margin-bottom: 24px;

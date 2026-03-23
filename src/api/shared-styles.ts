@@ -12,14 +12,32 @@ export const SHARED_CSS = /* css */ `
   :root {
     --bg: #111;
     --surface: #1a1a1a;
+    --surface2: #222;
     --text: #e8e6e3;
-    --muted: #aaa;
+    --muted: #888;
     --accent: #ff6b35;
     --green: #4a9;
+    --red: #f44;
+    --warn: #d97706;
     --border: #2a2a2a;
     --code-bg: #0c0c0c;
     --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
     --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f9f8f6;
+      --surface: #fff;
+      --surface2: #f2f1ef;
+      --text: #1a1a1a;
+      --muted: #666;
+      --accent: #e85d20;
+      --green: #2a7a4a;
+      --red: #c0392b;
+      --warn: #b45309;
+      --border: #e0ddd8;
+      --code-bg: #f2f1ef;
+    }
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
