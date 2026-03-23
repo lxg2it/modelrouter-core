@@ -61,6 +61,49 @@ export interface ChatCompletionRequest {
   include_reasoning?: boolean;
 }
 
+
+// ─── Text Completions (legacy /v1/completions API) ─────────────────────────
+// Used by models like gpt-5.3-codex that accept a prompt string rather than
+// a messages array. This is the original OpenAI completions format.
+
+export interface TextCompletionRequest {
+  prompt: string;
+  model?: string;
+  stream?: boolean;
+  max_tokens?: number;
+  temperature?: number;
+  top_p?: number;
+  stop?: string | string[];
+
+  // Model Router extensions (same semantics as chat)
+  tier?: 'economy' | 'standard' | 'premium';
+  prefer?: 'balanced' | 'cheap' | 'fast' | 'quality' | 'coding';
+}
+
+export interface TextCompletionChoice {
+  text: string;
+  index: number;
+  finish_reason: 'stop' | 'length' | null;
+}
+
+export interface TextCompletionResponse {
+  id: string;
+  object: 'text_completion';
+  created: number;
+  model: string;
+  choices: TextCompletionChoice[];
+  usage?: UsageInfo;
+
+  // Model Router extension
+  _router?: {
+    provider: string;
+    tier: string;
+    latency_ms: number;
+    pinned?: boolean;
+  };
+}
+
+
 // ─── Response Types ────────────────────────────────────
 
 export interface ChatCompletionResponse {
@@ -117,6 +160,8 @@ export interface ModelInfo {
   object: 'model';
   created: number;
   owned_by: string;
+  /** Which API surface this model uses. Omitted for tier/alias entries (defaults to 'chat'). */
+  api_type?: 'chat' | 'completions';
 }
 
 export interface ModelsListResponse {
@@ -175,6 +220,15 @@ export interface ModelConfig {
    * taking priority regardless of nominal price.
    */
   dedupKey?: string;
+  /**
+   * Which API surface this model uses.
+   *   'chat'        — POST /v1/chat/completions with a messages array (default)
+   *   'completions' — POST /v1/completions with a prompt string
+   *
+   * Sending a chat request to a completions model (or vice versa) returns a
+   * 400 error pointing the client at the correct endpoint.
+   */
+  apiType?: 'chat' | 'completions';
 }
 
 export interface TierConfig {

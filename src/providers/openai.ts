@@ -9,10 +9,11 @@ import OpenAI from 'openai';
 import type {
   ChatCompletionRequest,
   ChatCompletionChunk,
+  TextCompletionRequest,
   UsageInfo,
   ProviderName,
 } from '../types.js';
-import type { ProviderAdapter, CompletionResult, StreamingCompletion } from './types.js';
+import type { ProviderAdapter, CompletionResult, StreamingCompletion, TextCompletionResult } from './types.js';
 
 export class OpenAIAdapter implements ProviderAdapter {
   readonly name: ProviderName = 'openai';
@@ -163,6 +164,42 @@ export class OpenAIAdapter implements ProviderAdapter {
       async finalize() {
         return { usage: finalUsage };
       },
+    };
+  }
+
+  async completeText(model: string, request: TextCompletionRequest): Promise<TextCompletionResult> {
+    if (!this.client) throw new Error('OpenAI adapter not configured');
+
+    const response = await this.client.completions.create({
+      model,
+      prompt: request.prompt,
+      max_tokens: request.max_tokens,
+      temperature: request.temperature,
+      top_p: request.top_p,
+      stop: request.stop,
+      stream: false,
+    });
+
+    const usage: UsageInfo = {
+      prompt_tokens: response.usage?.prompt_tokens ?? 0,
+      completion_tokens: response.usage?.completion_tokens ?? 0,
+      total_tokens: response.usage?.total_tokens ?? 0,
+    };
+
+    return {
+      response: {
+        id: response.id,
+        object: 'text_completion',
+        created: response.created,
+        model: response.model,
+        choices: response.choices.map((c, i) => ({
+          index: i,
+          text: c.text,
+          finish_reason: c.finish_reason as 'stop' | 'length' | null,
+        })),
+        usage,
+      },
+      usage,
     };
   }
 }

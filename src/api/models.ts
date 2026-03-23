@@ -13,6 +13,7 @@
 import { Hono } from 'hono';
 import type { AuthEnv } from '../auth/middleware.js';
 import { TIERS, MODEL_ALIASES, PROVIDER_META, EMBEDDING_MODELS, EMBEDDING_ALIASES } from '../config.js';
+import { findModelById } from '../routing/tiers.js';
 import type { UsageStore } from '../tracking/store.js';
 import type { ModelsListResponse, ModelInfo, ModelConfig, ProviderName } from '../types.js';
 import { BENCHMARK_LABELS, BENCHMARK_WEIGHTS } from '../benchmarks.js';
@@ -74,11 +75,17 @@ export function createModelsRouter(_deps: ModelsDeps): Hono {
       if (alias === 'economy' || alias === 'standard' || alias === 'premium') continue;
       seenAliases.add(alias);
 
+      // If this alias is also a direct model ID in the catalog, carry its apiType
+      const allProviders = new Set<ProviderName>(Object.keys(PROVIDER_META) as ProviderName[]);
+      const found = findModelById(alias, allProviders);
+      const apiType = found?.config.apiType;
+
       models.push({
         id: alias,
         object: 'model',
         created: now,
         owned_by: `modelrouter:${tier}`,
+        ...(apiType ? { api_type: apiType } : {}),
       });
     }
 

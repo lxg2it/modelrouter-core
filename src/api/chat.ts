@@ -101,6 +101,24 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
       }, 503);
     }
 
+    // ── Cross-endpoint validation ─────────────────────────────────────────
+    // Completions-type models (e.g. gpt-5.3-codex) require POST /v1/completions
+    // with a prompt string. Reject them here with a clear pointer to the right endpoint.
+    const resolvedModelConfig = (() => {
+      const tc = TIERS[decision.tier];
+      return tc?.models.find((m) => m.provider === decision.provider && m.model === decision.model);
+    })();
+    if (resolvedModelConfig && (resolvedModelConfig.apiType ?? 'chat') === 'completions') {
+      return c.json({
+        error: {
+          message: `Model '${decision.model}' uses the text completions API. Use POST /v1/completions with a prompt string instead of a messages array.`,
+          type: 'invalid_request_error',
+          param: 'model',
+        },
+      }, 400);
+    }
+
+
     // ── Free-tier notification email ───────────────────────────────────────
     // When routing to free tier, check whether we should send a notification.
     // This is best-effort (fire-and-forget) — a failed email never blocks the request.
@@ -618,7 +636,7 @@ async function handleStreaming(
  * Every non-null return MUST be followed by either settleStripeCredits()
  * (on success) or fullRefundReservation() (on failure).
  */
-async function reserveCreditsForRequest(
+export async function reserveCreditsForRequest(
   c: any,
   deps: ChatDeps,
   tier: string,
@@ -738,7 +756,7 @@ async function reserveCreditsForRequest(
  * Failures are logged but never bubble up — a billing failure must not
  * retroactively invalidate a completed API response.
  */
-function settleStripeCredits(
+export function settleStripeCredits(
   deps: ChatDeps,
   apiKey: ApiKey,
   reservedCents: number,
@@ -835,7 +853,7 @@ function autoLogFields(decision: RouteDecision): { autoScore?: number; autoTier?
 /**
  * Look up model config from tier definitions for cost calculation.
  */
-function findModelConfig(provider: ProviderName, model: string, tier: string) {
+export function findModelConfig(provider: ProviderName, model: string, tier: string) {
   const tierConfig = TIERS[tier];
   if (!tierConfig) return null;
   return tierConfig.models.find((m) => m.provider === provider && m.model === model) ?? null;

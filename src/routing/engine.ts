@@ -11,7 +11,7 @@
  *     input token count.
  */
 
-import type { ModelConfig, Tier, ProviderName, ChatCompletionRequest, ChatMessage } from '../types.js';
+import type { ModelConfig, Tier, ProviderName, ChatCompletionRequest, TextCompletionRequest, ChatMessage } from '../types.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import { getModelsForTier, resolveTier, findModelById } from './tiers.js';
 import { computeCodingScores } from '../benchmarks.js';
@@ -303,6 +303,28 @@ export class RoutingEngine {
     }
     return Math.ceil(charCount / 3);
   }
+
+  /**
+   * Select a model for a text completion request.
+   * Delegates to selectModel by converting the text request into the minimal
+   * shape the routing engine needs (no messages — token estimation uses prompt length).
+   */
+  selectModelForCompletion(
+    request: TextCompletionRequest,
+    blockedProviders?: Set<string>,
+    freeProvidersOnly?: boolean,
+  ): RouteDecision | null {
+    // Represent the prompt as a single user message so the routing engine can
+    // estimate token count and apply normal tier/prefer logic.
+    const adapted: ChatCompletionRequest = {
+      model: request.model,
+      tier: request.tier,
+      prefer: request.prefer,
+      messages: [{ role: 'user', content: request.prompt }],
+    };
+    return this.selectModel(adapted, blockedProviders, freeProvidersOnly);
+  }
+
 
   private toDecision(
     config: ModelConfig,

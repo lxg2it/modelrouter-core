@@ -33,10 +33,11 @@ export function createTryRouter(deps?: TryRouterDeps): Hono {
   router.get('/', (c) => {
     c.header('Content-Type', 'text/html; charset=utf-8');
     // Build grouped model list from TIERS config, server-side
-    const groups: Array<{ tier: string; models: string[] }> = (['economy', 'standard', 'premium'] as const).map((tier) => ({
-      tier,
-      models: (TIERS[tier]?.models ?? []).map((m) => m.model),
-    }));
+    const groups: Array<{ tier: string; models: Array<{ id: string; apiType: 'chat' | 'completions' }> }> =
+      (['economy', 'standard', 'premium'] as const).map((tier) => ({
+        tier,
+        models: (TIERS[tier]?.models ?? []).map((m) => ({ id: m.model, apiType: m.apiType ?? 'chat' })),
+      }));
     return c.body(tryHtml(groups));
   });
 
@@ -62,16 +63,21 @@ export function createTryRouter(deps?: TryRouterDeps): Hono {
     }
 
     // ── Parse request ──────────────────────────────────────────────────────
-    let body: ChatCompletionRequest;
+    let rawBody: ChatCompletionRequest & { prompt?: string };
     try {
-      body = await c.req.json<ChatCompletionRequest>();
+      rawBody = await c.req.json();
     } catch {
       return c.json({ error: { message: 'Invalid JSON body.', type: 'invalid_request_error' } }, 400);
     }
 
-    if (!body.messages?.length) {
-      return c.json({ error: { message: 'messages is required.', type: 'invalid_request_error' } }, 400);
+    // ── Detect request type: chat (messages[]) vs completions (prompt) ──────
+    const isCompletionsRequest = typeof rawBody.prompt === 'string' && !rawBody.messages?.length;
+
+    if (!isCompletionsRequest && !rawBody.messages?.length) {
+      return c.json({ error: { message: 'Either messages (chat) or prompt (completions) is required.', type: 'invalid_request_error' } }, 400);
     }
+
+    const body = rawBody as ChatCompletionRequest;
 
     // ── Determine routing ──────────────────────────────────────────────────
     const routeToFreeOnly = (user.creditBalanceCents ?? 0) <= 0;
@@ -79,7 +85,13 @@ export function createTryRouter(deps?: TryRouterDeps): Hono {
       ? new Set(user.blockedProviders)
       : undefined;
 
-    const decision = deps.chatDeps.router.selectModel(body, userBlockedProviders, routeToFreeOnly);
+    const decision = isCompletionsRequest
+      ? deps.chatDeps.router.selectModelForCompletion(
+          rawBody as import('../types.js').TextCompletionRequest,
+          userBlockedProviders,
+          routeToFreeOnly,
+        )
+      : deps.chatDeps.router.selectModel(body, userBlockedProviders, routeToFreeOnly);
     if (!decision) {
       if (routeToFreeOnly) {
         return c.json({
@@ -206,16 +218,61 @@ export function createTryRouter(deps?: TryRouterDeps): Hono {
       }, 500);
     }
 
+    // Guard: completions request → needs completions-type model (and vice versa)
+    const resolvedModel = findModel(decision.provider, decision.model, decision.tier);
+    const resolvedApiType = resolvedModel?.apiType ?? 'chat';
+    if (isCompletionsRequest && resolvedApiType !== 'completions') {
+      if (reservedCents > 0 && deps.chatDeps.userStore) {
+        deps.chatDeps.userStore.refundCredits(user.id, reservedCents);
+      }
+      return c.json({
+        error: {
+          message: `Model '${decision.model}' uses the chat API. Send a messages array instead of a prompt.`,
+          type: 'invalid_request_error', param: 'prompt',
+        },
+      }, 400);
+    }
+    if (!isCompletionsRequest && resolvedApiType === 'completions') {
+      if (reservedCents > 0 && deps.chatDeps.userStore) {
+        deps.chatDeps.userStore.refundCredits(user.id, reservedCents);
+      }
+      return c.json({
+        error: {
+          message: `Model '${decision.model}' uses the text completions API. Send a prompt string instead of a messages array.`,
+          type: 'invalid_request_error', param: 'messages',
+        },
+      }, 400);
+    }
+
     try {
-      const effectiveRequest = applyThinkingFloor(body, decision);
-      const result = await adapter.complete(decision.model, effectiveRequest);
-      deps.chatDeps.router.recordSuccess(decision.provider, decision.model);
+      let responseContent: string;
+      let usage: import('../types.js').UsageInfo;
+
+      if (isCompletionsRequest) {
+        if (!adapter.completeText) {
+          throw new Error(`Provider ${decision.provider} does not support text completions`);
+        }
+        const result = await adapter.completeText(
+          decision.model,
+          rawBody as import('../types.js').TextCompletionRequest,
+        );
+        deps.chatDeps.router.recordSuccess(decision.provider, decision.model);
+        responseContent = result.response.choices[0]?.text ?? '';
+        usage = result.usage;
+      } else {
+        const effectiveRequest = applyThinkingFloor(body, decision);
+        const result = await adapter.complete(decision.model, effectiveRequest);
+        deps.chatDeps.router.recordSuccess(decision.provider, decision.model);
+        const rawContent = result.response.choices[0]?.message?.content ?? '';
+        responseContent = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
+        usage = result.usage;
+      }
 
       const modelConfig = findModel(decision.provider, decision.model, decision.tier);
       const costCents = modelConfig
         ? UsageLogger.calculateCost(
-            result.usage.prompt_tokens,
-            result.usage.completion_tokens,
+            usage.prompt_tokens,
+            usage.completion_tokens,
             modelConfig.inputPer1M,
             modelConfig.outputPer1M,
           )
@@ -226,8 +283,8 @@ export function createTryRouter(deps?: TryRouterDeps): Hono {
         provider: decision.provider,
         model: decision.model,
         tier: decision.tier,
-        promptTokens: result.usage.prompt_tokens,
-        completionTokens: result.usage.completion_tokens,
+        promptTokens: usage.prompt_tokens,
+        completionTokens: usage.completion_tokens,
         costCents,
         latencyMs: Date.now() - startTime,
         streaming: false,
@@ -246,12 +303,12 @@ export function createTryRouter(deps?: TryRouterDeps): Hono {
       }
 
       return c.json({
-        content: result.response.choices[0]?.message?.content ?? '',
-        usage: result.response.usage,
+        content: responseContent,
+        usage: { prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens, total_tokens: usage.total_tokens },
         provider: decision.provider,
         model: decision.model,
         tier: decision.tier,
-        prefer: body.prefer ?? 'balanced',
+        prefer: rawBody.prefer ?? 'balanced',
         latencyMs: Date.now() - startTime,
         autoTier: decision.autoTier?.tier,
         isFree: isFreeTierModel,
@@ -318,10 +375,10 @@ function applyThinkingFloor(request: ChatCompletionRequest, decision: RouteDecis
 
 // ── HTML ──────────────────────────────────────────────────────────────────────
 
-function tryHtml(groups: Array<{ tier: string; models: string[] }>): string {
+function tryHtml(groups: Array<{ tier: string; models: Array<{ id: string; apiType: 'chat' | 'completions' }> }>): string {
   const optgroups = groups
     .map(({ tier, models }) =>
-      `<optgroup label="${tier}">${models.map((m) => `<option value="${m}">${m}</option>`).join('')}</optgroup>`,
+      `<optgroup label="${tier}">${models.map((m) => `<option value="${m.id}" data-api-type="${m.apiType}">${m.id}</option>`).join('')}</optgroup>`,
     )
     .join('');
 
@@ -536,7 +593,7 @@ function tryHtml(groups: Array<{ tier: string; models: string[] }>): string {
         <div class="control-label">Model</div>
         <select id="modelSelect">${optgroups}</select>
       </div>
-      <div class="control-group" style="flex:1; min-width:160px;">
+      <div class="control-group" style="flex:1; min-width:160px;" id="systemPromptPinWrap">
         <div class="control-label">System prompt <span style="font-weight:400; text-transform:none; letter-spacing:0;">(optional)</span></div>
         <input type="text" id="systemPromptPin" placeholder="e.g. You are a helpful assistant." />
       </div>
@@ -612,13 +669,36 @@ function tryHtml(groups: Array<{ tier: string; models: string[] }>): string {
     document.getElementById('modePin').classList.toggle('active', mode === 'pin');
     document.getElementById('autoControls').classList.toggle('hidden', mode !== 'auto');
     document.getElementById('pinControls').classList.toggle('hidden', mode !== 'pin');
+    if (mode === 'pin') updatePinModeUi();
   }
+
+  function getSelectedApiType() {
+    const sel = document.getElementById('modelSelect');
+    const opt = sel?.options[sel.selectedIndex];
+    return opt?.dataset?.apiType ?? 'chat';
+  }
+
+  function updatePinModeUi() {
+    const apiType = getSelectedApiType();
+    const isCompletions = apiType === 'completions';
+    const ta = document.getElementById('promptInput');
+    const systemWrap = document.getElementById('systemPromptPinWrap');
+    ta.placeholder = isCompletions
+      ? 'Enter a code prefix or prompt for completion…'
+      : 'Type a message and press Send…';
+    if (systemWrap) systemWrap.classList.toggle('hidden', isCompletions);
+  }
+
+  document.getElementById('modelSelect')?.addEventListener('change', updatePinModeUi);
 
   async function sendPrompt() {
     const prompt = document.getElementById('promptInput').value.trim();
     if (!prompt) return;
 
     const isPinMode = activeMode === 'pin';
+    const apiType = isPinMode ? getSelectedApiType() : 'chat';
+    const isCompletions = apiType === 'completions';
+
     const system = isPinMode
       ? document.getElementById('systemPromptPin').value.trim()
       : document.getElementById('systemPrompt').value.trim();
@@ -626,15 +706,21 @@ function tryHtml(groups: Array<{ tier: string; models: string[] }>): string {
     setLoading(true);
     clearResponse();
 
-    const messages = [];
-    if (system) messages.push({ role: 'system', content: system });
-    messages.push({ role: 'user', content: prompt });
-
     let body;
     if (isPinMode) {
       const model = document.getElementById('modelSelect').value;
-      body = { messages, model };
+      if (isCompletions) {
+        body = { prompt, model };
+      } else {
+        const messages = [];
+        if (system) messages.push({ role: 'system', content: system });
+        messages.push({ role: 'user', content: prompt });
+        body = { messages, model };
+      }
     } else {
+      const messages = [];
+      if (system) messages.push({ role: 'system', content: system });
+      messages.push({ role: 'user', content: prompt });
       const tier   = document.getElementById('tierSelect').value;
       const prefer = document.getElementById('preferSelect').value;
       body = { messages, prefer };

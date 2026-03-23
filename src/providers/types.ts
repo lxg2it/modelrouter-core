@@ -14,6 +14,8 @@ import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
   ChatCompletionChunk,
+  TextCompletionRequest,
+  TextCompletionResponse,
   ProviderName,
   UsageInfo,
 } from '../types.js';
@@ -69,4 +71,18 @@ export interface ProviderAdapter {
     model: string,
     request: ChatCompletionRequest,
   ): Promise<StreamingCompletion>;
+
+  /**
+   * Non-streaming text completion (for completions-type models like codex).
+   * Optional — only providers that support the legacy completions API need this.
+   */
+  completeText?(
+    model: string,
+    request: TextCompletionRequest,
+  ): Promise<TextCompletionResult>;
+}
+
+export interface TextCompletionResult {
+  response: TextCompletionResponse;
+  usage: UsageInfo;
 }

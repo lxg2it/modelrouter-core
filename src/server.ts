@@ -13,6 +13,7 @@ import { UserStore } from './auth/users.js';
 import { authMiddleware, sessionMiddleware, type RateLimitTiers } from './auth/middleware.js';
 import { RoutingEngine } from './routing/engine.js';
 import { createChatRouter } from './api/chat.js';
+import { createCompletionsRouter } from './api/completions.js';
 import { createEmbeddingsRouter } from './api/embeddings.js';
 import { createModelsRouter, createUsageRouter } from './api/models.js';
 import { UsageStore } from './tracking/store.js';
@@ -234,6 +235,21 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   });
   app.use('/v1/chat/*', apiAuth);
   app.route('/v1/chat', chatRouter);
+
+  const completionsRouter = createCompletionsRouter({
+    router,
+    providers,
+    logger: usageLogger,
+    billing,
+    userStore: stripeService ? userStore : undefined,
+    keyStore: stripeService ? keyStore : undefined,
+    stripe: stripeService,
+    billingTxStore: stripeService ? billingTxStore : undefined,
+    maxDailySpendCents: config.maxDailySpendCents,
+    emailSender: emailSender ?? undefined,
+  });
+  app.use('/v1/completions', apiAuth);
+  app.route('/v1/completions', completionsRouter);
 
   app.use('/v1/embeddings/*', apiAuth);
 
