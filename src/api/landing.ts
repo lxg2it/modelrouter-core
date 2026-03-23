@@ -92,6 +92,18 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
       --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f8f7f5;
+        --surface: #eeecea;
+        --text: #1a1a1a;
+        --muted: #666;
+        --accent: #d4521e;
+        --green: #2a7a5a;
+        --border: #ddd;
+        --code-bg: #f0eeec;
+      }
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background: var(--bg);
@@ -268,8 +280,8 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       <a href="/profile" class="sign-in">sign in →</a>
     </div>
     <p class="subtitle">
-      An OpenAI-compatible API that routes your requests
-      across ${providerSubtitle()}.
+      Use powerful models for free. No credit card. No minimum.<br>
+      An OpenAI-compatible API that routes across ${providerSubtitle()}.
     </p>
     <div class="status">
       <span class="dot" id="statusDot"></span>
@@ -332,6 +344,9 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     Context-window guard: never routes to a model that can't handle your input.
     Circuit breakers reroute around provider outages automatically.
   </p>
+  <p style="font-size:13px; color:var(--muted); margin-top:10px;">
+    <a href="/v1/models">Available models →</a>
+  </p>
 
   <hr class="hr">
 
@@ -342,7 +357,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     <div class="step-num">1</div>
     <div class="step-body">
       Sign up at <a href="/profile">/profile</a> — no password, just an email code.
-      <span class="muted">New accounts get $1 credit to try it.</span>
+      <span class="muted">Free to start. Fast models via Groq and Cerebras included at no cost.</span>
     </div>
   </div>
   <div class="step">
@@ -355,7 +370,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
   <div class="step">
     <div class="step-num">3</div>
     <div class="step-body">
-      That's it. <span class="muted">Top up credits when you need more.</span>
+      That's it. <span class="muted">Add credits to unlock premium models (Claude, GPT-4o, Nova) when you need them.</span>
     </div>
   </div>
 
