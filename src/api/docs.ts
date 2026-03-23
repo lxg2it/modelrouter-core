@@ -820,15 +820,49 @@ curl https://api.lxg2it.com/v1/chat/completions \\
     across providers within a tier.</p>
 
     <!-- Rate limits -->
-    <div class="section-head">Rate limits</div>
+    <div class="section-head" id="rate-limits">Rate limits</div>
 
-    <p>
-      Default: <strong>60 requests per minute</strong> per API key (token bucket).
-      If you need higher limits, contact <a href="mailto:support@api.lxg2it.com">support@api.lxg2it.com</a>.
-    </p>
+    <p>Rate limits are enforced per API key using a <strong>token bucket</strong> — tokens refill
+    continuously rather than resetting at a hard window boundary, so bursts are handled smoothly.</p>
 
-    <p>Rate-limited responses return HTTP <code class="inline-code">429</code> with a
-    <code class="inline-code">Retry-After</code> header.</p>
+    <p>The limit applied depends on your credit balance:</p>
+
+    <table class="param-table">
+      <thead><tr><th>Balance</th><th>Limit</th></tr></thead>
+      <tbody>
+        <tr><td>≥ $10.00</td><td><strong>60 RPM</strong></td></tr>
+        <tr><td>&lt; $10.00</td><td><strong>10 RPM</strong></td></tr>
+      </tbody>
+    </table>
+
+    <p>Per-key overrides are available on request — contact
+    <a href="mailto:support@api.lxg2it.com">support@api.lxg2it.com</a> if you need a higher limit.</p>
+
+    <p>Every response includes rate limit headers so you can track consumption:</p>
+
+    <table class="param-table">
+      <thead><tr><th>Header</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>X-RateLimit-Limit</code></td><td>Your key's RPM limit</td></tr>
+        <tr><td><code>X-RateLimit-Remaining</code></td><td>Tokens remaining in the current window</td></tr>
+        <tr><td><code>X-RateLimit-Reset</code></td><td>Unix timestamp when the bucket is fully refilled</td></tr>
+        <tr><td><code>Retry-After</code></td><td>Seconds to wait before retrying (only on 429 responses)</td></tr>
+      </tbody>
+    </table>
+
+    <p>When rate-limited, the response is HTTP <code class="inline-code">429</code>:</p>
+
+    <pre><code>{
+  "error": {
+    "message": "Rate limit exceeded. Your key is limited to 10 requests per minute.",
+    "type": "rate_limit_error",
+    "code": "rate_limit_exceeded"
+  }
+}</code></pre>
+
+    <p><strong>Daily spend limits</strong> are a separate control. If your account has a daily spend cap
+    configured, requests made after hitting it return HTTP <code class="inline-code">429</code> with
+    <code class="inline-code">code: "daily_spend_limit_exceeded"</code> and reset at UTC midnight.</p>
 
     <!-- Errors -->
     <div class="section-head">Error codes</div>
