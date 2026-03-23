@@ -183,7 +183,7 @@ function renderSpecialApiModels(tierEntries: TierModelEntry[]): string {
   const rows = special.map((m) => {
     const endpoint = m.apiType === 'responses' ? '/v1/chat/completions' : '/v1/completions';
     const label = m.apiType === 'responses'
-      ? 'Responses API (auto-translated)'
+      ? 'Responses API (pin required)'
       : 'Legacy completions API';
     return `
       <tr>

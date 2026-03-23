@@ -819,26 +819,26 @@ curl https://api.lxg2it.com/v1/chat/completions \\
     <!-- Responses API -->
     <div class="endpoint" style="margin-top: 28px;">
       <span class="endpoint-method">POST</span>
-      <span class="endpoint-path">/v1/chat/completions <span style="font-size:11px; opacity:0.7;">(Responses API, auto-translated)</span></span>
+      <span class="endpoint-path">/v1/chat/completions</span>
       <div class="endpoint-desc">
-        Coding-specialist models that use OpenAI&rsquo;s Responses API internally.
-        You send a normal chat request &mdash; the router translates it automatically.
-        Currently: <code>gpt-5.3-codex</code>.
+        Access Responses API models by pinning them explicitly with <code>model: "gpt-5.3-codex"</code>.
+        The router handles format conversion (messages → Responses API input).
       </div>
     </div>
 
     <p>
-      Use <code class="inline-code">POST /v1/chat/completions</code> exactly as you would for any
-      chat model &mdash; pass a <code class="inline-code">messages</code> array, get back a
-      <code class="inline-code">chat.completion</code> object. The translation to OpenAI&rsquo;s
+      <code class="inline-code">gpt-5.3-codex</code> uses OpenAI&rsquo;s
       <a href="https://platform.openai.com/docs/api-reference/responses" target="_blank"
-         style="color:var(--accent);">/v1/responses</a> endpoint happens transparently.
+         style="color:var(--accent);">Responses API</a> internally, which has a different request shape
+      to the chat completions API. The router converts your <code class="inline-code">messages</code> array
+      into the Responses API format automatically &mdash; but because this comes with limitations,
+      <strong>these models must be pinned explicitly and are never selected by auto-routing.</strong>
     </p>
 
     <p>
-      <strong>Limitations:</strong> streaming (<code class="inline-code">stream: true</code>) is not
-      supported and will return a <code class="inline-code">400</code>. Multi-turn conversation history
-      is supported.
+      <strong>Limitations:</strong> <code class="inline-code">stream: true</code> is not supported
+      (returns <code class="inline-code">400</code>). Auto-routing will not select these models
+      &mdash; you must specify the model by name.
     </p>
 
     <p><strong>Example:</strong></p>
