@@ -167,6 +167,14 @@ export interface ModelConfig {
    * Models without this flag require a positive credit balance for routing.
    */
   isFreeProvider?: boolean;
+  /**
+   * When set, models sharing the same dedupKey are considered the same
+   * underlying model hosted on different providers. At config load time, all
+   * but the cheapest option (lowest inputPer1M + outputPer1M) are dropped.
+   * Free providers (isFreeProvider: true) are always treated as cheapest,
+   * taking priority regardless of nominal price.
+   */
+  dedupKey?: string;
 }
 
 export interface TierConfig {

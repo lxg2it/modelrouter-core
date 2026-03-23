@@ -126,7 +126,7 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
   },
 
   // ── Bedrock Economy ────────────────────────────────────
-  'nvidia.nemotron-3-nano-30b': {
+  'nvidia.nemotron-nano-3-30b': {
     arenaElo: 1380,    // estimated — not yet in Arena leaderboard
     gpqaDiamond: 75.7, // thinking mode
     sweBench: 74.1,    // HumanEval proxy (coding benchmark from pricepertoken.com)
@@ -178,13 +178,25 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     mmluPro: 68.9,
     simpleBench: 39.0,
   },
-  'llama-4-scout-17b-16e-instruct': {
+  'meta-llama/llama-4-scout-17b-16e-instruct': {
     // Llama 4 Scout: 17B active params, mixture of experts (16 experts).
     // Arena Elo estimated from early leaderboard data — verify when stable.
     // SWE-bench and SimpleBench not yet published for this model.
     arenaElo: 1225,
     gpqaDiamond: 46.0,
     mmluPro: 64.0,
+  },
+  'llama3.1-8b': {
+    // Cerebras Llama 3.1 8B — small, fast, free-tier model.
+    arenaElo: 1176,
+    gpqaDiamond: 32.8,
+    mmluPro: 45.0,
+  },
+  'qwen-3-235b-a22b-instruct-2507': {
+    // Cerebras Qwen3 235B — same base weights as Bedrock qwen.qwen3-235b-a22b-2507.
+    arenaElo: 1320,
+    gpqaDiamond: 65.0,
+    mmluPro: 79.0,
   },
   'llama-3.3-70b': {
     // Cerebras model — same base weights as Groq llama-3.3-70b-versatile.

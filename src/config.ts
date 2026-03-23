@@ -189,7 +189,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', quality: 0.60, inputPer1M: 1.00,  outputPer1M: 5.00,  latencyMs: 320,  maxContextTokens: 200_000,                          priceSource: 'litellm' },
       { provider: 'grok',      model: 'grok-3-mini-beta',          quality: 0.50, inputPer1M: 0.30,  outputPer1M: 0.50,  latencyMs: 250,  maxContextTokens: 131_072,   isThinkingModel: true,  priceSource: 'litellm' },
       // Bedrock economy models — manual: verify prices at https://aws.amazon.com/bedrock/pricing/ (US West Oregon)
-      { provider: 'bedrock',   model: 'nvidia.nemotron-3-nano-30b',  quality: 0.63, inputPer1M: 0.06,  outputPer1M: 0.24,  latencyMs: 350,  maxContextTokens: 262_144, isThinkingModel: true,  priceSource: 'manual' },
+      { provider: 'bedrock',   model: 'nvidia.nemotron-nano-3-30b',  quality: 0.63, inputPer1M: 0.06,  outputPer1M: 0.24,  latencyMs: 350,  maxContextTokens: 262_144, isThinkingModel: true,  priceSource: 'manual' },
       { provider: 'bedrock',   model: 'nvidia.nemotron-nano-9b-v2',  quality: 0.45, inputPer1M: 0.06,  outputPer1M: 0.23,  latencyMs: 250,  maxContextTokens: 128_000,                         priceSource: 'manual' },
       { provider: 'bedrock',   model: 'zai.glm-4.7-flash',          quality: 0.51, inputPer1M: 0.070, outputPer1M: 0.400, latencyMs: 350,  maxContextTokens: 202_752,                         priceSource: 'manual' },
       { provider: 'bedrock',   model: 'qwen.qwen3-32b',             quality: 0.48, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 300,  maxContextTokens: 131_072,                         priceSource: 'manual' },
@@ -199,9 +199,10 @@ export const TIERS: Record<string, TierConfig> = {
       // Quality/latency estimates are approximate; inputPer1M/outputPer1M are 0 (free to us).
       // Groq: permanent free tier, 30 RPM / 14,400 RPD. Wafer-scale silicon — very fast inference.
       { provider: 'groq',     model: 'llama-3.3-70b-versatile',   quality: 0.63, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 200,  maxContextTokens: 128_000,   isFreeProvider: true,  priceSource: 'manual' },
-      { provider: 'groq',     model: 'llama-4-scout-17b-16e-instruct', quality: 0.58, inputPer1M: 0, outputPer1M: 0,    latencyMs: 180,  maxContextTokens: 131_072,   isFreeProvider: true,  priceSource: 'manual' },
+      { provider: 'groq',     model: 'meta-llama/llama-4-scout-17b-16e-instruct', quality: 0.58, inputPer1M: 0, outputPer1M: 0, latencyMs: 180, maxContextTokens: 131_072, isFreeProvider: true, priceSource: 'manual' },
       // Cerebras: permanent free tier, 30 RPM / 14,400 RPD. Wafer-scale silicon — fastest inference.
-      { provider: 'cerebras', model: 'llama-3.3-70b',             quality: 0.63, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 150,  maxContextTokens: 128_000,   isFreeProvider: true,  priceSource: 'manual' },
+      { provider: 'cerebras', model: 'llama3.1-8b',               quality: 0.40, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 100,  maxContextTokens: 8_192,     isFreeProvider: true,  priceSource: 'manual' },
+      { provider: 'cerebras', model: 'qwen-3-235b-a22b-instruct-2507', quality: 0.83, inputPer1M: 0, outputPer1M: 0,    latencyMs: 200,  maxContextTokens: 131_072,   isFreeProvider: true,  priceSource: 'manual', dedupKey: 'qwen3-235b' },
     ],
     description: 'Fast and cheap. Good for classification, extraction, simple generation.',
   },
@@ -217,7 +218,7 @@ export const TIERS: Record<string, TierConfig> = {
       // Bedrock standard models — manual: verify prices at https://aws.amazon.com/bedrock/pricing/ (US West Oregon)
       { provider: 'bedrock',   model: 'zai.glm-4.7',                quality: 0.90, inputPer1M: 0.62, outputPer1M: 2.27,  latencyMs: 550,  maxContextTokens: 202_752,                         priceSource: 'manual'  },
       { provider: 'bedrock',   model: 'deepseek.v3.2',              quality: 0.83, inputPer1M: 0.62, outputPer1M: 1.85,  latencyMs: 600,  maxContextTokens: 128_000,                         priceSource: 'litellm' },
-      { provider: 'bedrock',   model: 'qwen.qwen3-235b-a22b-2507',  quality: 0.83, inputPer1M: 0.23, outputPer1M: 0.91,  latencyMs: 500,  maxContextTokens: 131_072,                         priceSource: 'manual' },
+      { provider: 'bedrock',   model: 'qwen.qwen3-235b-a22b-2507',  quality: 0.83, inputPer1M: 0.23, outputPer1M: 0.91,  latencyMs: 500,  maxContextTokens: 131_072,                         priceSource: 'manual', dedupKey: 'qwen3-235b' },
       { provider: 'bedrock',   model: 'mistral.mistral-large-3-675b-instruct', quality: 0.80, inputPer1M: 0.52, outputPer1M: 1.55, latencyMs: 600, maxContextTokens: 131_072,              priceSource: 'litellm' },
       { provider: 'bedrock',   model: 'moonshotai.kimi-k2.5',       quality: 0.88, inputPer1M: 0.62, outputPer1M: 3.09,  latencyMs: 600,  maxContextTokens: 131_072,                         priceSource: 'litellm' },
       { provider: 'bedrock',   model: 'minimax.minimax-m2.1',       quality: 0.72, inputPer1M: 0.30, outputPer1M: 1.20,  latencyMs: 500,  maxContextTokens: 1_000_000,                        priceSource: 'litellm' },
@@ -234,6 +235,37 @@ export const TIERS: Record<string, TierConfig> = {
     description: 'Maximum capability. For complex reasoning, creative work, difficult tasks.',
   },
 };
+
+// ─── Dedup pass ────────────────────────────────────────
+//
+// For each tier, models sharing a dedupKey compete on price. We keep only the
+// cheapest option (inputPer1M + outputPer1M). Free providers (isFreeProvider)
+// are always treated as cheapest — a $0 route wins over any paid route.
+// Models without a dedupKey are always kept unchanged.
+(function deduplicateTiers() {
+  for (const tier of Object.values(TIERS)) {
+    const groups = new Map<string, typeof tier.models[number]>();
+    const unkeyed: typeof tier.models = [];
+
+    for (const model of tier.models) {
+      if (!model.dedupKey) {
+        unkeyed.push(model);
+        continue;
+      }
+      const existing = groups.get(model.dedupKey);
+      if (!existing) {
+        groups.set(model.dedupKey, model);
+        continue;
+      }
+      // Free provider always wins; otherwise lower combined price wins
+      const modelCost  = model.isFreeProvider    ? -1 : model.inputPer1M + model.outputPer1M;
+      const existCost  = existing.isFreeProvider ? -1 : existing.inputPer1M + existing.outputPer1M;
+      if (modelCost < existCost) groups.set(model.dedupKey, model);
+    }
+
+    tier.models = [...unkeyed, ...groups.values()];
+  }
+})();
 
 // ─── Per-Tier Credit Reservation ───────────────────────
 //
