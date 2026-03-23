@@ -164,6 +164,7 @@ export function pageFooter(currentPage?: string): string {
   const links = [
     { href: '/', label: 'home' },
     { href: '/profile', label: 'profile' },
+    { href: '/try', label: 'try' },
     { href: '/health', label: 'health' },
     { href: '/v1/models', label: 'models' },
     { href: '/docs', label: 'docs' },

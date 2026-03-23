@@ -39,6 +39,7 @@ import { createProfileRouter } from './api/profile.js';
 import { createLegalRouter } from './api/legal.js';
 import { createAdminRouter } from './api/admin.js';
 import { createDocsRouter } from './api/docs.js';
+import { createTryRouter } from './api/try.js';
 import { ResendEmailSender, ConsoleEmailSender } from './auth/email.js';
 import type { EmailSender } from './auth/email.js';
 import { WelcomeEmailScheduler } from './welcome-scheduler.js';
@@ -286,6 +287,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
 
   // Profile page — always available (shows account + usage; billing section shown only if Stripe is configured)
   app.route('/profile', createProfileRouter({ adminEmails: config.adminEmails }));
+  app.route('/try', createTryRouter());
 
   // Legal pages — always available, unauthenticated
 

@@ -379,6 +379,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
         <pre id="firstCallCurlExample" style="font-family:var(--mono); font-size:12px; color:#b3cff5; background:#071428; padding:10px 12px; margin:8px 0 0; overflow-x:auto; white-space:pre; border-radius:4px;"></pre>
       </div>
       <div style="display:flex; flex-direction:column; gap:8px; align-self:flex-end;">
+        <a href="/try" class="btn btn-primary btn-sm" style="text-decoration:none; text-align:center;">Try in playground →</a>
         <button class="btn btn-secondary btn-sm" onclick="copyFirstCallCurl()">Copy curl</button>
         <a href="/docs/integrations" style="font-size:13px; color:#7eb3f5; text-decoration:none; text-align:center;">Integration guides →</a>
         <button class="btn btn-secondary btn-sm" onclick="dismissFirstCallNudge()" style="font-size:11px; opacity:0.6;">Dismiss</button>
@@ -415,6 +416,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
           <div style="font-size:12px; color:var(--muted); margin-bottom:8px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Try it now</div>
           <pre id="newKeyCurlExample" style="font-family:var(--mono); font-size:12px; color:#b3d9b3; background:#0c1a0c; padding:10px 12px; overflow-x:auto; white-space:pre; margin:0 0 10px;"></pre>
           <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <a href="/try" class="btn btn-primary btn-sm" style="text-decoration:none;">Try in playground →</a>
             <button class="btn btn-secondary btn-sm" onclick="copyNewKeyCurl()">Copy curl</button>
             <a href="/docs/integrations" style="font-size:13px; color:var(--green); text-decoration:none;">Integration guides →</a>
           </div>
@@ -1078,6 +1080,8 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
     if (data.apiKey?.key) {
       // New account — show the API key before dashboard loads
+      // Persist in localStorage so /try can use it without re-asking
+      if (data.apiKey.id) localStorage.setItem('mr_key_' + data.apiKey.id, data.apiKey.key);
       showNewKeyReveal(data.apiKey.key);
     }
 
@@ -1130,6 +1134,9 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
     hideCreateKey();
 
+    // Persist full key in localStorage so /try can use it
+    if (data.id) localStorage.setItem('mr_key_' + data.id, data.key);
+
     // Show the key value
     showNewKeyReveal(data.key);
 
@@ -1166,6 +1173,8 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
     const res = await apiFetch('DELETE', '/v1/keys/' + keyId);
     if (res.ok) {
+      // Remove stored key from localStorage
+      localStorage.removeItem('mr_key_' + keyId);
       const keysRes = await apiFetch('GET', '/v1/keys');
       if (keysRes.ok) {
         keysData = await keysRes.json();
