@@ -333,12 +333,15 @@ export function createTryRouter(deps?: TryRouterDeps): Hono {
           userMessage = 'Provider rate limit reached. Try again in a moment or choose a different tier.';
           httpStatus = 429;
         } else if (msg.includes('over capacity') || msg.includes('overloaded') || msg.includes('capacity')) {
-          userMessage = `Model currently over capacity. Try again shortly or choose a different tier.`;
+          userMessage = 'Model currently over capacity. Try again shortly or choose a different tier.';
           httpStatus = 503;
         } else if (err instanceof OpenAI.NotFoundError) {
-          userMessage = `Model not found on provider. Try a different tier.`;
+          userMessage = 'Model not found on provider. Try a different tier.';
         } else if (err instanceof OpenAI.AuthenticationError) {
           userMessage = 'Provider authentication error. Please contact support.';
+        } else {
+          // Surface the provider's own message for any other API error (e.g. 500s)
+          userMessage = `Provider error: ${err.message.slice(0, 120)}`;
         }
       }
 
