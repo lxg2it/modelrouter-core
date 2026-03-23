@@ -41,7 +41,6 @@ export function createKeysRouter(deps: KeysRouterDeps): Hono<SessionEnv> {
         id: key.id,
         keyPrefix: key.keyPrefix,
         name: key.name ?? null,
-        tier: key.tier,
         active: key.active,
         createdAt: key.createdAt,
         lastUsedAt: key.lastUsedAt ?? null,
@@ -64,7 +63,7 @@ export function createKeysRouter(deps: KeysRouterDeps): Hono<SessionEnv> {
   router.post('/', async (c: Context<SessionEnv>) => {
     const user = c.get('user');
 
-    let body: { name?: unknown; tier?: unknown } = {};
+    let body: { name?: unknown } = {};
     try {
       body = await c.req.json() as typeof body;
     } catch {
@@ -75,18 +74,13 @@ export function createKeysRouter(deps: KeysRouterDeps): Hono<SessionEnv> {
       ? body.name.trim().slice(0, 100)
       : undefined;
 
-    const tier = body.tier === 'economy' || body.tier === 'standard' || body.tier === 'premium'
-      ? body.tier
-      : 'standard';
-
-    const { fullKey, record } = keyStore.generate(tier, name, undefined, user.id);
+    const { fullKey, record } = keyStore.generate(name, undefined, user.id);
 
     return c.json({
       key: fullKey,
       keyPrefix: record.keyPrefix,
       id: record.id,
       name: record.name ?? null,
-      tier: record.tier,
       active: record.active,
       createdAt: record.createdAt,
       message: 'Save your API key — it will not be shown again.',

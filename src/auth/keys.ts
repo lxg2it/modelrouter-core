@@ -57,9 +57,9 @@ export class KeyStore {
 
   /**
    * Generate a new API key. Returns the full key (only shown once) and the stored record.
+   * Keys are always created with the default tier — tier belongs in the request, not the key.
    */
   generate(
-    tier: Tier,
     name?: string,
     satbillAccountId?: string,
     userId?: string,
@@ -71,10 +71,10 @@ export class KeyStore {
     const id = randomBytes(8).toString('hex');
 
     const stmt = this.db.prepare(`
-      INSERT INTO api_keys (id, key_hash, key_prefix, tier, name, satbill_account_id, user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO api_keys (id, key_hash, key_prefix, name, satbill_account_id, user_id)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(id, keyHash, keyPrefix, tier, name ?? null, satbillAccountId ?? null, userId ?? null);
+    stmt.run(id, keyHash, keyPrefix, name ?? null, satbillAccountId ?? null, userId ?? null);
 
     return {
       fullKey,
@@ -82,7 +82,7 @@ export class KeyStore {
         id,
         keyHash,
         keyPrefix,
-        tier,
+        tier: 'standard',
         name,
         satbillAccountId,
         userId,

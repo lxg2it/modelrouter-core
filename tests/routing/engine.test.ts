@@ -70,8 +70,8 @@ describe('RoutingEngine', () => {
         defaultOutputRatio: 0.33,
       });
 
-      // Request says premium, key says economy, default is economy
-      const decision = engine.selectModel(req({ tier: 'premium' }), 'economy');
+      // Request says premium, engine default is economy
+      const decision = engine.selectModel(req({ tier: 'premium' }));
       expect(decision!.tier).toBe('premium');
     });
 
@@ -82,21 +82,9 @@ describe('RoutingEngine', () => {
         defaultOutputRatio: 0.33,
       });
 
-      // "gpt-4o" → standard tier
-      const decision = engine.selectModel(req({ model: 'gpt-4o' }), 'economy');
+      // "gpt-4o" → standard tier (engine default is economy)
+      const decision = engine.selectModel(req({ model: 'gpt-4o' }));
       expect(decision!.tier).toBe('standard');
-    });
-
-    it('key tier is third priority (when no request tier or alias)', () => {
-      const engine = new RoutingEngine({
-        availableProviders: new Set(['anthropic', 'openai']),
-        defaultTier: 'economy',
-        defaultOutputRatio: 0.33,
-      });
-
-      // Unknown model, key says premium
-      const decision = engine.selectModel(req({ model: 'llama-3-70b' }), 'premium');
-      expect(decision!.tier).toBe('premium');
     });
 
     it('falls back to engine default tier when nothing else resolves', () => {
@@ -617,7 +605,7 @@ describe('RoutingEngine', () => {
 
       // Block google (cheapest economy model) — should route to openai or anthropic
       const blocked = new Set(['google']);
-      const decision = engine.selectModel(req(), 'economy', blocked);
+      const decision = engine.selectModel(req(), blocked);
       expect(decision).not.toBeNull();
       expect(decision!.provider).not.toBe('google');
     });
@@ -630,7 +618,7 @@ describe('RoutingEngine', () => {
       });
 
       const blocked = new Set(['anthropic', 'openai', 'google', 'grok']);
-      const decision = engine.selectModel(req(), 'economy', blocked);
+      const decision = engine.selectModel(req(), blocked);
       expect(decision).toBeNull();
     });
 
@@ -665,7 +653,7 @@ describe('RoutingEngine', () => {
 
       // Block google — cheap mode shouldn't pick google models
       const blocked = new Set(['google']);
-      const decision = engine.selectModel(req({ prefer: 'cheap' }), undefined, blocked);
+      const decision = engine.selectModel(req({ prefer: 'cheap' }), blocked);
       expect(decision).not.toBeNull();
       expect(decision!.provider).not.toBe('google');
     });
@@ -679,7 +667,7 @@ describe('RoutingEngine', () => {
 
       // Block anthropic (claude-opus, quality leader) — should fall to next best
       const blocked = new Set(['anthropic']);
-      const decision = engine.selectModel(req({ prefer: 'quality' }), undefined, blocked);
+      const decision = engine.selectModel(req({ prefer: 'quality' }), blocked);
       expect(decision).not.toBeNull();
       expect(decision!.provider).not.toBe('anthropic');
     });
@@ -691,8 +679,8 @@ describe('RoutingEngine', () => {
         defaultOutputRatio: 0.33,
       });
 
-      const d1 = engine.selectModel(req(), 'economy', undefined);
-      const d2 = engine.selectModel(req(), 'economy');
+      const d1 = engine.selectModel(req(), undefined);
+      const d2 = engine.selectModel(req());
       expect(d1?.provider).toBe(d2?.provider);
       expect(d1?.model).toBe(d2?.model);
     });

@@ -913,7 +913,8 @@ describe('Daily spending limit', () => {
   function makeDailySpendEngine(): RoutingEngine {
     return new RoutingEngine({
       availableProviders: new Set<ProviderName>(['google']),
-      models: [{ provider: 'google', model: 'gemini-flash', quality: 0.7, inputPer1M: 0.1, outputPer1M: 0.4, latencyMs: 200, maxContextTokens: 1_000_000 }],
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
     });
   }
 

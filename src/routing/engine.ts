@@ -71,7 +71,6 @@ export class RoutingEngine {
    */
   selectModel(
     request: ChatCompletionRequest,
-    keyTier?: Tier,
     blockedProviders?: Set<string>,
     freeProvidersOnly?: boolean,
   ): RouteDecision | null {
@@ -114,9 +113,6 @@ export class RoutingEngine {
       // Explicit auto-routing: classify from conversation context
       autoResult = classifyAutoTier(request.messages);
       tier = autoResult.tier;
-    } else if (keyTier) {
-      // Key has a configured default tier
-      tier = keyTier;
     } else {
       // No model specified, or model specified but didn't resolve —
       // fall through to the engine default tier.

@@ -147,7 +147,7 @@ describe('POST /v1/keys', () => {
     expect(typeof body.message).toBe('string');
   });
 
-  it('calls keyStore.generate with the user ID', async () => {
+  it('calls keyStore.generate with the name and user ID', async () => {
     const user = fakeUser();
     const keyStore = mockKeyStore();
     const app = buildApp(user, keyStore);
@@ -155,16 +155,15 @@ describe('POST /v1/keys', () => {
     await app.request('/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Dev Key', tier: 'economy' }),
+      body: JSON.stringify({ name: 'Dev Key' }),
     });
 
     const generateArgs = (keyStore.generate as any).mock.calls[0];
-    expect(generateArgs[0]).toBe('economy'); // tier
-    expect(generateArgs[1]).toBe('Dev Key'); // name
-    expect(generateArgs[3]).toBe(user.id);   // userId
+    expect(generateArgs[0]).toBe('Dev Key'); // name
+    expect(generateArgs[2]).toBe(user.id);   // userId
   });
 
-  it('defaults to standard tier if tier is not specified', async () => {
+  it('passes undefined name when name is not specified', async () => {
     const keyStore = mockKeyStore();
     const app = buildApp(fakeUser(), keyStore);
 
@@ -175,7 +174,7 @@ describe('POST /v1/keys', () => {
     });
 
     const generateArgs = (keyStore.generate as any).mock.calls[0];
-    expect(generateArgs[0]).toBe('standard');
+    expect(generateArgs[0]).toBeUndefined(); // name
   });
 });
 

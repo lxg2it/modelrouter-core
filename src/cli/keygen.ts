@@ -9,7 +9,6 @@
 
 import Database from 'better-sqlite3';
 import { KeyStore } from '../auth/keys.js';
-import type { Tier } from '../types.js';
 
 const DB_PATH = process.env.DB_PATH ?? './data/modelrouter.db';
 
@@ -25,20 +24,12 @@ function main() {
     switch (command) {
       case 'generate':
       case 'gen': {
-        const tier = getArg(args, '--tier', 'standard') as Tier;
         const name = getArg(args, '--name');
-
-        if (!['economy', 'standard', 'premium'].includes(tier)) {
-          console.error(`Invalid tier: ${tier}. Must be economy, standard, or premium.`);
-          process.exit(1);
-        }
-
-        const { fullKey, record } = keyStore.generate(tier, name);
+        const { fullKey, record } = keyStore.generate(name);
 
         console.log('\n🔑 New API key generated:\n');
         console.log(`  Key:    ${fullKey}`);
         console.log(`  ID:     ${record.id}`);
-        console.log(`  Tier:   ${record.tier}`);
         console.log(`  Name:   ${record.name ?? '(none)'}`);
         console.log(`\n⚠️  Save this key now — it won't be shown again.\n`);
         break;
@@ -53,11 +44,11 @@ function main() {
         }
 
         console.log('\nAPI Keys:\n');
-        console.log('  ID              Prefix           Tier       Name             Active  Last Used');
-        console.log('  ─────────────── ──────────────── ────────── ──────────────── ─────── ─────────');
+        console.log('  ID              Prefix           Name             Active  Last Used');
+        console.log('  ─────────────── ──────────────── ──────────────── ─────── ─────────');
         for (const key of keys) {
           console.log(
-            `  ${key.id.padEnd(16)} ${key.keyPrefix.padEnd(16)} ${key.tier.padEnd(10)} ${(key.name ?? '').padEnd(16)} ${key.active ? 'yes' : 'no'}     ${key.lastUsedAt ?? 'never'}`,
+            `  ${key.id.padEnd(16)} ${key.keyPrefix.padEnd(16)} ${(key.name ?? '').padEnd(16)} ${key.active ? 'yes' : 'no'}     ${key.lastUsedAt ?? 'never'}`,
           );
         }
         console.log();

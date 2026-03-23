@@ -304,12 +304,11 @@ describe('POST /verify-code', () => {
     const body = await res.json() as any;
     expect(body.sessionToken).toBe('mr_st_session123');
     expect(body.apiKey.key).toBe('mr_sk_FULL_KEY_HERE');
-    expect(body.apiKey.tier).toBe('standard');
     expect(typeof body.apiKey.message).toBe('string');
     // keyStore.generate should be called with the user ID
     expect(keyStore.generate).toHaveBeenCalled();
     const generateArgs = (keyStore.generate as any).mock.calls[0];
-    expect(generateArgs[3]).toBe('user-123');
+    expect(generateArgs[2]).toBe('user-123'); // userId is now arg[2], not arg[3]
   });
 
   it('returns 401 for an invalid or expired code', async () => {

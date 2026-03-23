@@ -397,11 +397,6 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
         <div style="font-size:13px; font-weight:600; color:var(--text); margin-bottom:12px;">Create new API key</div>
         <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
           <input type="text" id="newKeyName" placeholder="Key name (e.g. Production)" style="flex:1; min-width:160px;" />
-          <select id="newKeyTier" style="width:auto;">
-            <option value="economy">Economy</option>
-            <option value="standard" selected>Standard</option>
-            <option value="premium">Premium</option>
-          </select>
         </div>
         <div style="display:flex; gap:8px;">
           <button class="btn btn-primary btn-sm" onclick="doCreateKey()">Create</button>
@@ -433,14 +428,13 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
             <tr>
               <th>Key</th>
               <th>Name</th>
-              <th>Tier</th>
               <th>7d req</th>
               <th>Status</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="keysTableBody">
-            <tr><td colspan="6" style="color:var(--muted); text-align:center; padding:16px 0;">Loading…</td></tr>
+            <tr><td colspan="5" style="color:var(--muted); text-align:center; padding:16px 0;">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -705,7 +699,6 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       const name = k.name
         ? '<span id="kname-' + esc(k.id) + '">' + esc(k.name) + '</span>'
         : '<span style="color:var(--muted)" id="kname-' + esc(k.id) + '">—</span>';
-      const tier = '<span class="badge badge-' + tierBadgeClass(k.tier) + '">' + esc(k.tier) + '</span>';
       const requests = k.usage7d?.requestCount ?? 0;
       const status = active
         ? '<span class="badge badge-green">Active</span>'
@@ -716,7 +709,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
           '<button class="btn btn-danger btn-sm" onclick="revokeKey(\\'' + esc(k.id) + '\\', \\'' + esc(k.keyPrefix) + '\\')">Revoke</button>' +
           '</div>'
         : '';
-      return '<tr><td>' + prefix + '</td><td>' + name + '</td><td>' + tier + '</td>' +
+      return '<tr><td>' + prefix + '</td><td>' + name + '</td>' +
              '<td>' + requests + '</td><td>' + status + '</td><td>' + actions + '</td></tr>';
     }).join('');
   }
@@ -1123,11 +1116,10 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
   async function doCreateKey() {
     const name = document.getElementById('newKeyName').value.trim() || undefined;
-    const tier = document.getElementById('newKeyTier').value;
     const errEl = document.getElementById('createKeyError');
     errEl.classList.add('hidden');
 
-    const res = await apiFetch('POST', '/v1/keys', { name, tier });
+    const res = await apiFetch('POST', '/v1/keys', { name });
     const data = await res.json();
 
     if (!res.ok) {
@@ -1581,10 +1573,6 @@ async function loadAutoRecharge() {
   function formatDate(iso) {
     if (!iso) return '—';
     return new Date(iso).toLocaleDateString('en-AU', { year: 'numeric', month: 'short', day: 'numeric' });
-  }
-
-  function tierBadgeClass(tier) {
-    return tier === 'premium' ? 'blue' : tier === 'economy' ? 'gray' : 'green';
   }
 
   function esc(s) {

@@ -116,7 +116,6 @@ export function createUsageRouter(deps: ModelsDeps): Hono<AuthEnv> {
       period: periodParam,
       days,
       key: apiKey.keyPrefix,
-      tier: apiKey.tier,
       ...summary,
       outputRatio,
     });

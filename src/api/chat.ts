@@ -79,7 +79,7 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
     const userBlockedProviders = user?.blockedProviders?.length
       ? new Set(user.blockedProviders)
       : undefined;
-    const decision = deps.router.selectModel(body, apiKey.tier, userBlockedProviders, routeToFreeTierOnly);
+    const decision = deps.router.selectModel(body, userBlockedProviders, routeToFreeTierOnly);
     if (!decision) {
       // Free-tier routing found nothing — no free providers configured or available.
       // Return a descriptive error rather than a generic 503.

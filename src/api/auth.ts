@@ -174,7 +174,6 @@ export function createAuthRouter(deps: AuthRouterDeps): Hono {
     // The full key is shown only once — the user must save it.
     if (isNewAccount) {
       const { fullKey, record: keyRecord } = keyStore.generate(
-        'standard',
         accountName ? `${accountName} — default` : 'Default key',
         undefined,
         user.id,
