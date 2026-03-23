@@ -373,6 +373,20 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
   <hr class="hr">
 
   <!-- Feature: Resilience -->
+  <!-- Feature: Auto-routing -->
+  <div class="section-head">Auto-routing</div>
+  <p class="feature-body">
+    Set <code>model: "auto"</code> and the router analyses your full conversation context —
+    system prompt, code blocks, message history, tool use, reasoning markers — and picks the right tier automatically.
+    No heuristics on individual messages; it reads the whole picture.
+    Every auto-routed response includes <code>X-Model-Router-Auto-Tier</code> and <code>X-Model-Router-Auto-Score</code>
+    headers so you can see exactly why a tier was chosen.
+    <a href="/docs#auto-routing">How it works →</a>
+  </p>
+
+  <hr class="hr">
+
+
   <div class="section-head">Automatic failover</div>
   <p class="feature-body">
     Circuit breakers detect provider outages and reroute requests in real time.

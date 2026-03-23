@@ -428,13 +428,76 @@ const API_HTML = `${docsHead('API Reference')}
         </tr>
         <tr>
           <td><code>auto</code></td>
-          <td>Analyses conversation context (system prompt, code blocks, message history, tool use) to select the appropriate tier automatically. Defaults to standard when uncertain.</td>
+          <td>Heuristic classifier analyses your full conversation context to select the appropriate tier. <a href="#auto-routing">How it works →</a></td>
           <td>Varies by context</td>
         </tr>
       </tbody>
     </table>
 
     <p>See the live model list at <a href="/v1/models">/v1/models</a>.</p>
+
+    <!-- Auto-routing -->
+    <div class="section-head" id="auto-routing">Auto-routing</div>
+
+    <p>
+      Set <code class="inline-code">model: "auto"</code> to let the router infer the right tier from your
+      full conversation context. Unlike single-message classifiers, auto-routing analyses the entire
+      <code class="inline-code">messages</code> array — system prompt, conversation history, code blocks,
+      tool calls, and reasoning markers — then produces a complexity score from 0–100 that maps to a tier.
+    </p>
+
+    <div class="code-block">
+<span class="c"># Auto-routing — let the router choose the tier</span>
+curl https://api.lxg2it.com/v1/chat/completions \\
+  -H "Authorization: Bearer $MR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "auto",
+    "messages": [
+      { "role": "system", "content": "You are a senior software architect." },
+      { "role": "user",   "content": "Design a distributed consensus algorithm for a financial ledger." }
+    ]
+  }'</div>
+
+    <p>Every auto-routed response includes two extra headers:</p>
+
+    <table>
+      <thead><tr><th>Header</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>X-Model-Router-Auto-Score</code></td><td>Complexity score 0–100 computed from your request context</td></tr>
+        <tr><td><code>X-Model-Router-Auto-Tier</code></td><td>Tier selected by auto-routing (<code>economy</code> / <code>standard</code> / <code>premium</code>)</td></tr>
+      </tbody>
+    </table>
+
+    <p>The score is built from seven weighted signals:</p>
+
+    <table>
+      <thead><tr><th>Signal</th><th>Weight</th><th>What it measures</th></tr></thead>
+      <tbody>
+        <tr><td>Code blocks</td><td>20%</td><td>Fenced code, inline code, and code-like lines across all messages</td></tr>
+        <tr><td>Technical keywords</td><td>20%</td><td>Premium terms (consensus, compiler, theorem) and standard terms (API, database, function)</td></tr>
+        <tr><td>Reasoning markers</td><td>15%</td><td>Phrases like "step by step", "trade-offs", "design a system", "prove that"</td></tr>
+        <tr><td>System prompt length</td><td>15%</td><td>Longer system prompts indicate specialised agents</td></tr>
+        <tr><td>Conversation depth</td><td>10%</td><td>Number of prior turns — accumulated context raises complexity</td></tr>
+        <tr><td>Tool usage</td><td>10%</td><td>Presence of <code>tool_calls</code> and <code>tool</code> role messages</td></tr>
+        <tr><td>Message complexity</td><td>10%</td><td>Maximum user message length</td></tr>
+      </tbody>
+    </table>
+
+    <p>
+      The final score combines a weighted average with a strongest-signal boost
+      (<code>score = weighted_avg × 0.6 + max_signal × 0.4</code>), so a single strong
+      indicator is enough to push past a tier threshold even when other signals are zero.
+      Score thresholds: 0–20 → economy, 21–55 → standard, 56–100 → premium.
+      The economy ceiling is intentionally low — strong confidence is required before
+      routing to cheaper models.
+    </p>
+
+    <p>
+      Auto-routing is deterministic: the same input always produces the same score and tier.
+      It adds under 1 ms of overhead (no ML model, no embeddings, no external calls).
+    </p>
+
 
     <!-- Model pinning -->
     <div class="section-head" id="pinning">Model pinning</div>
