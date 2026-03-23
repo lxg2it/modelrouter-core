@@ -10,6 +10,7 @@
  */
 
 import { Hono } from 'hono';
+import OpenAI from 'openai';
 import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../config.js';
 import { SHARED_CSS, SHARED_HEAD } from './shared-styles.js';
 import { UsageLogger } from '../tracking/logger.js';
@@ -256,15 +257,35 @@ export function createTryRouter(deps?: TryRouterDeps): Hono {
         isFree: isFreeTierModel,
       });
 
+
+
     } catch (err) {
       deps.chatDeps.router.recordFailure(decision.provider, decision.model);
       if (reservedCents > 0 && deps.chatDeps.userStore) {
         deps.chatDeps.userStore.refundCredits(user.id, reservedCents);
       }
       console.error('[try/run] Provider call failed:', err);
-      return c.json({
-        error: { message: 'Provider call failed. Try again or choose a different tier.', type: 'server_error' },
-      }, 502);
+
+      // Classify provider errors into user-readable messages
+      let userMessage = 'Provider call failed. Try again or choose a different tier.';
+      let httpStatus: 502 | 429 | 503 = 502;
+
+      if (err instanceof OpenAI.APIError) {
+        const msg = err.message.toLowerCase();
+        if (err instanceof OpenAI.RateLimitError || msg.includes('rate limit') || msg.includes('rate_limit')) {
+          userMessage = 'Provider rate limit reached. Try again in a moment or choose a different tier.';
+          httpStatus = 429;
+        } else if (msg.includes('over capacity') || msg.includes('overloaded') || msg.includes('capacity')) {
+          userMessage = `Model currently over capacity. Try again shortly or choose a different tier.`;
+          httpStatus = 503;
+        } else if (err instanceof OpenAI.NotFoundError) {
+          userMessage = `Model not found on provider. Try a different tier.`;
+        } else if (err instanceof OpenAI.AuthenticationError) {
+          userMessage = 'Provider authentication error. Please contact support.';
+        }
+      }
+
+      return c.json({ error: { message: userMessage, type: 'server_error' } }, httpStatus);
     }
   });
 
