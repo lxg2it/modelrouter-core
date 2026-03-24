@@ -227,7 +227,7 @@ curl https://api.lxg2it.com/v1/chat/completions \\
   -H <span class="s">"Authorization: Bearer YOUR_API_KEY"</span> \\
   -H <span class="s">"Content-Type: application/json"</span> \\
   -d <span class="s">'{
-    "model": "<span class="k">claude-sonnet-4-20250514</span>",
+    "model": "<span class="k">claude-sonnet-4-6</span>",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'</span></div>
 
@@ -312,7 +312,7 @@ const API_HTML = `${docsHead('API Reference')}
             <strong>Required.</strong> Either a tier name (<code>economy</code>,
             <code>standard</code>, <code>premium</code>, <code>auto</code>) or an
             exact model ID to pin routing (e.g. <code>gpt-4.1</code>,
-            <code>claude-sonnet-4-20250514</code>). See <a href="#tiers">Tiers</a> and
+            <code>claude-sonnet-4-6</code>). See <a href="#tiers">Tiers</a> and
             <a href="#pinning">Model pinning</a>.
           </td>
         </tr>
@@ -516,7 +516,7 @@ curl https://api.lxg2it.com/v1/chat/completions \\
 
     <div class="code-block"><span class="c"># Pin to Claude Sonnet 4 specifically</span>
 {
-  <span class="n">"model"</span>: <span class="s">"claude-sonnet-4-20250514"</span>,
+  <span class="n">"model"</span>: <span class="s">"claude-sonnet-4-6"</span>,
   <span class="n">"messages"</span>: [...]
 }</div>
 
@@ -1052,7 +1052,7 @@ const INTEGRATIONS_HTML = `${docsHead('Integration Guides')}
       <li>Set <strong>API Key</strong> to your <code class="inline-code">mr_sk_...</code> key.</li>
       <li>Set <strong>Base URL</strong> to <code class="inline-code">https://api.lxg2it.com/v1</code>.</li>
       <li>Add a model name — use a tier (<code class="inline-code">standard</code>) or
-      an exact model ID (<code class="inline-code">claude-sonnet-4-20250514</code>).</li>
+      an exact model ID (<code class="inline-code">claude-sonnet-4-6</code>).</li>
       <li>Select the model when starting a chat or using Cmd+K.</li>
     </ol>
 
