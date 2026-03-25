@@ -213,23 +213,21 @@ const OVERVIEW_HTML = `${docsHead('Documentation')}
     <p><strong>3. Make a request</strong> — point any OpenAI-compatible client at
     <code class="inline-code">https://api.lxg2it.com</code>:</p>
 
-    <div class="code-block"><span class="c"># Tier-based routing — let the router pick the model</span>
+    <div class="code-block"><span class="c"># Free tier — this call uses your free credits (no charge)</span>
 curl https://api.lxg2it.com/v1/chat/completions \\
   -H <span class="s">"Authorization: Bearer YOUR_API_KEY"</span> \\
   -H <span class="s">"Content-Type: application/json"</span> \\
   -d <span class="s">'{
-    "model": "<span class="k">standard</span>",
+    "model": "<span class="k">economy</span>",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'</span></div>
 
-    <div class="code-block"><span class="c"># Model pinning — use a specific model directly</span>
-curl https://api.lxg2it.com/v1/chat/completions \\
-  -H <span class="s">"Authorization: Bearer YOUR_API_KEY"</span> \\
-  -H <span class="s">"Content-Type: application/json"</span> \\
-  -d <span class="s">'{
-    "model": "<span class="k">claude-sonnet-4-6</span>",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'</span></div>
+    <p style="font-size:13px; color:var(--muted);">
+      <strong>economy</strong> routes to fast free-tier models (Groq, Cerebras). Your $1 sign-up credit
+      can also be used with <code class="inline-code">standard</code> or <code class="inline-code">premium</code>
+      tiers — or pin a specific model like <code class="inline-code">claude-sonnet-4-6</code>.
+      See <a href="/docs/api#tiers">Tiers</a>.
+    </p>
 
     <p>That&rsquo;s it. The response format is identical to OpenAI&rsquo;s &mdash; any existing client library
     or tool that speaks the OpenAI API will work without modification.</p>
@@ -1051,8 +1049,7 @@ const INTEGRATIONS_HTML = `${docsHead('Integration Guides')}
     <ol>
       <li>Set <strong>API Key</strong> to your <code class="inline-code">mr_sk_...</code> key.</li>
       <li>Set <strong>Base URL</strong> to <code class="inline-code">https://api.lxg2it.com/v1</code>.</li>
-      <li>Add a model name — use a tier (<code class="inline-code">standard</code>) or
-      an exact model ID (<code class="inline-code">claude-sonnet-4-6</code>).</li>
+      <li>Add a model name — use <code class="inline-code">economy</code> (free) or any tier / model ID.</li>
       <li>Select the model when starting a chat or using Cmd+K.</li>
     </ol>
 
@@ -1077,7 +1074,7 @@ const INTEGRATIONS_HTML = `${docsHead('Integration Guides')}
       <li>Set <strong>API Provider</strong> to <code class="inline-code">OpenAI Compatible</code>.</li>
       <li>Set <strong>Base URL</strong> to <code class="inline-code">https://api.lxg2it.com/v1</code>.</li>
       <li>Set <strong>API Key</strong> to your <code class="inline-code">mr_sk_...</code> key.</li>
-      <li>Set <strong>Model ID</strong> to <code class="inline-code">standard</code> (or any tier / model ID).</li>
+      <li>Set <strong>Model ID</strong> to <code class="inline-code">economy</code> (free) or any tier / model ID.</li>
     </ol>
 
     <!-- OpenClaw -->
@@ -1091,7 +1088,7 @@ const INTEGRATIONS_HTML = `${docsHead('Integration Guides')}
     <div class="code-block"><span class="c"># Environment variables</span>
 export OPENAI_API_KEY=<span class="s">"mr_sk_..."</span>
 export OPENAI_BASE_URL=<span class="s">"https://api.lxg2it.com/v1"</span>
-export OPENAI_MODEL=<span class="s">"standard"</span></div>
+export OPENAI_MODEL=<span class="s">"economy"</span>  <span class="c"># free tier — change to standard/premium as needed</span></div>
 
     <p>Or in your config file:</p>
 
@@ -1100,7 +1097,7 @@ provider:
   type: openai
   api_key: <span class="s">mr_sk_...</span>
   base_url: <span class="s">https://api.lxg2it.com/v1</span>
-  model: <span class="s">standard</span></div>
+  model: <span class="s">economy</span>  <span class="c"># free tier — change to standard/premium as needed</span></div>
 
     <!-- Python SDK -->
     <div class="section-head">Python (OpenAI SDK)</div>
@@ -1113,7 +1110,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model=<span class="s">"standard"</span>,
+    model=<span class="s">"economy"</span>,  <span class="c"># free tier</span>
     messages=[{<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"Hello!"</span>}],
 )
 print(response.choices[0].message.content)</div>
@@ -1129,7 +1126,7 @@ print(response.choices[0].message.content)</div>
 });
 
 <span class="k">const</span> response = <span class="k">await</span> client.chat.completions.create({
-  model: <span class="s">'standard'</span>,
+  model: <span class="s">'economy'</span>,  <span class="c">// free tier</span>
   messages: [{ role: <span class="s">'user'</span>, content: <span class="s">'Hello!'</span> }],
 });
 console.log(response.choices[0].message.content);</div>
@@ -1141,10 +1138,13 @@ console.log(response.choices[0].message.content);</div>
   -H <span class="s">"Authorization: Bearer mr_sk_..."</span> \\
   -H <span class="s">"Content-Type: application/json"</span> \\
   -d <span class="s">'{
-    "model": "standard",
-    "prefer": "cheap",
+    "model": "economy",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'</span></div>
+    <p style="font-size:13px; color:var(--muted);">
+      Replace <code class="inline-code">economy</code> with <code class="inline-code">standard</code> or
+      <code class="inline-code">premium</code> for higher-capability models, or pin a specific model ID.
+    </p>
 
     <!-- General pattern -->
     <div class="section-head">General pattern</div>
