@@ -404,8 +404,8 @@ export const PROVIDER_META: Record<ProviderName, { label: string; models: string
   grok:      { label: 'xAI / Grok',       models: 'Grok family' },
   bedrock:   { label: 'AWS Bedrock',       models: 'Nemotron, GLM, DeepSeek, Qwen, Kimi, Mistral, MiniMax' },
   vertex:    { label: 'Google Vertex AI',  models: 'Nemotron 3 Super, Meta Llama, third-party models' },
-  groq:      { label: 'Groq',             models: 'Llama (free tier)' },
-  cerebras:  { label: 'Cerebras',         models: 'Llama (free tier)' },
+  groq:      { label: 'Groq',             models: 'Llama (free models)' },
+  cerebras:  { label: 'Cerebras',         models: 'Llama (free models)' },
 };
 
 

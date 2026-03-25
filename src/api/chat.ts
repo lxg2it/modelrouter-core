@@ -86,7 +86,7 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
       if (routeToFreeTierOnly) {
         return c.json({
           error: {
-            message: 'Your credit balance is $0 and no free-tier models are currently available. Please add credits at https://api.lxg2it.com/billing to continue.',
+            message: 'Your credit balance is $0 and no free models are currently available. Please add credits at https://api.lxg2it.com/billing to continue.',
             type: 'insufficient_quota',
             code: 'no_free_models_available',
           },

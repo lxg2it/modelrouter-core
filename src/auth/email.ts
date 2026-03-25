@@ -62,7 +62,7 @@ export class ResendEmailSender implements EmailSender {
         <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px; color: #111827;">
           <p>Hey,</p>
           <p>Your Model Router credit balance just hit <strong>$0</strong>.</p>
-          <p>To keep things running, we've automatically switched your requests to <strong>free-tier models</strong>
+          <p>To keep things running, we've automatically switched your requests to <strong>free models</strong>
           (Llama 3.3 70B via Groq and Cerebras). These are fast and capable, but you won't have access
           to GPT-4o, Claude, or Gemini Pro until you top up.</p>
           <p>
@@ -78,7 +78,7 @@ export class ResendEmailSender implements EmailSender {
           <p>Scott</p>
         </div>
       `,
-      text: `Hey,\n\nYour Model Router credit balance just hit $0.\n\nTo keep things running, we've switched your requests to free-tier models (Llama 3.3 70B via Groq and Cerebras). You won't have access to GPT-4o, Claude, or Gemini Pro until you top up.\n\nAdd credits: https://api.lxg2it.com/billing\n\nNote: We won't send this every time — please monitor your balance at https://api.lxg2it.com/profile. If this keeps happening, you may receive a reminder after 7 days.\n\nScott`,
+      text: `Hey,\n\nYour Model Router credit balance just hit $0.\n\nTo keep things running, we've switched your requests to free models (Llama 3.3 70B via Groq and Cerebras). You won't have access to GPT-4o, Claude, or Gemini Pro until you top up.\n\nAdd credits: https://api.lxg2it.com/billing\n\nNote: We won't send this every time — please monitor your balance at https://api.lxg2it.com/profile. If this keeps happening, you may receive a reminder after 7 days.\n\nScott`,
     });
 
     if (error) {
