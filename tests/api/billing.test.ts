@@ -71,6 +71,8 @@ function mockStripe(overrides: Partial<StripeService> = {}): StripeService {
   return {
     createCustomer: vi.fn(),
     createSetupIntent: vi.fn(),
+    createCheckoutSession: vi.fn(),
+    getCheckoutPaymentMethod: vi.fn(),
     attachPaymentMethod: vi.fn(),
     listPaymentMethods: vi.fn().mockResolvedValue([]),
     charge: vi.fn().mockResolvedValue({
@@ -338,5 +340,116 @@ describe('PATCH /auto-recharge', () => {
 
     expect(res.status).toBe(200);
     expect(userStore.setAutoRecharge).toHaveBeenCalledWith('user-id-1', { enabled: false, amountCents: 1000 });
+  });
+});
+
+// ─── Checkout session tests ───────────────────────────────
+
+describe('POST /checkout-session', () => {
+  it('returns a Stripe checkout URL', async () => {
+    const stripe = mockStripe({
+      createCheckoutSession: vi.fn().mockResolvedValue({
+        url: 'https://checkout.stripe.com/c/pay/cs_test_abc123',
+        sessionId: 'cs_test_abc123',
+      }),
+    });
+    const app = buildApp(fakeUser(), mockUserStore(), stripe);
+
+    const res = await app.request('/checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.url).toBe('https://checkout.stripe.com/c/pay/cs_test_abc123');
+    expect(body.sessionId).toBe('cs_test_abc123');
+  });
+
+  it('creates a Stripe customer if one does not exist', async () => {
+    const stripe = mockStripe({
+      createCustomer: vi.fn().mockResolvedValue('cus_new123'),
+      createCheckoutSession: vi.fn().mockResolvedValue({
+        url: 'https://checkout.stripe.com/c/pay/cs_test_xyz',
+        sessionId: 'cs_test_xyz',
+      }),
+    });
+    const userStore = mockUserStore();
+    const user = fakeUser({ stripeCustomerId: undefined });
+    const app = buildApp(user, userStore, stripe);
+
+    const res = await app.request('/checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(200);
+    expect(stripe.createCustomer).toHaveBeenCalledWith({
+      email: user.email,
+      name: user.accountName,
+      metadata: { userId: user.id },
+    });
+    expect(userStore.setStripeCustomerId).toHaveBeenCalledWith(user.id, 'cus_new123');
+  });
+});
+
+describe('GET /checkout-complete', () => {
+  it('attaches the payment method from the checkout session', async () => {
+    const pm = { id: 'pm_test123', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2027 };
+    const stripe = mockStripe({
+      getCheckoutPaymentMethod: vi.fn().mockResolvedValue('pm_test123'),
+      attachPaymentMethod: vi.fn().mockResolvedValue(pm),
+    });
+    const app = buildApp(fakeUser(), mockUserStore(), stripe);
+
+    const res = await app.request('/checkout-complete?session_id=cs_test_abc', {
+      method: 'GET',
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.success).toBe(true);
+    expect(body.paymentMethod).toEqual(pm);
+    expect(stripe.attachPaymentMethod).toHaveBeenCalledWith('cus_test123', 'pm_test123');
+  });
+
+  it('returns 400 when session_id is missing', async () => {
+    const app = buildApp(fakeUser(), mockUserStore(), mockStripe());
+
+    const res = await app.request('/checkout-complete', { method: 'GET' });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: { code: string } };
+    expect(body.error.code).toBe('invalid_request');
+  });
+
+  it('returns 400 when no Stripe customer exists', async () => {
+    const user = fakeUser({ stripeCustomerId: undefined });
+    const app = buildApp(user, mockUserStore(), mockStripe());
+
+    const res = await app.request('/checkout-complete?session_id=cs_test_abc', {
+      method: 'GET',
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: { code: string } };
+    expect(body.error.code).toBe('no_stripe_customer');
+  });
+
+  it('returns 400 when session has no payment method yet', async () => {
+    const stripe = mockStripe({
+      getCheckoutPaymentMethod: vi.fn().mockResolvedValue(null),
+    });
+    const app = buildApp(fakeUser(), mockUserStore(), stripe);
+
+    const res = await app.request('/checkout-complete?session_id=cs_test_abc', {
+      method: 'GET',
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: { code: string } };
+    expect(body.error.code).toBe('no_payment_method');
   });
 });

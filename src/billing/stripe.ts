@@ -36,6 +36,12 @@ export interface SetupIntentResult {
   clientSecret: string;
 }
 
+export interface CheckoutSessionResult {
+  url: string;
+  sessionId: string;
+}
+
+
 export interface TopUpResult {
   paymentIntentId: string;
   amountCents: number;
@@ -127,6 +133,63 @@ export class StripeService {
       clientSecret: intent.client_secret,
     };
   }
+
+  /**
+   * Create a Stripe Hosted Checkout session for saving a payment method (mode: 'setup').
+   *
+   * The user is redirected to Stripe's hosted checkout page (checkout.stripe.com)
+   * where they enter their card details securely. On success, Stripe redirects back to
+   * successUrl with `?session_id={CHECKOUT_SESSION_ID}`.
+   *
+   * The caller must then retrieve the session, extract the SetupIntent's payment_method,
+   * and attach it to the customer.
+   *
+   * @param stripeCustomerId  Stripe customer ID
+   * @param successUrl        URL to redirect to after successful card save (include {CHECKOUT_SESSION_ID} placeholder if desired)
+   * @param cancelUrl         URL to redirect to if user cancels
+   */
+  async createCheckoutSession(
+    stripeCustomerId: string,
+    successUrl: string,
+    cancelUrl: string,
+  ): Promise<CheckoutSessionResult> {
+    const session = await this.stripe.checkout.sessions.create({
+      customer: stripeCustomerId,
+      mode: 'setup',
+      payment_method_types: ['card'],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+    });
+
+    if (!session.url) {
+      throw new Error('Stripe Checkout session created without redirect URL');
+    }
+
+    return {
+      url: session.url,
+      sessionId: session.id,
+    };
+  }
+
+  /**
+   * Retrieve a completed Checkout session and extract the payment method ID from its
+   * SetupIntent. Returns null if the session has no payment method yet.
+   */
+  async getCheckoutPaymentMethod(sessionId: string): Promise<string | null> {
+    const session = await this.stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['setup_intent.payment_method'],
+    });
+
+    if (!session.setup_intent) return null;
+
+    const si = session.setup_intent as Stripe.SetupIntent;
+    if (!si.payment_method) return null;
+
+    return typeof si.payment_method === 'string'
+      ? si.payment_method
+      : (si.payment_method as Stripe.PaymentMethod).id;
+  }
+
 
   /**
    * Attach a payment method to a customer and set it as default.

@@ -144,9 +144,6 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
     .stat-label { font-size: 11px; color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
     .stat-value { font-size: 20px; font-weight: 700; font-family: var(--mono); color: var(--text); }
 
-    /* ── Stripe card element ── */
-    #billing-stripe-card { border: 1px solid var(--border); padding: 12px; background: var(--surface); }
-
     /* ── Toggle switch ── */
     .toggle-wrap { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
     .toggle-wrap input { opacity: 0; width: 0; height: 0; }
@@ -311,8 +308,8 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
           <div id="billingAddCardSection" class="hidden" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
             <div style="font-size:13px; font-weight:600; color:var(--text); margin-bottom:8px;">Add a payment card</div>
-            <div id="billing-stripe-card" class="mb-3"></div>
-            <button class="btn btn-primary btn-sm" id="billingSaveCardBtn" onclick="doBillingSaveCard()">Save Card</button>
+            <div style="font-size:13px; color:var(--muted); margin-bottom:12px;">You'll be redirected to Stripe to enter your card details securely.</div>
+            <button class="btn btn-primary btn-sm" id="billingSaveCardBtn" onclick="doStartCardCheckout()">Add Card via Stripe →</button>
             <p id="billingCardMsg" class="text-sm mt-2"></p>
           </div>
 
@@ -563,7 +560,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
   // ─── Billing state ────────────────────────────────────────
   let stripeInstance = null;
-  let stripeCardElement = null;
+  let stripePublishableKey = null;
   let billingSelectedCents = null;
 
   // ─── Init ─────────────────────────────────────────────────
@@ -571,10 +568,43 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
   window.addEventListener('DOMContentLoaded', async () => {
     if (sessionToken) {
       await loadDashboard();
+      // Handle return from Stripe Hosted Checkout
+      const params = new URLSearchParams(window.location.search);
+      const checkoutStatus = params.get('checkout');
+      const checkoutSessionId = params.get('session_id');
+      if (checkoutStatus === 'success' && checkoutSessionId) {
+        // Clean URL first
+        window.history.replaceState({}, '', '/profile');
+        // Complete the card save server-side
+        await doCompleteCardCheckout(checkoutSessionId);
+      } else if (checkoutStatus === 'cancelled') {
+        window.history.replaceState({}, '', '/profile');
+      }
     } else {
       showAuthSection();
     }
   });
+
+  async function doCompleteCardCheckout(sessionId) {
+    const res = await apiFetch('GET', '/v1/billing/checkout-complete?session_id=' + encodeURIComponent(sessionId));
+    const data = await res.json();
+    const msgEl = document.getElementById('billingCardMsg');
+    if (res.ok) {
+      // Show the billing panel so the success message is visible
+      const panel = document.getElementById('billingPanel');
+      if (panel) panel.classList.remove('hidden');
+      if (msgEl) {
+        msgEl.textContent = '✓ Card saved successfully.';
+        msgEl.className = 'text-sm mt-2 success-msg';
+      }
+      await loadBillingStatus();
+    } else {
+      if (msgEl) {
+        msgEl.textContent = data.error?.message || 'Failed to save card.';
+        msgEl.className = 'text-sm mt-2 error-msg';
+      }
+    }
+  }
 
   function showAuthSection() {
     document.getElementById('authSection').style.display = 'block';
@@ -826,19 +856,13 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       document.getElementById('billingTopupSection').classList.add('hidden');
     }
 
-    // Show add card section and mount Stripe if not already done
-    document.getElementById('billingAddCardSection').classList.remove('hidden');
-    if (!stripeInstance && data.publishableKey) {
-      stripeInstance = Stripe(data.publishableKey);
-      const elements = stripeInstance.elements();
-      stripeCardElement = elements.create('card', {
-        hidePostalCode: true,
-        style: {
-          base: { fontSize: '16px', color: '#e8e6e3', '::placeholder': { color: '#777' } },
-        },
-      });
-      stripeCardElement.mount('#billing-stripe-card');
+    // Store publishable key for 3DS top-up handling
+    if (data.publishableKey) {
+      stripePublishableKey = data.publishableKey;
     }
+
+    // Show add card section
+    document.getElementById('billingAddCardSection').classList.remove('hidden');
   }
 
   function setBillingAmount(cents) {
@@ -892,6 +916,10 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       } else if (data.status === 'requires_action' && data.clientSecret) {
         msgEl.textContent = 'Card authentication required...';
         msgEl.className = 'text-sm mt-2 success-msg';
+        // Lazily initialise Stripe.js for 3DS authentication
+        if (!stripeInstance && stripePublishableKey) {
+          stripeInstance = Stripe(stripePublishableKey);
+        }
         const { error, paymentIntent } = await stripeInstance.confirmCardPayment(data.clientSecret);
         if (error) {
           msgEl.textContent = 'Authentication failed: ' + error.message;
@@ -911,53 +939,26 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
     updateBillingTopupBtn();
   }
 
-  async function doBillingSaveCard() {
+  async function doStartCardCheckout() {
     const btn = document.getElementById('billingSaveCardBtn');
     const msgEl = document.getElementById('billingCardMsg');
     msgEl.textContent = '';
     btn.disabled = true;
-    btn.textContent = 'Saving...';
+    btn.textContent = 'Redirecting...';
 
-    // Step 1: Create SetupIntent
-    const siRes = await apiFetch('POST', '/v1/billing/setup-intent', {});
-    const siData = await siRes.json();
+    const res = await apiFetch('POST', '/v1/billing/checkout-session', {});
+    const data = await res.json();
 
-    if (!siRes.ok) {
-      msgEl.textContent = siData.error?.message || 'Failed to create setup intent.';
+    if (!res.ok) {
+      msgEl.textContent = data.error?.message || 'Failed to start checkout.';
       msgEl.className = 'text-sm mt-2 error-msg';
       btn.disabled = false;
-      btn.textContent = 'Save Card';
+      btn.textContent = 'Add Card via Stripe →';
       return;
     }
 
-    // Step 2: Confirm the SetupIntent with the card element
-    const { error, setupIntent } = await stripeInstance.confirmCardSetup(siData.clientSecret, {
-      payment_method: { card: stripeCardElement },
-    });
-
-    if (error) {
-      msgEl.textContent = error.message;
-      msgEl.className = 'text-sm mt-2 error-msg';
-      btn.disabled = false;
-      btn.textContent = 'Save Card';
-      return;
-    }
-
-    // Step 3: Attach the payment method
-    const pmRes = await apiFetch('POST', '/v1/billing/payment-method', { paymentMethodId: setupIntent.payment_method });
-    const pmData = await pmRes.json();
-
-    if (pmRes.ok) {
-      msgEl.textContent = '✓ Card saved.';
-      msgEl.className = 'text-sm mt-2 success-msg';
-      loadBillingStatus();
-    } else {
-      msgEl.textContent = pmData.error?.message || 'Failed to save card.';
-      msgEl.className = 'text-sm mt-2 error-msg';
-    }
-
-    btn.disabled = false;
-    btn.textContent = 'Save Card';
+    // Redirect to Stripe Hosted Checkout
+    window.location.href = data.url;
   }
 
   // ─── Provider preferences ─────────────────────────────────

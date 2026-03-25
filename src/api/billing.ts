@@ -6,11 +6,13 @@
  * share one credit balance.
  *
  * Route overview:
- *   POST /v1/billing/setup-intent   — Create SetupIntent for card entry
- *   POST /v1/billing/payment-method — Attach a confirmed payment method
- *   POST /v1/billing/top-up         — Charge saved card to add credits
- *   GET  /v1/billing/status         — Current balance and card info
- *   GET  /v1/billing/history        — Past top-up transactions
+ *   POST /v1/billing/checkout-session  — Create Stripe Hosted Checkout session (card save)
+ *   GET  /v1/billing/checkout-complete — Attach PM after Stripe redirect returns
+ *   POST /v1/billing/setup-intent      — Create SetupIntent for card entry (embedded, legacy)
+ *   POST /v1/billing/payment-method    — Attach a confirmed payment method (embedded, legacy)
+ *   POST /v1/billing/top-up            — Charge saved card to add credits
+ *   GET  /v1/billing/status            — Current balance and card info
+ *   GET  /v1/billing/history           — Past top-up transactions
  */
 
 import { Hono } from 'hono';
@@ -84,6 +86,87 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<SessionEnv> {
 
     return c.json(status);
   });
+
+  // ─── POST /v1/billing/checkout-session ────────────────────
+  //
+  // Creates a Stripe Hosted Checkout session (mode: 'setup') for saving a card.
+  //
+  // The response includes a `url` — the client should redirect to it.
+  // Stripe hosts the card entry form on checkout.stripe.com.
+  //
+  // After the user saves their card, Stripe redirects them to:
+  //   /profile?checkout_session_id={SESSION_ID}&checkout=success
+  //
+  // The profile page then calls GET /v1/billing/checkout-complete?session_id=...
+  // to attach the payment method.
+  //
+  // Body: {} (no body required)
+  //
+  router.post('/checkout-session', async (c: Context<SessionEnv>) => {
+    const user = c.get('user');
+
+    // Ensure a Stripe customer exists for this user
+    let stripeCustomerId = user.stripeCustomerId;
+    if (!stripeCustomerId) {
+      stripeCustomerId = await stripe.createCustomer({
+        email: user.email,
+        name: user.accountName,
+        metadata: { userId: user.id },
+      });
+      userStore.setStripeCustomerId(user.id, stripeCustomerId);
+    }
+
+    const origin = new URL(c.req.url).origin;
+    const successUrl = `${origin}/profile?checkout=success&session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${origin}/profile?checkout=cancelled`;
+
+    const result = await stripe.createCheckoutSession(stripeCustomerId, successUrl, cancelUrl);
+
+    return c.json({
+      url: result.url,
+      sessionId: result.sessionId,
+    });
+  });
+
+  // ─── GET /v1/billing/checkout-complete ────────────────────
+  //
+  // Called after the user returns from Stripe Hosted Checkout.
+  // Retrieves the completed session, extracts the SetupIntent's payment method,
+  // attaches it to the customer, and sets it as default.
+  //
+  // Query: ?session_id={CHECKOUT_SESSION_ID}
+  //
+  router.get('/checkout-complete', async (c: Context<SessionEnv>) => {
+    const user = c.get('user');
+    const sessionId = c.req.query('session_id');
+
+    if (!sessionId || typeof sessionId !== 'string') {
+      return c.json({
+        error: { message: 'Missing required query parameter: session_id', code: 'invalid_request' },
+      }, 400);
+    }
+
+    if (!user.stripeCustomerId) {
+      return c.json({
+        error: { message: 'No Stripe customer on file', code: 'no_stripe_customer' },
+      }, 400);
+    }
+
+    const paymentMethodId = await stripe.getCheckoutPaymentMethod(sessionId);
+    if (!paymentMethodId) {
+      return c.json({
+        error: { message: 'Checkout session has no payment method yet', code: 'no_payment_method' },
+      }, 400);
+    }
+
+    const pm = await stripe.attachPaymentMethod(user.stripeCustomerId, paymentMethodId);
+
+    return c.json({
+      success: true,
+      paymentMethod: pm,
+    });
+  });
+
 
   // ─── POST /v1/billing/setup-intent ────────────────────────
   //

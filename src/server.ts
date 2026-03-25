@@ -38,6 +38,8 @@ import { createLandingRouter } from './api/landing.js';
 import { createAccountRouter } from './api/account.js';
 import { createProfileRouter } from './api/profile.js';
 import { createLegalRouter } from './api/legal.js';
+
+import { createChangelogRouter } from './api/changelog.js';
 import { createAdminRouter } from './api/admin.js';
 import { createDocsRouter } from './api/docs.js';
 import { createTryRouter, type TryRouterDeps } from './api/try.js';
@@ -325,6 +327,8 @@ export function createApp(): { app: Hono; ctx: AppContext } {
 
   // Docs (unauthenticated)
   app.route('/docs', createDocsRouter());
+
+  app.route('/changelog', createChangelogRouter());
 
   app.route('/', createLegalRouter());
 
