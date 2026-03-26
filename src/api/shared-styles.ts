@@ -187,6 +187,7 @@ export function pageFooter(currentPage?: string): string {
     { href: '/v1/models', label: 'models' },
     { href: '/docs', label: 'docs' },
     { href: '/changelog', label: 'changelog' },
+    { href: '/status', label: 'status' },
     { href: '/privacy', label: 'privacy' },
     { href: '/terms', label: 'terms' },
   ];

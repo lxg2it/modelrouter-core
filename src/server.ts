@@ -40,6 +40,7 @@ import { createProfileRouter } from './api/profile.js';
 import { createLegalRouter } from './api/legal.js';
 
 import { createChangelogRouter } from './api/changelog.js';
+import { createStatusRouter } from './api/status.js';
 import { createAdminRouter } from './api/admin.js';
 import { createDocsRouter } from './api/docs.js';
 import { createTryRouter, type TryRouterDeps } from './api/try.js';
@@ -329,6 +330,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   app.route('/docs', createDocsRouter());
 
   app.route('/changelog', createChangelogRouter());
+  app.route('/status', createStatusRouter(db));
 
   app.route('/', createLegalRouter());
 
