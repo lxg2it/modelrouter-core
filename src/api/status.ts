@@ -134,14 +134,14 @@ class StatusStore {
         date(created_at) as date,
         provider,
         COUNT(*) as requests,
-        CAST(SUM(CASE WHEN status_code >= 500 THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as error_rate
+        CAST(SUM(CASE WHEN status_code >= 500 THEN 1 ELSE 0 END) AS REAL) / COUNT(*) as errorRate
       FROM usage_log
       WHERE created_at > datetime('now', ?)
       GROUP BY date(created_at), provider
-      HAVING error_rate > 0.10 AND requests >= 3
-      ORDER BY date DESC, error_rate DESC
+      HAVING errorRate > 0.10 AND requests >= 3
+      ORDER BY date DESC, errorRate DESC
       LIMIT 5
-    `).all(`-${days} days`) as Array<{ date: string; provider: string; requests: number; error_rate: number }>;
+    `).all(`-${days} days`) as Array<{ date: string; provider: string; requests: number; errorRate: number }>;
   }
 
   private generateDateSpine(days: number): string[] {
