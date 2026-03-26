@@ -81,8 +81,11 @@ const PRIVACY_HTML = /* html */`<!DOCTYPE html>
 
     <h2>How your data flows</h2>
     <p>
-      When you make an API call, your message is routed to one AI provider (Anthropic, OpenAI, Google, or xAI)
-      based on your settings. That provider's privacy policy governs how they handle your data.
+      When you make an API call, your message is routed to one AI provider (Anthropic, OpenAI, Google, AWS Bedrock, or xAI)
+      based on your settings. Our primary providers (Anthropic, OpenAI, Google, AWS Bedrock, Groq, and Cerebras)
+      do not use your API inputs or outputs to train their models by default — this is a contractual commitment,
+      not just a setting. That said, each provider's privacy policy governs how they handle your data, and we
+      encourage you to review them if you have specific concerns.
       You can block specific providers in your <a href="/profile">profile settings</a> — if you block a provider,
       your data is never sent to them.
     </p>
