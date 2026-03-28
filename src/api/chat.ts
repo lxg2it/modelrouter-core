@@ -286,11 +286,13 @@ async function handleNonStreaming(
 
     return c.json(result.response);
   } catch (err) {
+    console.error(`[chat] Primary provider failed (${decision.provider}/${decision.model}):`, err);
     deps.router.recordFailure(decision.provider, decision.model);
 
     // Try failover
     const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
     if (fallback) {
+      console.info(`[chat] Attempting fallback: ${fallback.provider}/${fallback.model}`);
       const fallbackAdapter = deps.providers.get(fallback.provider);
       if (fallbackAdapter) {
         try {
@@ -352,6 +354,7 @@ async function handleNonStreaming(
 
           return c.json(result.response);
         } catch (fallbackErr) {
+          console.error(`[chat] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
           deps.router.recordFailure(fallback.provider, fallback.model);
           // Refund the full reservation since all providers failed
           fullRefundReservation(deps, reservedCents, user);
@@ -359,6 +362,7 @@ async function handleNonStreaming(
       }
     } else {
       // No fallback available — refund the reservation
+      console.info(`[chat] No fallback available for ${decision.provider}/${decision.model}`);
       fullRefundReservation(deps, reservedCents, user);
     }
 
@@ -449,7 +453,8 @@ async function handleStreaming(
     try {
       const primaryRequest = applyThinkingTokenFloor(request, decision);
       completion = await primaryAdapter.stream(decision.model, primaryRequest);
-    } catch {
+    } catch (primaryErr) {
+      console.error(`[chat/stream] Primary provider failed (${decision.provider}/${decision.model}):`, primaryErr);
       deps.router.recordFailure(decision.provider, decision.model);
     }
   }
@@ -458,13 +463,15 @@ async function handleStreaming(
   if (!completion) {
     const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
     if (fallback) {
+      console.info(`[chat/stream] Attempting fallback: ${fallback.provider}/${fallback.model}`);
       const fallbackAdapter = deps.providers.get(fallback.provider);
       if (fallbackAdapter) {
         try {
           const fallbackRequest = applyThinkingTokenFloor(request, fallback);
           completion = await fallbackAdapter.stream(fallback.model, fallbackRequest);
           activeDecision = fallback;
-        } catch {
+        } catch (fallbackErr) {
+          console.error(`[chat/stream] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
           deps.router.recordFailure(fallback.provider, fallback.model);
         }
       }
