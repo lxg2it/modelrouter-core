@@ -261,6 +261,82 @@ describe('RoutingEngine', () => {
     });
   });
 
+  describe('selectFallbackCandidates', () => {
+    it('returns all viable candidates excluding the failed set', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['anthropic', 'openai', 'google']),
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+      });
+
+      const primary = engine.selectModel(req())!;
+      const failed = new Set([`${primary.provider}/${primary.model}`]);
+      const candidates = engine.selectFallbackCandidates(failed, 'standard');
+
+      expect(candidates.length).toBeGreaterThan(0);
+      // None of the candidates should be the failed model
+      for (const c of candidates) {
+        expect(`${c.provider}/${c.model}`).not.toBe(`${primary.provider}/${primary.model}`);
+      }
+    });
+
+    it('excludes multiple failed providers when called iteratively', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['anthropic', 'openai', 'google']),
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+      });
+
+      const primary = engine.selectModel(req())!;
+      const failed = new Set([`${primary.provider}/${primary.model}`]);
+      const firstCandidates = engine.selectFallbackCandidates(failed, 'standard');
+      expect(firstCandidates.length).toBeGreaterThan(0);
+
+      // Simulate the first fallback also failing
+      const first = firstCandidates[0];
+      failed.add(`${first.provider}/${first.model}`);
+      const secondCandidates = engine.selectFallbackCandidates(failed, 'standard');
+
+      // All remaining candidates should not be in the failed set
+      for (const c of secondCandidates) {
+        expect(failed.has(`${c.provider}/${c.model}`)).toBe(false);
+      }
+    });
+
+    it('returns empty array when all candidates are in the failed set', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['anthropic']),
+        defaultTier: 'premium',
+        defaultOutputRatio: 0.33,
+      });
+
+      const primary = engine.selectModel(req({ tier: 'premium' }))!;
+      // Mark everything available as failed
+      const candidates = engine.selectFallbackCandidates(new Set(), 'premium');
+      const allFailed = new Set(candidates.map((c) => `${c.provider}/${c.model}`));
+      allFailed.add(`${primary.provider}/${primary.model}`);
+
+      const result = engine.selectFallbackCandidates(allFailed, 'premium');
+      expect(result).toEqual([]);
+    });
+
+    it('returns candidates ordered by cost then quality', () => {
+      const engine = new RoutingEngine({
+        availableProviders: new Set(['anthropic', 'openai', 'google']),
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+
+      const candidates = engine.selectFallbackCandidates(new Set(), 'economy');
+      expect(candidates.length).toBeGreaterThan(1);
+
+      // Verify ordering: each candidate's estimated cost should be >= the previous
+      for (let i = 1; i < candidates.length; i++) {
+        expect(candidates[i].estimatedCostPer1M).toBeGreaterThanOrEqual(candidates[i - 1].estimatedCostPer1M);
+      }
+    });
+  });
+
 
   describe('prefer parameter', () => {
     describe('prefer: balanced (default)', () => {

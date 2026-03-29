@@ -242,6 +242,55 @@ export class RoutingEngine {
 
   /**
    * Record provider success for circuit breaker.
+
+  /**
+   * Return ALL viable fallback candidates, ordered by cost then quality.
+   *
+   * Unlike `selectFallback` (which returns only the best candidate), this
+   * returns the full ranked list so callers can iterate through multiple
+   * fallbacks when earlier ones also fail.  The `failedSet` parameter
+   * contains every provider/model pair that has already been attempted so
+   * they are excluded from the result.
+   *
+   * Fallback always uses balanced mode (cost-optimised within tier).
+   */
+  selectFallbackCandidates(
+    failedSet: Set<string>,   // key format: `${provider}/${model}`
+    tier: Tier,
+    messages: ChatMessage[] = [],
+    blockedProviders?: Set<string>,
+    freeProvidersOnly?: boolean,
+  ): RouteDecision[] {
+    const estimatedTokens = this.estimateInputTokens(messages);
+    const modelsToSearch = freeProvidersOnly
+      ? getModelsForTier(tier, this.config.availableProviders).filter((m) => m.isFreeProvider)
+      : getModelsForTier(tier, this.config.availableProviders);
+    const candidates = this.filterByContext(
+      this.filterBlocked(modelsToSearch, blockedProviders).filter(
+        (m) => (m.apiType ?? 'chat') === 'chat',
+      ),
+      estimatedTokens,
+    )
+      .filter((m) => !failedSet.has(`${m.provider}/${m.model}`))
+      .filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model));
+
+    if (candidates.length === 0) return [];
+
+    const ratio = this.config.defaultOutputRatio;
+    const scored = candidates.map((m) => ({
+      config: m,
+      estimatedCost: m.inputPer1M + m.outputPer1M * ratio,
+    }));
+
+    scored.sort((a, b) =>
+      a.estimatedCost - b.estimatedCost || b.config.quality - a.config.quality,
+    );
+
+    return scored.map((s) => this.toDecision(s.config, tier, s.estimatedCost, 'balanced'));
+  }
+
+  /**
+   * Record provider success for circuit breaker.
    */
   recordSuccess(provider: ProviderName, model: string): void {
     this.circuitBreaker.recordSuccess(provider, model);

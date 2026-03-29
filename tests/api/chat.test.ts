@@ -308,6 +308,40 @@ describe('POST /v1/chat/completions — non-streaming', () => {
     const body = await res.json() as any;
     expect(body.error.code).toBe('provider_error');
   });
+
+  it('multi-hop fallback: succeeds on the third provider when the first two fail', async () => {
+    // Simulates the scenario that stranded Khaled: primary and first fallback both fail,
+    // but a third provider is available. The router should cascade through all candidates.
+    const googleAdapter = makeFailingStreamAdapter('google');
+    const openaiAdapter = makeFailingStreamAdapter('openai');
+    const anthropicAdapter = makeSuccessAdapter('anthropic', 'Third provider response');
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['google', googleAdapter],
+      ['openai', openaiAdapter],
+      ['anthropic', anthropicAdapter],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['google', 'openai', 'anthropic']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.choices[0].message.content).toBe('Third provider response');
+    // All three provider adapters were tried — google and openai (both failing)
+    // before anthropic succeeded. Multiple models per provider may be attempted.
+    expect(googleAdapter.complete).toHaveBeenCalled();
+    expect(openaiAdapter.complete).toHaveBeenCalled();
+    expect(anthropicAdapter.complete).toHaveBeenCalledOnce();
+  });
 });
 
 describe('POST /v1/chat/completions — streaming', () => {

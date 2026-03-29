@@ -289,80 +289,90 @@ async function handleNonStreaming(
     console.error(`[chat] Primary provider failed (${decision.provider}/${decision.model}):`, err);
     deps.router.recordFailure(decision.provider, decision.model);
 
-    // Try failover
-    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
-    if (fallback) {
+    // Try failover — iterate through all ranked candidates until one succeeds.
+    // This handles cases where multiple providers fail (e.g., large-context requests
+    // with a narrow pool: if the first fallback also fails, we try the next, etc.)
+    const failedSet = new Set([`${decision.provider}/${decision.model}`]);
+    const fallbackCandidates = deps.router.selectFallbackCandidates(failedSet, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
+
+    let fallbackSucceeded = false;
+    for (const fallback of fallbackCandidates) {
       console.info(`[chat] Attempting fallback: ${fallback.provider}/${fallback.model}`);
       const fallbackAdapter = deps.providers.get(fallback.provider);
-      if (fallbackAdapter) {
-        try {
-          const effectiveFallbackRequest = applyThinkingTokenFloor(request, fallback);
-          const result = await fallbackAdapter.complete(fallback.model, effectiveFallbackRequest);
-          deps.router.recordSuccess(fallback.provider, fallback.model);
+      if (!fallbackAdapter) continue;
 
-          const modelConfig = findModelConfig(fallback.provider, fallback.model, fallback.tier);
-          const costCents = modelConfig
-            ? UsageLoggerClass.calculateCost(
-                result.usage.prompt_tokens,
-                result.usage.completion_tokens,
-                modelConfig.inputPer1M,
-                modelConfig.outputPer1M,
-              )
-            : 0;
+      try {
+        const effectiveFallbackRequest = applyThinkingTokenFloor(request, fallback);
+        const result = await fallbackAdapter.complete(fallback.model, effectiveFallbackRequest);
+        deps.router.recordSuccess(fallback.provider, fallback.model);
 
-          deps.logger.log({
-            keyId,
-            provider: fallback.provider,
-            model: fallback.model,
-            tier: fallback.tier,
-            promptTokens: result.usage.prompt_tokens,
-            completionTokens: result.usage.completion_tokens,
-            costCents,
-            latencyMs: Date.now() - startTime,
-            streaming: false,
-            statusCode: 200,
-      ...autoLogFields(decision),
+        const modelConfig = findModelConfig(fallback.provider, fallback.model, fallback.tier);
+        const costCents = modelConfig
+          ? UsageLoggerClass.calculateCost(
+              result.usage.prompt_tokens,
+              result.usage.completion_tokens,
+              modelConfig.inputPer1M,
+              modelConfig.outputPer1M,
+            )
+          : 0;
+
+        deps.logger.log({
+          keyId,
+          provider: fallback.provider,
+          model: fallback.model,
+          tier: fallback.tier,
+          promptTokens: result.usage.prompt_tokens,
+          completionTokens: result.usage.completion_tokens,
+          costCents,
+          latencyMs: Date.now() - startTime,
+          streaming: false,
+          statusCode: 200,
+          ...autoLogFields(decision),
+        });
+
+        // Satbill deduction for fallback path
+        if (deps.billing && satbillAccountId && costCents > 0) {
+          deps.billing.deductUsd(satbillAccountId, {
+            amountUsdCents: costCents,
+            reference: result.response.id,
+          }).catch((err) => {
+            console.error('[Billing] Satbill deduction failed (non-fatal):', err);
           });
-
-          // Satbill deduction for fallback path
-          if (deps.billing && satbillAccountId && costCents > 0) {
-            deps.billing.deductUsd(satbillAccountId, {
-              amountUsdCents: costCents,
-              reference: result.response.id,
-            }).catch((err) => {
-              console.error('[Billing] Satbill deduction failed (non-fatal):', err);
-            });
-          }
-
-          // Settle reservation for fallback path
-          settleStripeCredits(deps, apiKey, reservedCents, costCents, user);
-
-          c.header('X-Model-Router-Provider', fallback.provider);
-          c.header('X-Model-Router-Model', fallback.model);
-          c.header('X-Model-Router-Tier', fallback.tier);
-          c.header('X-Model-Router-Latency-Ms', String(Date.now() - startTime));
-
-          telemetrySpan?.end({
-            statusCode: 200,
-            promptTokens: result.usage.prompt_tokens,
-            completionTokens: result.usage.completion_tokens,
-            costCents,
-            latencyMs: Date.now() - startTime,
-            streaming: false,
-            failoverFrom: decision.provider,
-          });
-
-          return c.json(result.response);
-        } catch (fallbackErr) {
-          console.error(`[chat] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
-          deps.router.recordFailure(fallback.provider, fallback.model);
-          // Refund the full reservation since all providers failed
-          fullRefundReservation(deps, reservedCents, user);
         }
+
+        // Settle reservation for fallback path
+        settleStripeCredits(deps, apiKey, reservedCents, costCents, user);
+
+        c.header('X-Model-Router-Provider', fallback.provider);
+        c.header('X-Model-Router-Model', fallback.model);
+        c.header('X-Model-Router-Tier', fallback.tier);
+        c.header('X-Model-Router-Latency-Ms', String(Date.now() - startTime));
+
+        telemetrySpan?.end({
+          statusCode: 200,
+          promptTokens: result.usage.prompt_tokens,
+          completionTokens: result.usage.completion_tokens,
+          costCents,
+          latencyMs: Date.now() - startTime,
+          streaming: false,
+          failoverFrom: decision.provider,
+        });
+
+        fallbackSucceeded = true;
+        return c.json(result.response);
+      } catch (fallbackErr) {
+        console.error(`[chat] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
+        deps.router.recordFailure(fallback.provider, fallback.model);
+        failedSet.add(`${fallback.provider}/${fallback.model}`);
+        // Continue to next candidate
       }
-    } else {
-      // No fallback available — refund the reservation
-      console.info(`[chat] No fallback available for ${decision.provider}/${decision.model}`);
+    }
+
+    if (!fallbackSucceeded) {
+      if (fallbackCandidates.length === 0) {
+        console.info(`[chat] No fallback candidates available for ${decision.provider}/${decision.model}`);
+      }
+      // Refund the full reservation since all providers failed
       fullRefundReservation(deps, reservedCents, user);
     }
 
@@ -459,21 +469,28 @@ async function handleStreaming(
     }
   }
 
-  // If primary failed, try one fallback (matches non-streaming behaviour)
+  // If primary failed, iterate through all fallback candidates until one succeeds.
+  // This handles large-context requests where a narrow provider pool means the first
+  // fallback may also be unavailable — we keep trying rather than stranding the user.
   if (!completion) {
-    const fallback = deps.router.selectFallback(decision.provider, decision.model, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
-    if (fallback) {
+    const streamFailedSet = new Set([`${decision.provider}/${decision.model}`]);
+    const streamFallbackCandidates = deps.router.selectFallbackCandidates(streamFailedSet, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
+
+    for (const fallback of streamFallbackCandidates) {
       console.info(`[chat/stream] Attempting fallback: ${fallback.provider}/${fallback.model}`);
       const fallbackAdapter = deps.providers.get(fallback.provider);
-      if (fallbackAdapter) {
-        try {
-          const fallbackRequest = applyThinkingTokenFloor(request, fallback);
-          completion = await fallbackAdapter.stream(fallback.model, fallbackRequest);
-          activeDecision = fallback;
-        } catch (fallbackErr) {
-          console.error(`[chat/stream] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
-          deps.router.recordFailure(fallback.provider, fallback.model);
-        }
+      if (!fallbackAdapter) continue;
+
+      try {
+        const fallbackRequest = applyThinkingTokenFloor(request, fallback);
+        completion = await fallbackAdapter.stream(fallback.model, fallbackRequest);
+        activeDecision = fallback;
+        break; // Success — stop trying further candidates
+      } catch (fallbackErr) {
+        console.error(`[chat/stream] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
+        deps.router.recordFailure(fallback.provider, fallback.model);
+        streamFailedSet.add(`${fallback.provider}/${fallback.model}`);
+        // Continue to next candidate
       }
     }
   }
