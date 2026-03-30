@@ -229,9 +229,10 @@ export const TIERS: Record<string, TierConfig> = {
   },
   premium: {
     models: [
-      { provider: 'google',    model: 'gemini-3.1-pro-preview', quality: 1.00, inputPer1M: 2.00, outputPer1M: 12.00, latencyMs: 900,  maxContextTokens: 1_048_576, priceSource: 'manual'  },
-      { provider: 'anthropic', model: 'claude-opus-4-6',        quality: 1.00, inputPer1M: 5.00, outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 1_000_000, priceSource: 'litellm' },
-      { provider: 'openai',    model: 'gpt-5.4',                quality: 0.96, inputPer1M: 2.50, outputPer1M: 15.00, latencyMs: 900,  maxContextTokens: 1_050_000, priceSource: 'manual'  },
+      { provider: 'google',    model: 'gemini-3.1-pro-preview', quality: 1.00, inputPer1M: 2.00,  outputPer1M: 12.00, latencyMs: 900,  maxContextTokens: 1_048_576, priceSource: 'manual'  },
+      { provider: 'anthropic', model: 'claude-opus-4-6',        quality: 1.00, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 1_000_000, priceSource: 'litellm' },
+      { provider: 'openai',    model: 'gpt-5.4',                quality: 0.96, inputPer1M: 2.50,  outputPer1M: 15.00, latencyMs: 900,  maxContextTokens: 1_050_000, priceSource: 'manual'  },
+      { provider: 'bedrock',   model: 'zai.glm-5',              quality: 0.93, inputPer1M: 0.72,  outputPer1M: 2.30,  latencyMs: 650,  maxContextTokens: 200_000,   priceSource: 'manual'  },
     ],
     description: 'Maximum capability. For complex reasoning, creative work, difficult tasks.',
   },

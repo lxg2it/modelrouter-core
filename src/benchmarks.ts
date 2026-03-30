@@ -259,6 +259,14 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
   },
 
   // ── Premium ───────────────────────────────────────────
+  'zai.glm-5': {
+    arenaElo: 1452,
+    gpqaDiamond: 86.0,
+    sweBench: 77.8,
+    mmluPro: 84.3,
+    simpleBench: 62.0,
+  },
+
   'gemini-3.1-pro-preview': {
     arenaElo: 1395,
     gpqaDiamond: 92.6,
