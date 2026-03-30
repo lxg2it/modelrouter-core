@@ -90,6 +90,23 @@ function makeSuccessAdapter(name: ProviderName, content = 'Hello!'): ProviderAda
 /**
  * Build an adapter whose stream() rejects (simulates pre-stream failure).
  */
+import { RateLimitError } from 'openai';
+
+
+function makeRateLimitAdapter(name: ProviderName, retryAfterSeconds?: number): ProviderAdapter {
+  const headers = new Headers();
+  if (retryAfterSeconds !== undefined) {
+    headers.set('retry-after', String(retryAfterSeconds));
+  }
+  const err = new RateLimitError(429, {}, `${name} rate limited`, headers);
+  return {
+    name,
+    complete: vi.fn(async () => { throw err; }),
+    stream: vi.fn(async () => { throw err; }),
+  };
+}
+
+
 function makeFailingStreamAdapter(name: ProviderName): ProviderAdapter {
   return {
     name,
@@ -308,6 +325,61 @@ describe('POST /v1/chat/completions — non-streaming', () => {
     const body = await res.json() as any;
     expect(body.error.code).toBe('provider_error');
   });
+
+
+  it('returns 429 (not 502) when all providers respond with rate limit errors', async () => {
+    const googleAdapter = makeRateLimitAdapter('google', 3600);
+    const openaiAdapter = makeRateLimitAdapter('openai');
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['google', googleAdapter],
+      ['openai', openaiAdapter],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['google', 'openai']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(429);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('rate_limit_exceeded');
+    expect(body.error.type).toBe('rate_limit_error');
+    // Retry-After forwarded from provider
+    expect(res.headers.get('retry-after')).toBe('3600');
+  });
+
+  it('returns 502 (not 429) when some providers fail with errors and others with rate limits', async () => {
+    const googleAdapter = makeRateLimitAdapter('google');
+    const openaiAdapter = makeFailingStreamAdapter('openai');
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['google', googleAdapter],
+      ['openai', openaiAdapter],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['google', 'openai']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(502);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('provider_error');
+  });
+
 
   it('multi-hop fallback: succeeds on the third provider when the first two fail', async () => {
     // Simulates the scenario that stranded Khaled: primary and first fallback both fail,

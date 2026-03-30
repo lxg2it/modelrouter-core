@@ -18,6 +18,8 @@ import type { UserStore } from '../auth/users.js';
 import type { EmailSender } from '../auth/email.js';
 import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../config.js';
 import type { ApiKey, User, ChatCompletionRequest, ProviderName } from '../types.js';
+import { RateLimitError } from 'openai';
+import { getHeader } from 'openai/core';
 import type { StripeService } from '../billing/stripe.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
 import { startRequestSpan, type RequestSpan } from '../telemetry-instruments.js';
@@ -286,14 +288,27 @@ async function handleNonStreaming(
 
     return c.json(result.response);
   } catch (err) {
-    console.error(`[chat] Primary provider failed (${decision.provider}/${decision.model}):`, err);
-    deps.router.recordFailure(decision.provider, decision.model);
+    const primaryIsRateLimit = err instanceof RateLimitError;
+    if (primaryIsRateLimit) {
+      console.warn(`[chat] Primary provider rate limited (${decision.provider}/${decision.model}): 429`);
+      // Don't record a circuit-breaker failure — the provider is healthy, just rate limited
+    } else {
+      console.error(`[chat] Primary provider failed (${decision.provider}/${decision.model}):`, err);
+      deps.router.recordFailure(decision.provider, decision.model);
+    }
 
     // Try failover — iterate through all ranked candidates until one succeeds.
     // This handles cases where multiple providers fail (e.g., large-context requests
     // with a narrow pool: if the first fallback also fails, we try the next, etc.)
     const failedSet = new Set([`${decision.provider}/${decision.model}`]);
     const fallbackCandidates = deps.router.selectFallbackCandidates(failedSet, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
+
+    // Track whether all failures were rate limits (to return 429 vs 502 at the end).
+    // retryAfterSecs keeps the first non-null value seen across primary + fallbacks.
+    let allRateLimited = primaryIsRateLimit;
+    let retryAfterSecs: number | undefined = primaryIsRateLimit
+      ? extractRetryAfter(err as RateLimitError)
+      : undefined;
 
     let fallbackSucceeded = false;
     for (const fallback of fallbackCandidates) {
@@ -361,8 +376,17 @@ async function handleNonStreaming(
         fallbackSucceeded = true;
         return c.json(result.response);
       } catch (fallbackErr) {
-        console.error(`[chat] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
-        deps.router.recordFailure(fallback.provider, fallback.model);
+        const fallbackIsRateLimit = fallbackErr instanceof RateLimitError;
+        if (fallbackIsRateLimit) {
+          console.warn(`[chat] Fallback provider rate limited (${fallback.provider}/${fallback.model}): 429`);
+          if (retryAfterSecs === undefined) {
+            retryAfterSecs = extractRetryAfter(fallbackErr as RateLimitError);
+          }
+        } else {
+          console.error(`[chat] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
+          deps.router.recordFailure(fallback.provider, fallback.model);
+          allRateLimited = false;
+        }
         failedSet.add(`${fallback.provider}/${fallback.model}`);
         // Continue to next candidate
       }
@@ -376,6 +400,9 @@ async function handleNonStreaming(
       fullRefundReservation(deps, reservedCents, user);
     }
 
+    // Determine final status: 429 if all failures were rate limits, 502 otherwise
+    const finalStatus = allRateLimited && !fallbackSucceeded ? 429 : 502;
+
     // All providers failed
     deps.logger.log({
       keyId,
@@ -387,18 +414,29 @@ async function handleNonStreaming(
       costCents: 0,
       latencyMs: Date.now() - startTime,
       streaming: false,
-      statusCode: 502,
+      statusCode: finalStatus,
       ...autoLogFields(decision),
     });
 
     telemetrySpan?.end({
-      statusCode: 502,
+      statusCode: finalStatus,
       promptTokens: 0,
       completionTokens: 0,
       costCents: 0,
       latencyMs: Date.now() - startTime,
       streaming: false,
     });
+
+    if (finalStatus === 429) {
+      if (retryAfterSecs !== undefined) c.header('Retry-After', String(retryAfterSecs));
+      return c.json({
+        error: {
+          message: 'Provider rate limit reached. Please retry after the indicated time.',
+          type: 'rate_limit_error',
+          code: 'rate_limit_exceeded',
+        },
+      }, 429);
+    }
 
     return c.json({
       error: {
@@ -458,14 +496,24 @@ async function handleStreaming(
   let activeDecision: RouteDecision = decision;
 
   // Try primary provider
+  let streamAllRateLimited = false;
+  let streamRetryAfterSecs: number | undefined;
+
   const primaryAdapter = deps.providers.get(decision.provider);
   if (primaryAdapter) {
     try {
       const primaryRequest = applyThinkingTokenFloor(request, decision);
       completion = await primaryAdapter.stream(decision.model, primaryRequest);
     } catch (primaryErr) {
-      console.error(`[chat/stream] Primary provider failed (${decision.provider}/${decision.model}):`, primaryErr);
-      deps.router.recordFailure(decision.provider, decision.model);
+      if (primaryErr instanceof RateLimitError) {
+        console.warn(`[chat/stream] Primary provider rate limited (${decision.provider}/${decision.model}): 429`);
+        streamAllRateLimited = true;
+        streamRetryAfterSecs = extractRetryAfter(primaryErr);
+      } else {
+        console.error(`[chat/stream] Primary provider failed (${decision.provider}/${decision.model}):`, primaryErr);
+        deps.router.recordFailure(decision.provider, decision.model);
+        streamAllRateLimited = false;
+      }
     }
   }
 
@@ -487,8 +535,16 @@ async function handleStreaming(
         activeDecision = fallback;
         break; // Success — stop trying further candidates
       } catch (fallbackErr) {
-        console.error(`[chat/stream] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
-        deps.router.recordFailure(fallback.provider, fallback.model);
+        if (fallbackErr instanceof RateLimitError) {
+          console.warn(`[chat/stream] Fallback provider rate limited (${fallback.provider}/${fallback.model}): 429`);
+          if (streamRetryAfterSecs === undefined) {
+            streamRetryAfterSecs = extractRetryAfter(fallbackErr as RateLimitError);
+          }
+        } else {
+          console.error(`[chat/stream] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
+          deps.router.recordFailure(fallback.provider, fallback.model);
+          streamAllRateLimited = false;
+        }
         streamFailedSet.add(`${fallback.provider}/${fallback.model}`);
         // Continue to next candidate
       }
@@ -498,8 +554,9 @@ async function handleStreaming(
   // All providers failed before sending any data — refund the reservation and return a clean JSON error.
   if (!completion) {
     fullRefundReservation(deps, reservedCents, user);
+    const streamFinalStatus = streamAllRateLimited ? 429 : 502;
     telemetrySpan?.end({
-      statusCode: 502,
+      statusCode: streamFinalStatus,
       promptTokens: 0,
       completionTokens: 0,
       costCents: 0,
@@ -516,9 +573,19 @@ async function handleStreaming(
       costCents: 0,
       latencyMs: Date.now() - startTime,
       streaming: true,
-      statusCode: 502,
+      statusCode: streamFinalStatus,
       ...autoLogFields(activeDecision),
     });
+    if (streamFinalStatus === 429) {
+      if (streamRetryAfterSecs !== undefined) c.header('Retry-After', String(streamRetryAfterSecs));
+      return c.json({
+        error: {
+          message: 'Provider rate limit reached. Please retry after the indicated time.',
+          type: 'rate_limit_error',
+          code: 'rate_limit_exceeded',
+        },
+      }, 429);
+    }
     return c.json({
       error: {
         message: 'All providers failed for this streaming request.',
@@ -832,6 +899,28 @@ export function settleStripeCredits(
  * Refund the full reservation when a request fails without a known cost.
  * Called when all providers fail or finalize() throws.
  */
+/**
+ * Extract retry-after seconds from an OpenAI SDK RateLimitError.
+ * Cerebras and other providers include x-ratelimit-reset-requests-day (seconds until reset).
+ * Falls back to the standard Retry-After header, then undefined.
+ */
+function extractRetryAfter(err: RateLimitError): number | undefined {
+  const headers = err.headers;
+  if (!headers) return undefined;
+  const resetDay = getHeader(headers, 'x-ratelimit-reset-requests-day');
+  if (resetDay !== undefined) {
+    const secs = parseFloat(resetDay);
+    if (!isNaN(secs)) return Math.ceil(secs);
+  }
+  const retryAfter = getHeader(headers, 'retry-after');
+  if (retryAfter !== undefined) {
+    const secs = parseFloat(retryAfter);
+    if (!isNaN(secs)) return Math.ceil(secs);
+  }
+  return undefined;
+}
+
+
 function fullRefundReservation(
   deps: ChatDeps,
   reservedCents: number,
