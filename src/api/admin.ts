@@ -44,6 +44,7 @@ export interface AdminStats {
     last30Days: number;
     daily: DayStat[];
     topModels: ModelStat[];
+    statusCodes: { status_code: number; count: number }[];
   };
   revenue: {
     totalCents: number;
@@ -227,6 +228,13 @@ function queryAdminStats(db: Database.Database, usageStore?: UsageStore): AdminS
     LIMIT 10
   `).all() as { model: string; provider: string; count: number }[];
 
+  const statusCodeBreakdown = db.prepare(`
+    SELECT status_code, COUNT(*) as count
+    FROM usage_log
+    GROUP BY status_code
+    ORDER BY count DESC
+  `).all() as { status_code: number; count: number }[];
+
   // ── Revenue ──
   // Promotional credits (signup bonuses) are excluded — they are a cost of acquisition,
   // not revenue. Only real Stripe payments count.
@@ -277,6 +285,7 @@ function queryAdminStats(db: Database.Database, usageStore?: UsageStore): AdminS
       last30Days: requestsLast30,
       daily: fillDays(days30, dailyRequestsRaw),
       topModels,
+      statusCodes: statusCodeBreakdown,
     },
     revenue: {
       totalCents: totalRevenue,
@@ -441,6 +450,24 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
       </div>\`;
     }
 
+    function statusCodeColor(code) {
+      if (code >= 200 && code < 300) return 'var(--green)';
+      if (code === 429) return '#f0a500';
+      return '#e05555';
+    }
+    function statusCodeBadges(codes) {
+      if (!codes || codes.length === 0) return '<span style="color:var(--muted)">No data</span>';
+      const total = codes.reduce((s, c) => s + c.count, 0);
+      return codes.map(c => {
+        const pct = total > 0 ? ((c.count / total) * 100).toFixed(1) : '0';
+        return \`<span style="display:inline-flex;align-items:center;gap:6px;margin-right:14px;margin-bottom:6px">
+          <span style="font-size:13px;font-weight:600;color:\${statusCodeColor(c.status_code)}">\${c.status_code}</span>
+          <span style="font-size:13px;color:var(--text)">\${c.count.toLocaleString()}</span>
+          <span style="font-size:12px;color:var(--muted)">\${pct}%</span>
+        </span>\`;
+      }).join('');
+    }
+
     function modelRows(models) {
       if (!models.length) return '<tr><td colspan="3" style="color:var(--muted);text-align:center;padding:16px">No requests yet</td></tr>';
       return models.map(m => \`<tr>
@@ -496,6 +523,10 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
           \${metric('Total Revenue', '<span class="accent">' + cents(s.revenue.totalCents) + '</span>', cents(s.revenue.last30DaysCents) + ' last 30d')}
           \${metric('Credits Held', s.creditBalanceHeldCents > 0 ? cents(s.creditBalanceHeldCents) : '$0.00', 'across all users')}
         </div>
+
+        <div class="section-head">Response Codes (all time)</div>
+        <div style="padding:10px 0 4px">\${statusCodeBadges(s.requests.statusCodes)}</div>
+
 
         <div class="section-head">Top Models (last 30 days)</div>
         <div style="overflow-x:auto">
