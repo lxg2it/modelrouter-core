@@ -12,7 +12,7 @@
 import type { ProviderName } from '../types.js';
 import { OpenAIAdapter } from './openai.js';
 
-const BEDROCK_BASE_URL = 'https://bedrock-mantle.ap-southeast-2.api.aws/v1';
+const BEDROCK_BASE_URL = 'https://bedrock-mantle.us-west-2.api.aws/v1';
 
 export class BedrockAdapter extends OpenAIAdapter {
   override readonly name: ProviderName = 'bedrock';

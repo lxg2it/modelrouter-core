@@ -415,7 +415,7 @@ export const PROVIDER_URLS: Record<ProviderName, string> = {
   openai: 'https://api.openai.com',
   google: 'https://generativelanguage.googleapis.com',
   grok: 'https://api.x.ai/v1',
-  bedrock: 'https://bedrock-mantle.ap-southeast-2.api.aws/v1',
+  bedrock: 'https://bedrock-mantle.us-west-2.api.aws/v1',
   vertex:  'https://aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/global/endpoints/openapi',
   groq:    'https://api.groq.com/openai/v1',
   cerebras: 'https://api.cerebras.ai/v1',
