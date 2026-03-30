@@ -224,6 +224,8 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'bedrock',   model: 'moonshotai.kimi-k2.5',       quality: 0.88, inputPer1M: 0.62, outputPer1M: 3.09,  latencyMs: 600,  maxContextTokens: 131_072,                         priceSource: 'litellm' },
       { provider: 'bedrock',   model: 'minimax.minimax-m2.1',       quality: 0.72, inputPer1M: 0.30, outputPer1M: 1.20,  latencyMs: 500,  maxContextTokens: 1_000_000,                        priceSource: 'litellm' },
       { provider: 'bedrock',   model: 'qwen.qwen3-next-80b-a3b-instruct', quality: 0.75, inputPer1M: 0.15, outputPer1M: 1.24, latencyMs: 450, maxContextTokens: 131_072,                   priceSource: 'manual'  },
+      { provider: 'bedrock',   model: 'meta.llama4-maverick-17b-instruct-v1:0', quality: 0.84, inputPer1M: 0.24, outputPer1M: 0.97, latencyMs: 450, maxContextTokens: 1_000_000,              priceSource: 'manual'  },
+      { provider: 'bedrock',   model: 'meta.llama4-scout-17b-instruct-v1:0',    quality: 0.72, inputPer1M: 0.17, outputPer1M: 0.66, latencyMs: 350, maxContextTokens: 10_000_000,             priceSource: 'manual'  },
     ],
     description: 'Balanced quality and cost. The default for most applications.',
   },
@@ -375,6 +377,13 @@ export const MODEL_ALIASES: Record<string, string> = {
   // GPT-OSS aliases (OpenAI open-source via Bedrock)
   'gpt-oss': 'economy',
   'gpt-oss-120b': 'economy',
+
+  // Llama 4 aliases (Meta via Bedrock)
+  'llama4': 'standard',
+  'llama4-maverick': 'standard',
+  'maverick': 'standard',
+  'llama4-scout': 'standard',
+  'scout': 'standard',
 
 
   // Grok aliases

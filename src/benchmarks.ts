@@ -258,6 +258,26 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     simpleBench: 48.0,
   },
 
+  // Llama 4 Maverick — Meta's flagship MoE (17B active / 400B total), 1M context
+  // Arena Elo ~1417, SWE-bench 7.1% (not a coding specialist), MMLU-Pro 80.5, GPQA 69.8
+  'meta.llama4-maverick-17b-instruct-v1:0': {
+    arenaElo: 1417,
+    gpqaDiamond: 69.8,
+    sweBench: 7.1,
+    mmluPro: 80.5,
+    simpleBench: 52.0,
+  },
+  // Llama 4 Scout — Meta's efficient MoE (17B active / 109B total), 10M context window
+  // Lower quality than Maverick but exceptional context length at very low cost
+  'meta.llama4-scout-17b-instruct-v1:0': {
+    arenaElo: 1380,
+    gpqaDiamond: 57.2,
+    sweBench: 5.0,
+    mmluPro: 74.3,
+    simpleBench: 44.0,
+  },
+
+
   // ── Premium ───────────────────────────────────────────
   'zai.glm-5': {
     arenaElo: 1452,
