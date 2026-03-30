@@ -163,6 +163,15 @@ export class UserStore {
         ALTER TABLE users ADD COLUMN last_credit_added_at TEXT;
       `);
     }
+
+    // feedback_email_sent — sent ~14 days after first API call to ask what
+    // users are building and whether the router is working for them.
+    const userColsV7 = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>;
+    if (!userColsV7.some((c) => c.name === 'feedback_email_sent')) {
+      this.db.exec(`
+        ALTER TABLE users ADD COLUMN feedback_email_sent INTEGER NOT NULL DEFAULT 0;
+      `);
+    }
   }
 
   // ─── Passwordless auth ────────────────────────────────
@@ -392,6 +401,33 @@ export class UserStore {
    */
   markWelcomeEmailSent(userId: string): void {
     this.db.prepare(`UPDATE users SET welcome_email_sent = 1 WHERE id = ?`).run(userId);
+  }
+
+  /**
+   * Returns users who should receive the post-signup feedback email:
+   *   - made at least one API call 14+ days ago (first_call_at ≤ now - 14 days)
+   *   - have NOT already received the feedback email
+   *
+   * The "first API call" is derived from the earliest usage_log entry
+   * across all keys belonging to this user.
+   */
+  getUsersPendingFeedbackEmail(): Array<{ id: string; email: string }> {
+    return this.db.prepare(`
+      SELECT u.id, u.email
+      FROM users u
+      JOIN api_keys k ON k.user_id = u.id
+      JOIN usage_log ul ON ul.key_id = k.id
+      WHERE u.feedback_email_sent = 0
+      GROUP BY u.id, u.email
+      HAVING MIN(ul.created_at) <= datetime('now', '-14 days')
+    `).all() as Array<{ id: string; email: string }>;
+  }
+
+  /**
+   * Mark a user's feedback email as sent.
+   */
+  markFeedbackEmailSent(userId: string): void {
+    this.db.prepare(`UPDATE users SET feedback_email_sent = 1 WHERE id = ?`).run(userId);
   }
 
   // ─── Billing ──────────────────────────────────────────

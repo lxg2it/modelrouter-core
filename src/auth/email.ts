@@ -14,6 +14,7 @@ export interface EmailSender {
   sendLoginCode(to: string, code: string): Promise<void>;
   sendWelcomeEmail(to: string): Promise<void>;
   sendFreeTierNotification(to: string): Promise<void>;
+  sendFeedbackEmail(to: string): Promise<void>;
 }
 
 /**
@@ -112,6 +113,39 @@ export class ResendEmailSender implements EmailSender {
       throw new Error(`Welcome email send failed: ${error.message}`);
     }
   }
+
+  async sendFeedbackEmail(to: string): Promise<void> {
+    const { error } = await this.resend.emails.send({
+      from: this.welcomeFromEmail,
+      to,
+      subject: "How's the router working for you?",
+      html: `
+        <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px; color: #111827;">
+          <p>Hey,</p>
+          <p>You signed up for the Model Router a couple of weeks ago and made some calls.
+          I wanted to check in directly.</p>
+          <p>Is it doing what you need?</p>
+          <p>If something's not working — wrong model, slow routing, docs are confusing — I want to know.
+          If it's working well, also good to know.</p>
+          <p>One question I'm specifically curious about: <strong>why the router?</strong><br>
+          OpenRouter, direct provider APIs, and LiteLLM self-hosting are all options.
+          What made you try this one?</p>
+          <p>No pressure to reply. If you've already moved on, that's useful signal too.</p>
+          <p>Scott</p>
+          <p style="color:#9ca3af; font-size:13px; margin-top:24px;">
+            P.S. If you're on a free plan and want to try paid routing,
+            there's a 14-day trial at
+            <a href="https://api.lxg2it.com/pricing" style="color:#1d4ed8;">api.lxg2it.com/pricing</a>.
+          </p>
+        </div>
+      `,
+      text: `Hey,\n\nYou signed up for the Model Router a couple of weeks ago and made some calls. I wanted to check in directly.\n\nIs it doing what you need?\n\nIf something's not working — wrong model, slow routing, docs are confusing — I want to know. If it's working well, also good to know.\n\nOne question I'm specifically curious about: why the router? OpenRouter, direct provider APIs, and LiteLLM self-hosting are all options. What made you try this one?\n\nNo pressure to reply. If you've already moved on, that's useful signal too.\n\nScott\n\nP.S. If you're on a free plan and want to try paid routing, there's a 14-day trial at https://api.lxg2it.com/pricing`,
+    });
+
+    if (error) {
+      throw new Error(`Feedback email send failed: ${error.message}`);
+    }
+  }
 }
 
 /**
@@ -129,5 +163,9 @@ export class ConsoleEmailSender implements EmailSender {
 
   async sendFreeTierNotification(to: string): Promise<void> {
     console.log(`[Email:dev] Free-tier notification for ${to}`);
+  }
+
+  async sendFeedbackEmail(to: string): Promise<void> {
+    console.log(`[Email:dev] Feedback email for ${to}`);
   }
 }
