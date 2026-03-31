@@ -48,6 +48,7 @@ import { ResendEmailSender, ConsoleEmailSender } from './auth/email.js';
 import type { EmailSender } from './auth/email.js';
 import { WelcomeEmailScheduler } from './welcome-scheduler.js';
 import { FeedbackEmailScheduler } from './feedback-scheduler.js';
+import { ActivationNudgeScheduler } from './activation-nudge-scheduler.js';
 import { RateLimiter } from './ratelimit/token-bucket.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ProviderName, Tier } from './types.js';
@@ -368,6 +369,9 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   // Start the feedback email scheduler (14 days after first API call)
   const feedbackScheduler = new FeedbackEmailScheduler(userStore, emailSender);
   feedbackScheduler.start();
+
+  const activationNudgeScheduler = new ActivationNudgeScheduler(userStore, emailSender);
+  activationNudgeScheduler.start();
 
   const ctx: AppContext = { config, db, keyStore, userStore, usageStore, router, providers, billing, stripe: stripeService, email: emailSender };
   return { app, ctx };

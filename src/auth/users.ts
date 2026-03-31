@@ -185,6 +185,16 @@ export class UserStore {
         ALTER TABLE users ADD COLUMN fallback_timeout_ms INTEGER NOT NULL DEFAULT 60000;
       `);
     }
+
+    // activation_nudge_sent — tracks whether the day-3 activation nudge has been sent.
+    // This email targets users who signed up but haven't made their first API call within
+    // 3 days. Prevents re-sending if the user later activates and the scheduler runs again.
+    const userColsV9 = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>;
+    if (!userColsV9.some((c) => c.name === 'activation_nudge_sent')) {
+      this.db.exec(`
+        ALTER TABLE users ADD COLUMN activation_nudge_sent INTEGER NOT NULL DEFAULT 0;
+      `);
+    }
   }
 
   // ─── Passwordless auth ────────────────────────────────
@@ -441,6 +451,37 @@ export class UserStore {
    */
   markFeedbackEmailSent(userId: string): void {
     this.db.prepare(`UPDATE users SET feedback_email_sent = 1 WHERE id = ?`).run(userId);
+  }
+
+  /**
+   * Returns users who should receive the day-3 activation nudge:
+   *   - signed up at least 3 days ago
+   *   - have made ZERO API calls
+   *   - have NOT already received this nudge
+   *
+   * The zero-calls condition is derived from the usage_log: if the user has
+   * no rows across all their keys, they haven't activated.
+   */
+  getUsersPendingActivationNudge(): Array<{ id: string; email: string }> {
+    return this.db.prepare(`
+      SELECT u.id, u.email
+      FROM users u
+      WHERE u.activation_nudge_sent = 0
+        AND u.created_at <= datetime('now', '-3 days')
+        AND NOT EXISTS (
+          SELECT 1
+          FROM api_keys k
+          JOIN usage_log ul ON ul.key_id = k.id
+          WHERE k.user_id = u.id
+        )
+    `).all() as Array<{ id: string; email: string }>;
+  }
+
+  /**
+   * Mark a user's activation nudge as sent.
+   */
+  markActivationNudgeSent(userId: string): void {
+    this.db.prepare(`UPDATE users SET activation_nudge_sent = 1 WHERE id = ?`).run(userId);
   }
 
   // ─── Billing ──────────────────────────────────────────

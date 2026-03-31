@@ -15,6 +15,7 @@ export interface EmailSender {
   sendWelcomeEmail(to: string): Promise<void>;
   sendFreeTierNotification(to: string): Promise<void>;
   sendFeedbackEmail(to: string): Promise<void>;
+  sendActivationNudge(to: string): Promise<void>;
 }
 
 /**
@@ -146,7 +147,42 @@ export class ResendEmailSender implements EmailSender {
       throw new Error(`Feedback email send failed: ${error.message}`);
     }
   }
+
+  async sendActivationNudge(to: string): Promise<void> {
+    const { error } = await this.resend.emails.send({
+      from: this.welcomeFromEmail,
+      to,
+      subject: 'Your API key is waiting',
+      html: `
+        <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px; color: #111827;">
+          <p>Hey,</p>
+          <p>You signed up for the Model Router a few days ago — I noticed you haven't made a first call yet
+          and wanted to make it easy.</p>
+          <p>The quickest way is a single curl command:</p>
+          <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 20px 0; font-family: monospace; font-size: 13px; color: #1f2937; white-space: pre-wrap; overflow-x: auto;">curl https://api.lxg2it.com/v1/chat/completions \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"auto","messages":[{"role":"user","content":"hello"}]}'</div>
+          <p>Find your API key at: <a href="https://api.lxg2it.com/profile" style="color: #1d4ed8;">api.lxg2it.com/profile</a></p>
+          <p><code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">"model": "auto"</code> routes to the best free model available — no config needed, no credit card required.</p>
+          <p>If you're connecting a coding assistant (Cursor, Windsurf, Roo Code), the base URL is
+          <code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">https://api.lxg2it.com/v1</code>
+          and your key goes in the API key field. There are
+          <a href="https://api.lxg2it.com/docs/integrations" style="color: #1d4ed8;">step-by-step integration guides</a>
+          if that's easier.</p>
+          <p>If something's blocking you, just reply here.</p>
+          <p>Scott</p>
+        </div>
+      `,
+      text: `Hey,\n\nYou signed up for the Model Router a few days ago — I noticed you haven't made a first call yet and wanted to make it easy.\n\nThe quickest way is a single curl command:\n\ncurl https://api.lxg2it.com/v1/chat/completions \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"auto","messages":[{"role":"user","content":"hello"}]}'\n\nFind your API key at: https://api.lxg2it.com/profile\n\n"model": "auto" routes to the best free model available — no config needed, no credit card required.\n\nIf you're connecting a coding assistant (Cursor, Windsurf, Roo Code), the base URL is https://api.lxg2it.com/v1 and your key goes in the API key field. There are step-by-step integration guides at https://api.lxg2it.com/docs/integrations if that's easier.\n\nIf something's blocking you, just reply here.\n\nScott`,
+    });
+
+    if (error) {
+      throw new Error(`Activation nudge email send failed: ${error.message}`);
+    }
+  }
 }
+
 
 /**
  * No-op sender for development (logs to stdout instead).
@@ -167,5 +203,9 @@ export class ConsoleEmailSender implements EmailSender {
 
   async sendFeedbackEmail(to: string): Promise<void> {
     console.log(`[Email:dev] Feedback email for ${to}`);
+  }
+
+  async sendActivationNudge(to: string): Promise<void> {
+    console.log(`[Email:dev] Activation nudge email for ${to}`);
   }
 }
