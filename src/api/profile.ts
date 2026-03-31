@@ -533,6 +533,33 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
         <div id="otelMsg" class="text-sm mt-2 hidden"></div>
         <div id="otelStatus" style="font-size:12px; margin-top:8px;"></div>
       </div>
+
+      <!-- Advanced -->
+      <div style="border-top:1px solid var(--border); padding-top:16px; margin-top:16px;">
+        <button
+          onclick="toggleAdvanced()"
+          style="background:none; border:none; padding:0; cursor:pointer; display:flex; align-items:center; gap:6px; color:var(--muted); font-size:12px; font-family:var(--mono); text-transform:uppercase; letter-spacing:1px;">
+          <span id="advancedChevron" style="transition:transform 0.2s; display:inline-block;">▶</span>
+          Advanced
+        </button>
+        <div id="advancedSection" style="display:none; margin-top:16px;">
+          <!-- Fallback timeout -->
+          <label style="font-size:13px; font-weight:600; color:var(--text); display:block; margin-bottom:4px;">Fallback timeout</label>
+          <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">
+            How long the router waits for a provider to start responding before triggering fallback.
+            Default is 60s. Raise this if you use slow reasoning models (o1, o3, DeepSeek-R1); lower it for faster failover.
+          </p>
+          <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <input type="number" id="fallbackTimeoutInput" min="5" max="600" step="1" placeholder="60" style="width:100px;" />
+              <span style="font-size:13px; color:var(--muted);">seconds</span>
+            </div>
+            <button class="btn btn-secondary" onclick="saveFallbackTimeout()">Save</button>
+            <button class="btn btn-secondary" onclick="resetFallbackTimeout()">Reset to default</button>
+          </div>
+          <div id="fallbackTimeoutMsg" class="text-sm mt-2 hidden"></div>
+        </div>
+      </div>
     </div>
 
   </div> <!-- /dashboard -->
@@ -681,6 +708,12 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
     const otelStatusEl = document.getElementById('otelStatus');
     if (otelEndpointEl && p.otelEndpoint) {
       otelEndpointEl.value = p.otelEndpoint;
+    }
+
+    // Populate fallback timeout (advanced section)
+    const fallbackTimeoutEl = document.getElementById('fallbackTimeoutInput');
+    if (fallbackTimeoutEl && p.fallbackTimeoutMs !== undefined) {
+      fallbackTimeoutEl.value = String(Math.round(p.fallbackTimeoutMs / 1000));
     }
     if (otelStatusEl) {
       otelStatusEl.innerHTML = p.otelConfigured
@@ -1551,6 +1584,62 @@ async function loadAutoRecharge() {
     }
   }
 
+
+  function toggleAdvanced() {
+    const section = document.getElementById('advancedSection');
+    const chevron = document.getElementById('advancedChevron');
+    if (section.style.display === 'none') {
+      section.style.display = 'block';
+      chevron.style.transform = 'rotate(90deg)';
+    } else {
+      section.style.display = 'none';
+      chevron.style.transform = 'rotate(0deg)';
+    }
+  }
+
+  async function saveFallbackTimeout() {
+    const msgEl = document.getElementById('fallbackTimeoutMsg');
+    msgEl.classList.add('hidden');
+    const raw = document.getElementById('fallbackTimeoutInput').value.trim();
+    const seconds = raw === '' ? NaN : parseInt(raw, 10);
+    if (isNaN(seconds) || seconds < 5 || seconds > 600) {
+      msgEl.textContent = 'Enter a value between 5 and 600 seconds.';
+      msgEl.className = 'text-sm mt-2 error-msg';
+      msgEl.classList.remove('hidden');
+      return;
+    }
+    const timeoutMs = seconds * 1000;
+    const res = await apiFetch('PATCH', '/v1/account/settings', { fallbackTimeoutMs: timeoutMs });
+    const data = await res.json();
+    if (res.ok) {
+      if (profileData) profileData.fallbackTimeoutMs = timeoutMs;
+      msgEl.textContent = data.message || 'Saved.';
+      msgEl.className = 'text-sm mt-2 success-msg';
+      msgEl.classList.remove('hidden');
+    } else {
+      msgEl.textContent = data.error?.message || 'Failed to save';
+      msgEl.className = 'text-sm mt-2 error-msg';
+      msgEl.classList.remove('hidden');
+    }
+  }
+
+  async function resetFallbackTimeout() {
+    const msgEl = document.getElementById('fallbackTimeoutMsg');
+    msgEl.classList.add('hidden');
+    const res = await apiFetch('PATCH', '/v1/account/settings', { fallbackTimeoutMs: 60000 });
+    const data = await res.json();
+    if (res.ok) {
+      document.getElementById('fallbackTimeoutInput').value = '60';
+      if (profileData) profileData.fallbackTimeoutMs = 60000;
+      msgEl.textContent = 'Reset to default (60s).';
+      msgEl.className = 'text-sm mt-2 success-msg';
+      msgEl.classList.remove('hidden');
+    } else {
+      msgEl.textContent = data.error?.message || 'Failed to reset';
+      msgEl.className = 'text-sm mt-2 error-msg';
+      msgEl.classList.remove('hidden');
+    }
+  }
 
   // ─── Helpers ──────────────────────────────────────────────
 

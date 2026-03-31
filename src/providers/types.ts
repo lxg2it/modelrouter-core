@@ -58,18 +58,28 @@ export interface ProviderAdapter {
 
   /**
    * Non-streaming chat completion.
+   *
+   * @param timeoutMs - Optional per-request timeout in milliseconds.
+   *   Controls how long to wait for the provider to begin responding.
+   *   Overrides the SDK's default (10 minutes). Adapter implementations
+   *   that don't support per-request timeouts may ignore this.
    */
   complete(
     model: string,
     request: ChatCompletionRequest,
+    timeoutMs?: number,
   ): Promise<CompletionResult>;
 
   /**
    * Streaming chat completion.
+   *
+   * @param timeoutMs - Optional per-request timeout in milliseconds.
+   *   Same semantics as the `complete` timeout.
    */
   stream(
     model: string,
     request: ChatCompletionRequest,
+    timeoutMs?: number,
   ): Promise<StreamingCompletion>;
 
   /**
@@ -79,6 +89,7 @@ export interface ProviderAdapter {
   completeText?(
     model: string,
     request: TextCompletionRequest,
+    timeoutMs?: number,
   ): Promise<TextCompletionResult>;
 
   /**
@@ -89,6 +100,7 @@ export interface ProviderAdapter {
   completeResponses?(
     model: string,
     request: ChatCompletionRequest,
+    timeoutMs?: number,
   ): Promise<CompletionResult>;
 }
 

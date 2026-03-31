@@ -39,6 +39,10 @@ function fakeUser(overrides: Partial<User> = {}): User {
     createdAt: new Date().toISOString(),
     creditBalanceCents: 0,
     blockedProviders: [],
+    autoRechargeEnabled: false,
+    autoRechargeAmountCents: 1000,
+    dailySpendLimitCents: 0,
+    fallbackTimeoutMs: 60000,
     ...overrides,
   };
 }

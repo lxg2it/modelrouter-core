@@ -172,6 +172,19 @@ export class UserStore {
         ALTER TABLE users ADD COLUMN feedback_email_sent INTEGER NOT NULL DEFAULT 0;
       `);
     }
+
+    // Migration: add per-user fallback timeout (v0.8)
+    //
+    // fallback_timeout_ms — the time the router waits for a provider to begin
+    // responding before treating the call as failed and activating fallback logic.
+    // Default 60,000 (60s). Users with slow thinking models can raise this;
+    // users who prefer faster failover can lower it. Range 5,000–600,000.
+    const userColsV8 = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>;
+    if (!userColsV8.some((c) => c.name === 'fallback_timeout_ms')) {
+      this.db.exec(`
+        ALTER TABLE users ADD COLUMN fallback_timeout_ms INTEGER NOT NULL DEFAULT 60000;
+      `);
+    }
   }
 
   // ─── Passwordless auth ────────────────────────────────
@@ -616,6 +629,7 @@ export class UserStore {
       otelHeaders: row.otel_headers ?? undefined,
       freeTierNotifiedAt: row.free_tier_notified_at ?? undefined,
       lastCreditAddedAt: row.last_credit_added_at ?? undefined,
+      fallbackTimeoutMs: row.fallback_timeout_ms ?? 60000,
     };
   }
 
@@ -627,6 +641,18 @@ export class UserStore {
     this.db.prepare(`
       UPDATE users SET otel_endpoint = ?, otel_headers = ? WHERE id = ?
     `).run(endpoint, headers, userId);
+  }
+
+
+  /**
+   * Set the user's fallback timeout.
+   * Controls how long the router waits for a provider before triggering fallback.
+   * Valid range: 5,000–600,000 ms. Default: 60,000 (60s).
+   */
+  setFallbackTimeout(userId: string, timeoutMs: number): void {
+    this.db.prepare(
+      `UPDATE users SET fallback_timeout_ms = ? WHERE id = ?`,
+    ).run(timeoutMs, userId);
   }
 
 
@@ -678,4 +704,6 @@ interface DbUserRow {
   otel_headers: string | null;
   free_tier_notified_at: string | null;
   last_credit_added_at: string | null;
+  fallback_timeout_ms: number;
 }
+

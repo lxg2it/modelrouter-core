@@ -71,6 +71,7 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
       dailySpendLimitCents: user.dailySpendLimitCents,
       otelEndpoint: user.otelEndpoint ?? null,
       otelConfigured: !!user.otelEndpoint,
+      fallbackTimeoutMs: user.fallbackTimeoutMs,
       keyCount: keys.length,
       activeKeyCount: keys.filter((k) => k.active).length,
       usage: {
@@ -231,7 +232,7 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
   router.patch('/settings', async (c: Context<SessionEnv>) => {
     const user = c.get('user');
 
-    let body: { dailySpendLimitCents?: unknown; otelEndpoint?: unknown; otelHeaders?: unknown };
+    let body: { dailySpendLimitCents?: unknown; otelEndpoint?: unknown; otelHeaders?: unknown; fallbackTimeoutMs?: unknown };
     try {
       body = await c.req.json() as typeof body;
     } catch {
@@ -240,8 +241,9 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
 
     const hasSpendLimit = 'dailySpendLimitCents' in body;
     const hasOtel = 'otelEndpoint' in body;
+    const hasTimeout = 'fallbackTimeoutMs' in body;
 
-    if (!hasSpendLimit && !hasOtel) {
+    if (!hasSpendLimit && !hasOtel && !hasTimeout) {
       return c.json({ error: { message: 'No settings to update', code: 'invalid_request' } }, 400);
     }
 
@@ -295,12 +297,28 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
       }
     }
 
+    // ── Fallback timeout ──
+    if (hasTimeout) {
+      const raw = body.fallbackTimeoutMs;
+      if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 5000 || raw > 600000) {
+        return c.json({
+          error: {
+            message: 'fallbackTimeoutMs must be an integer between 5000 and 600000 (5s–600s)',
+            code: 'invalid_request',
+          },
+        }, 400);
+      }
+      userStore.setFallbackTimeout(user.id, raw);
+      messages.push(`Fallback timeout set to ${raw / 1000}s.`);
+    }
+
     // Return current state
     const updated = userStore.findById(user.id)!;
     return c.json({
       dailySpendLimitCents: updated.dailySpendLimitCents,
       otelEndpoint: updated.otelEndpoint ?? null,
       otelHeaders: updated.otelHeaders ? '••••••' : null,
+      fallbackTimeoutMs: updated.fallbackTimeoutMs,
       message: messages.join(' '),
     });
   });

@@ -39,10 +39,13 @@ const fakeApiKey: ApiKey = {
 const fakeUser: User = {
   id: 'user-1',
   email: 'test@example.com',
-  passwordHash: '',
-  tier: 'standard',
   creditBalanceCents: 1000,
   createdAt: new Date().toISOString(),
+  blockedProviders: [],
+  autoRechargeEnabled: false,
+  autoRechargeAmountCents: 1000,
+  dailySpendLimitCents: 0,
+  fallbackTimeoutMs: 60000,
 };
 
 function makeMockLogger(): UsageLogger {

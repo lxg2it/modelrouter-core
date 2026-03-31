@@ -64,6 +64,7 @@ export class GoogleAdapter implements ProviderAdapter {
   async complete(
     model: string,
     request: ChatCompletionRequest,
+    _timeoutMs?: number,
   ): Promise<CompletionResult> {
     if (!this.client) throw new Error('Google adapter not configured');
 
@@ -160,6 +161,7 @@ export class GoogleAdapter implements ProviderAdapter {
   async stream(
     model: string,
     request: ChatCompletionRequest,
+    _timeoutMs?: number,
   ): Promise<StreamingCompletion> {
     if (!this.client) throw new Error('Google adapter not configured');
 

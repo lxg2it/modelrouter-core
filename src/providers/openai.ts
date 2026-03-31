@@ -32,9 +32,11 @@ export class OpenAIAdapter implements ProviderAdapter {
   async complete(
     model: string,
     request: ChatCompletionRequest,
+    timeoutMs?: number,
   ): Promise<CompletionResult> {
     if (!this.client) throw new Error('OpenAI adapter not configured');
 
+    const requestOptions = timeoutMs !== undefined ? { timeout: timeoutMs } : undefined;
     const response = await this.client.chat.completions.create({
       model,
       messages: request.messages as OpenAI.ChatCompletionMessageParam[],
@@ -46,7 +48,7 @@ export class OpenAIAdapter implements ProviderAdapter {
       tool_choice: request.tool_choice as OpenAI.ChatCompletionToolChoiceOption | undefined,
       response_format: request.response_format as OpenAI.ResponseFormatText | OpenAI.ResponseFormatJSONObject | undefined,
       stream: false,
-    });
+    }, requestOptions);
 
     const usage: UsageInfo = {
       prompt_tokens: response.usage?.prompt_tokens ?? 0,
@@ -82,9 +84,11 @@ export class OpenAIAdapter implements ProviderAdapter {
   async stream(
     model: string,
     request: ChatCompletionRequest,
+    timeoutMs?: number,
   ): Promise<StreamingCompletion> {
     if (!this.client) throw new Error('OpenAI adapter not configured');
 
+    const requestOptions = timeoutMs !== undefined ? { timeout: timeoutMs } : undefined;
     const openaiStream = await this.client.chat.completions.create({
       model,
       messages: request.messages as OpenAI.ChatCompletionMessageParam[],
@@ -96,7 +100,7 @@ export class OpenAIAdapter implements ProviderAdapter {
       tool_choice: request.tool_choice as OpenAI.ChatCompletionToolChoiceOption | undefined,
       stream: true,
       stream_options: { include_usage: true },
-    });
+    }, requestOptions);
 
     let finalUsage: UsageInfo = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
     const includeReasoning = request.include_reasoning ?? false;
@@ -167,9 +171,10 @@ export class OpenAIAdapter implements ProviderAdapter {
     };
   }
 
-  async completeText(model: string, request: TextCompletionRequest): Promise<TextCompletionResult> {
+  async completeText(model: string, request: TextCompletionRequest, timeoutMs?: number): Promise<TextCompletionResult> {
     if (!this.client) throw new Error('OpenAI adapter not configured');
 
+    const requestOptions = timeoutMs !== undefined ? { timeout: timeoutMs } : undefined;
     const response = await this.client.completions.create({
       model,
       prompt: request.prompt,
@@ -178,7 +183,7 @@ export class OpenAIAdapter implements ProviderAdapter {
       top_p: request.top_p,
       stop: request.stop,
       stream: false,
-    });
+    }, requestOptions);
 
     const usage: UsageInfo = {
       prompt_tokens: response.usage?.prompt_tokens ?? 0,
@@ -203,7 +208,7 @@ export class OpenAIAdapter implements ProviderAdapter {
     };
   }
 
-  async completeResponses(model: string, request: ChatCompletionRequest): Promise<CompletionResult> {
+  async completeResponses(model: string, request: ChatCompletionRequest, timeoutMs?: number): Promise<CompletionResult> {
     if (!this.client) throw new Error('OpenAI adapter not configured');
 
     type Msg = { role: string; content: string };
@@ -233,7 +238,8 @@ export class OpenAIAdapter implements ProviderAdapter {
       ...(request.top_p !== undefined ? { top_p: request.top_p } : {}),
     };
 
-    const response = await this.client.responses.create(params);
+    const requestOptions = timeoutMs !== undefined ? { timeout: timeoutMs } : undefined;
+    const response = await this.client.responses.create(params, requestOptions);
 
     // Extract text from output message items
     const outputText = response.output

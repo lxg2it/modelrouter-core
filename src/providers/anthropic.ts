@@ -44,6 +44,7 @@ export class AnthropicAdapter implements ProviderAdapter {
   async complete(
     model: string,
     request: ChatCompletionRequest,
+    _timeoutMs?: number,
   ): Promise<CompletionResult> {
     if (!this.client) throw new Error('Anthropic adapter not configured');
 
@@ -129,6 +130,7 @@ export class AnthropicAdapter implements ProviderAdapter {
   async stream(
     model: string,
     request: ChatCompletionRequest,
+    _timeoutMs?: number,
   ): Promise<StreamingCompletion> {
     if (!this.client) throw new Error('Anthropic adapter not configured');
 

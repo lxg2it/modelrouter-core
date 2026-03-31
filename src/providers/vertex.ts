@@ -109,9 +109,11 @@ export class VertexAdapter implements ProviderAdapter {
   async complete(
     model: string,
     request: ChatCompletionRequest,
+    timeoutMs?: number,
   ): Promise<CompletionResult> {
     const client = await this.buildClient();
 
+    const requestOptions = timeoutMs !== undefined ? { timeout: timeoutMs } : undefined;
     const response = await client.chat.completions.create({
       model,
       messages: request.messages as OpenAI.ChatCompletionMessageParam[],
@@ -123,7 +125,7 @@ export class VertexAdapter implements ProviderAdapter {
       tool_choice: request.tool_choice as OpenAI.ChatCompletionToolChoiceOption | undefined,
       response_format: request.response_format as OpenAI.ResponseFormatText | OpenAI.ResponseFormatJSONObject | undefined,
       stream: false,
-    });
+    }, requestOptions);
 
     const usage: UsageInfo = {
       prompt_tokens: response.usage?.prompt_tokens ?? 0,
@@ -159,9 +161,11 @@ export class VertexAdapter implements ProviderAdapter {
   async stream(
     model: string,
     request: ChatCompletionRequest,
+    timeoutMs?: number,
   ): Promise<StreamingCompletion> {
     const client = await this.buildClient();
 
+    const requestOptions = timeoutMs !== undefined ? { timeout: timeoutMs } : undefined;
     const vertexStream = await client.chat.completions.create({
       model,
       messages: request.messages as OpenAI.ChatCompletionMessageParam[],
@@ -174,7 +178,7 @@ export class VertexAdapter implements ProviderAdapter {
       response_format: request.response_format as OpenAI.ResponseFormatText | OpenAI.ResponseFormatJSONObject | undefined,
       stream: true,
       stream_options: { include_usage: true },
-    });
+    }, requestOptions);
 
     let finalUsage: UsageInfo = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 

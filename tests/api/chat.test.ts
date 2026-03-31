@@ -696,6 +696,8 @@ describe('User-owned key billing — pre-request credit reservation', () => {
     blockedProviders: [],
     autoRechargeEnabled: false,
     autoRechargeAmountCents: 1000,
+    dailySpendLimitCents: 0,
+    fallbackTimeoutMs: 60000,
   };
 
   /** A user-owned key (no stripeCustomerId on the key — billing is at user level). */
@@ -857,6 +859,8 @@ describe('Auto-recharge — triggered when reservation fails', () => {
     blockedProviders: [],
     autoRechargeEnabled: true,
     autoRechargeAmountCents: 1000,
+    dailySpendLimitCents: 0,
+    fallbackTimeoutMs: 60000,
   };
 
   it('retries the request after a successful auto-recharge charge', async () => {
@@ -1009,6 +1013,11 @@ describe('Daily spending limit', () => {
     createdAt: new Date().toISOString(),
     creditBalanceCents: 50000,
     stripeCustomerId: 'cus_test',
+    blockedProviders: [],
+    autoRechargeEnabled: false,
+    autoRechargeAmountCents: 1000,
+    dailySpendLimitCents: 0,
+    fallbackTimeoutMs: 60000,
   };
 
   const billedKey: ApiKey = {

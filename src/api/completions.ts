@@ -95,7 +95,7 @@ export function createCompletionsRouter(deps: ChatDeps): Hono<AuthEnv> {
     }
 
     try {
-      const result = await adapter.completeText(decision.model, body);
+      const result = await adapter.completeText(decision.model, body, user?.fallbackTimeoutMs);
 
       deps.router.recordSuccess(decision.provider, decision.model);
 

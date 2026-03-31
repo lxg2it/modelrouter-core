@@ -218,13 +218,15 @@ async function handleNonStreaming(
     return c.res;
   }
 
+  const timeoutMs = user?.fallbackTimeoutMs;
+
   try {
     const resolvedModelConfig = findModelConfig(decision.provider, decision.model, decision.tier);
     const resolvedApiTypeForCall = resolvedModelConfig?.apiType ?? 'chat';
     const effectiveRequest = applyThinkingTokenFloor(request, decision);
     const result = resolvedApiTypeForCall === 'responses' && adapter.completeResponses
-      ? await adapter.completeResponses(decision.model, effectiveRequest)
-      : await adapter.complete(decision.model, effectiveRequest);
+      ? await adapter.completeResponses(decision.model, effectiveRequest, timeoutMs)
+      : await adapter.complete(decision.model, effectiveRequest, timeoutMs);
 
     deps.router.recordSuccess(decision.provider, decision.model);
 
@@ -318,7 +320,7 @@ async function handleNonStreaming(
 
       try {
         const effectiveFallbackRequest = applyThinkingTokenFloor(request, fallback);
-        const result = await fallbackAdapter.complete(fallback.model, effectiveFallbackRequest);
+        const result = await fallbackAdapter.complete(fallback.model, effectiveFallbackRequest, timeoutMs);
         deps.router.recordSuccess(fallback.provider, fallback.model);
 
         const modelConfig = findModelConfig(fallback.provider, fallback.model, fallback.tier);
@@ -503,7 +505,7 @@ async function handleStreaming(
   if (primaryAdapter) {
     try {
       const primaryRequest = applyThinkingTokenFloor(request, decision);
-      completion = await primaryAdapter.stream(decision.model, primaryRequest);
+      completion = await primaryAdapter.stream(decision.model, primaryRequest, user?.fallbackTimeoutMs);
     } catch (primaryErr) {
       if (primaryErr instanceof RateLimitError) {
         console.warn(`[chat/stream] Primary provider rate limited (${decision.provider}/${decision.model}): 429`);
@@ -531,7 +533,7 @@ async function handleStreaming(
 
       try {
         const fallbackRequest = applyThinkingTokenFloor(request, fallback);
-        completion = await fallbackAdapter.stream(fallback.model, fallbackRequest);
+        completion = await fallbackAdapter.stream(fallback.model, fallbackRequest, user?.fallbackTimeoutMs);
         activeDecision = fallback;
         break; // Success — stop trying further candidates
       } catch (fallbackErr) {

@@ -293,7 +293,19 @@ export interface User {
    * notification — enabling re-notification if they drain again.
    */
   lastCreditAddedAt?: string;
+
+  /**
+   * User-configurable timeout for provider calls, in milliseconds.
+   * If a provider doesn't start responding within this window, the router
+   * triggers an error and falls back to the next candidate.
+   *
+   * Default: 60,000 (60s). Range: 5,000–600,000.
+   * Set higher for slow thinking models (o1/o3, DeepSeek-R1, etc.).
+   * Set lower if you want faster failover.
+   */
+  fallbackTimeoutMs: number;
 }
+
 
 export interface ApiKey {
   id: string;

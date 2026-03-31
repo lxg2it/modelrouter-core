@@ -36,6 +36,8 @@ function fakeUser(overrides: Partial<User> = {}): User {
     blockedProviders: [],
     autoRechargeEnabled: false,
     autoRechargeAmountCents: 1000,
+    dailySpendLimitCents: 0,
+    fallbackTimeoutMs: 60000,
     ...overrides,
   };
 }

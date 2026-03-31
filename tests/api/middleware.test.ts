@@ -47,6 +47,11 @@ function makeUser(overrides: Partial<User> = {}): User {
     email: 'test@example.com',
     createdAt: new Date().toISOString(),
     creditBalanceCents: 100,
+    blockedProviders: [],
+    autoRechargeEnabled: false,
+    autoRechargeAmountCents: 1000,
+    dailySpendLimitCents: 0,
+    fallbackTimeoutMs: 60000,
     ...overrides,
   };
 }

@@ -30,6 +30,10 @@ function fakeUser(overrides: Partial<User> = {}): User {
     creditBalanceCents: 500,
     accountName: null,
     blockedProviders: [],
+    autoRechargeEnabled: false,
+    autoRechargeAmountCents: 1000,
+    dailySpendLimitCents: 0,
+    fallbackTimeoutMs: 60000,
     ...overrides,
   };
 }
@@ -85,6 +89,7 @@ function mockUserStore(overrides: Partial<UserStore> = {}): UserStore {
     setBlockedProviders: vi.fn(),
     setDailySpendLimit: vi.fn(),
     setOtelConfig: vi.fn(),
+    setFallbackTimeout: vi.fn(),
     findById: vi.fn().mockReturnValue(fakeUser()),
     ...overrides,
   } as unknown as UserStore;
@@ -481,5 +486,79 @@ describe('PATCH /v1/account/settings — OTEL config', () => {
     expect(res.status).toBe(200);
     expect(userStore.setOtelConfig).toHaveBeenCalled();
     expect(userStore.setDailySpendLimit).toHaveBeenCalledWith(user.id, 5000);
+  });
+});
+
+describe('PATCH /v1/account/settings — fallback timeout', () => {
+  it('saves a valid fallback timeout', async () => {
+    const user = fakeUser();
+    const userStore = mockUserStore({
+      findById: vi.fn().mockReturnValue({ ...user, fallbackTimeoutMs: 30000 }),
+    });
+    const app = buildApp(user, { userStore });
+
+    const res = await app.request('/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fallbackTimeoutMs: 30000 }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.fallbackTimeoutMs).toBe(30000);
+    expect(userStore.setFallbackTimeout).toHaveBeenCalledWith(user.id, 30000);
+  });
+
+  it('rejects values below minimum (5000ms)', async () => {
+    const app = buildApp(fakeUser());
+
+    const res = await app.request('/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fallbackTimeoutMs: 4999 }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as any;
+    expect(body.error.message).toContain('5000');
+  });
+
+  it('rejects values above maximum (600000ms)', async () => {
+    const app = buildApp(fakeUser());
+
+    const res = await app.request('/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fallbackTimeoutMs: 600001 }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as any;
+    expect(body.error.message).toContain('600000');
+  });
+
+  it('rejects non-integer values', async () => {
+    const app = buildApp(fakeUser());
+
+    const res = await app.request('/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fallbackTimeoutMs: 30000.5 }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns fallbackTimeoutMs in profile', async () => {
+    const user = fakeUser({ fallbackTimeoutMs: 45000 });
+    const app = buildApp(user);
+
+    const res = await app.request('/profile', {
+      method: 'GET',
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.fallbackTimeoutMs).toBe(45000);
   });
 });
