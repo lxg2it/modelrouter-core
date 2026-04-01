@@ -162,9 +162,9 @@ export class ResendEmailSender implements EmailSender {
           <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 20px 0; font-family: monospace; font-size: 13px; color: #1f2937; white-space: pre-wrap; overflow-x: auto;">curl https://api.lxg2it.com/v1/chat/completions \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"model":"auto","messages":[{"role":"user","content":"hello"}]}'</div>
+  -d '{"model":"economy","messages":[{"role":"user","content":"hello"}]}'</div>
           <p>Find your API key at: <a href="https://api.lxg2it.com/profile" style="color: #1d4ed8;">api.lxg2it.com/profile</a></p>
-          <p><code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">"model": "auto"</code> picks the best model for your request — no config needed, no credit card required.</p>
+          <p><code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">"model": "economy"</code> routes to free models (Groq and Cerebras) — no credits consumed, no card required.</p>
           <p>If you're connecting a coding assistant (Cursor, Windsurf, Roo Code), the base URL is
           <code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">https://api.lxg2it.com/v1</code>
           and your key goes in the API key field. There are
@@ -174,7 +174,7 @@ export class ResendEmailSender implements EmailSender {
           <p>Scott</p>
         </div>
       `,
-      text: `Hey,\n\nYou signed up for the Model Router a few days ago — I noticed you haven't made a first call yet and wanted to make it easy.\n\nThe quickest way is a single curl command:\n\ncurl https://api.lxg2it.com/v1/chat/completions \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"auto","messages":[{"role":"user","content":"hello"}]}'\n\nFind your API key at: https://api.lxg2it.com/profile\n\n"model": "auto" picks the best model for your request — no config needed, no credit card required.\n\nIf you're connecting a coding assistant (Cursor, Windsurf, Roo Code), the base URL is https://api.lxg2it.com/v1 and your key goes in the API key field. There are step-by-step integration guides at https://api.lxg2it.com/docs/integrations if that's easier.\n\nIf something's blocking you, just reply here.\n\nScott`,
+      text: `Hey,\n\nYou signed up for the Model Router a few days ago — I noticed you haven't made a first call yet and wanted to make it easy.\n\nThe quickest way is a single curl command:\n\ncurl https://api.lxg2it.com/v1/chat/completions \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"economy","messages":[{"role":"user","content":"hello"}]}'\n\nFind your API key at: https://api.lxg2it.com/profile\n\n"model": "economy" routes to free models (Groq and Cerebras) — no credits consumed, no card required.\n\nIf you're connecting a coding assistant (Cursor, Windsurf, Roo Code), the base URL is https://api.lxg2it.com/v1 and your key goes in the API key field. There are step-by-step integration guides at https://api.lxg2it.com/docs/integrations if that's easier.\n\nIf something's blocking you, just reply here.\n\nScott`,
     });
 
     if (error) {
