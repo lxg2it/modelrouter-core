@@ -1,6 +1,6 @@
 services:
   modelrouter:
-    build: .
+    image: ghcr.io/lxg2it/modelrouter:latest
     container_name: modelrouter
     ports:
       - "3003:3003"
