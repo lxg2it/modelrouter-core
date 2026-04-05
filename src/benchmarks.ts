@@ -277,6 +277,36 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     simpleBench: 44.0,
   },
 
+  // Devstral 2 123B — Mistral's coding specialist, dense 123B, 72.2% SWE-bench Verified
+  // One of the best open-weight coding models; Arena Elo estimated from performance data
+  'mistral.devstral-2-123b': {
+    arenaElo: 1398,
+    gpqaDiamond: 55.0,
+    sweBench: 72.2,
+    mmluPro: 78.0,
+    simpleBench: 48.0,
+  },
+
+  // Qwen 3 Coder 480B A35B — Qwen's large coding MoE (480B total / 35B active), 262K context
+  // Strong coding model with efficient inference; SWE-bench and coding benchmarks strong
+  'qwen.qwen3-coder-480b-a35b-v1:0': {
+    arenaElo: 1420,
+    gpqaDiamond: 73.0,
+    sweBench: 65.0,
+    mmluPro: 82.0,
+    simpleBench: 52.0,
+  },
+
+  // NVIDIA Nemotron Super 120B A12B — hybrid MoE thinking model (120B total / 12B active)
+  // Designed for agentic tasks; very cheap at $0.10/$0.50. Context 128K, thinking capable.
+  'nvidia.nemotron-super-3-120b': {
+    arenaElo: 1365,
+    gpqaDiamond: 60.0,
+    sweBench: 35.0,
+    mmluPro: 75.0,
+    simpleBench: 45.0,
+  },
+
 
   // ── Premium ───────────────────────────────────────────
   'zai.glm-5': {

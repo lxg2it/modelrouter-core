@@ -231,6 +231,11 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'bedrock',   model: 'qwen.qwen3-next-80b-a3b',         quality: 0.75, inputPer1M: 0.15, outputPer1M: 1.24, latencyMs: 450, maxContextTokens: 131_072,                   priceSource: 'manual'  },
       { provider: 'bedrock',   model: 'us.meta.llama4-maverick-17b-instruct-v1:0', quality: 0.84, inputPer1M: 0.24, outputPer1M: 0.97, latencyMs: 450, maxContextTokens: 1_000_000,          priceSource: 'manual'  },
       { provider: 'bedrock',   model: 'us.meta.llama4-scout-17b-instruct-v1:0',    quality: 0.72, inputPer1M: 0.17, outputPer1M: 0.66, latencyMs: 350, maxContextTokens: 10_000_000,         priceSource: 'manual'  },
+      // Coding specialists — high SWE-bench; strong for code-heavy workloads
+      { provider: 'bedrock',   model: 'mistral.devstral-2-123b',    quality: 0.85, inputPer1M: 0.40, outputPer1M: 2.00, latencyMs: 600, maxContextTokens: 262_144,             priceSource: 'manual'  },
+      { provider: 'bedrock',   model: 'qwen.qwen3-coder-480b-a35b-v1:0', quality: 0.85, inputPer1M: 0.22, outputPer1M: 1.80, latencyMs: 600, maxContextTokens: 262_144,        priceSource: 'manual'  },
+      // Efficient reasoning — Nemotron Super is a thinking model, very cheap for 120B
+      { provider: 'bedrock',   model: 'nvidia.nemotron-super-3-120b', quality: 0.75, inputPer1M: 0.10, outputPer1M: 0.50, latencyMs: 500, maxContextTokens: 131_072, isThinkingModel: true, priceSource: 'manual' },
     ],
     description: 'Balanced quality and cost. The default for most applications.',
   },
@@ -417,7 +422,7 @@ export const PROVIDER_META: Record<ProviderName, { label: string; models: string
   openai:    { label: 'OpenAI',           models: 'GPT, o-series' },
   google:    { label: 'Google',           models: 'Gemini family' },
   grok:      { label: 'xAI / Grok',       models: 'Grok family' },
-  bedrock:   { label: 'AWS Bedrock',       models: 'Nemotron, GLM, DeepSeek, Qwen, Kimi, Mistral, MiniMax' },
+  bedrock:   { label: 'AWS Bedrock',       models: 'Llama 4, Nemotron, GLM, DeepSeek, Qwen, Kimi, Mistral, MiniMax' },
   vertex:    { label: 'Google Vertex AI',  models: 'Nemotron 3 Super, Meta Llama, third-party models' },
   groq:      { label: 'Groq',             models: 'Llama (free models)' },
   cerebras:  { label: 'Cerebras',         models: 'Llama (free models)' },
