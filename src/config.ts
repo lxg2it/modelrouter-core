@@ -20,6 +20,11 @@ export interface Config {
     openai?: { apiKey: string };
     google?: { apiKey: string };
     grok?: { apiKey: string };
+    /**
+     * Bedrock uses native AWS SDK with IAM role credentials (no API key needed on EC2).
+     * The adapter always initializes — presence here has no effect on initialization.
+     * Kept for backward compatibility only.
+     */
     bedrock?: { apiKey: string };
     vertex?: { serviceAccountJsonPath: string; projectId: string };
     /** Groq free tier — permanent free models (Llama 3.3 70B, Llama 4 Scout, etc.) */

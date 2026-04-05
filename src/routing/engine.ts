@@ -244,6 +244,70 @@ export class RoutingEngine {
    * Record provider success for circuit breaker.
 
   /**
+   * Return ALL viable fallback candidates ordered by context window (descending),
+   * then cost. Used when the primary provider rejected a request due to context
+   * length exceeded — we want the model with the most tokens first.
+   *
+   * Searches across ALL tiers (not just the requested one) so we can find a
+   * model that can actually handle the input, even if it means escalating tiers.
+   * Within each context tier we still favour cheaper models.
+   */
+  selectContextFallbackCandidates(
+    failedSet: Set<string>,
+    messages: ChatMessage[] = [],
+    blockedProviders?: Set<string>,
+    freeProvidersOnly?: boolean,
+  ): RouteDecision[] {
+    const estimatedTokens = this.estimateInputTokens(messages);
+    // Search all tiers, de-duped by provider/model
+    const allCandidates: ModelConfig[] = [];
+    const seen = new Set<string>();
+    for (const tier of ['economy', 'standard', 'premium'] as Tier[]) {
+      const models = freeProvidersOnly
+        ? getModelsForTier(tier, this.config.availableProviders).filter((m) => m.isFreeProvider)
+        : getModelsForTier(tier, this.config.availableProviders);
+      for (const m of models) {
+        const key = `${m.provider}/${m.model}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          allCandidates.push(m);
+        }
+      }
+    }
+
+    const candidates = this.filterByContext(
+      this.filterBlocked(allCandidates, blockedProviders).filter(
+        (m) => (m.apiType ?? 'chat') === 'chat',
+      ),
+      estimatedTokens,
+    )
+      .filter((m) => !failedSet.has(`${m.provider}/${m.model}`))
+      .filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model));
+
+    if (candidates.length === 0) return [];
+
+    const ratio = this.config.defaultOutputRatio;
+    // Sort: largest context window first; break ties by cost (ascending)
+    const sorted = [...candidates].sort((a, b) => {
+      const ctxA = a.maxContextTokens ?? 0;
+      const ctxB = b.maxContextTokens ?? 0;
+      return ctxB - ctxA
+        || (a.inputPer1M + a.outputPer1M * ratio) - (b.inputPer1M + b.outputPer1M * ratio);
+    });
+
+    // Determine tier for each candidate from its original position in config
+    return sorted.map((m) => {
+      // Find which tier this model belongs to
+      const modelTier = (['economy', 'standard', 'premium'] as Tier[]).find((t) =>
+        getModelsForTier(t, this.config.availableProviders).some(
+          (cm) => cm.provider === m.provider && cm.model === m.model,
+        ),
+      ) ?? this.config.defaultTier;
+      return this.toDecision(m, modelTier, undefined, 'balanced');
+    });
+  }
+
+  /**
    * Return ALL viable fallback candidates, ordered by cost then quality.
    *
    * Unlike `selectFallback` (which returns only the best candidate), this

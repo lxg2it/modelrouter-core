@@ -98,8 +98,12 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   if (config.providers.grok) {
     providers.set('grok', new GrokAdapter(config.providers.grok.apiKey));
   }
-  if (config.providers.bedrock) {
-    providers.set('bedrock', new BedrockAdapter(config.providers.bedrock.apiKey));
+  // Bedrock: always attempt to initialize — uses EC2 IAM role credentials
+  // automatically (no API key required in production). The adapter's isConfigured()
+  // returns true as long as the SDK client initializes without error.
+  const bedrockAdapter = new BedrockAdapter();
+  if (bedrockAdapter.isConfigured()) {
+    providers.set('bedrock', bedrockAdapter);
   }
   if (config.providers.vertex) {
     providers.set('vertex', new VertexAdapter(

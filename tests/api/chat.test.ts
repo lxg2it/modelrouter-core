@@ -416,6 +416,145 @@ describe('POST /v1/chat/completions — non-streaming', () => {
   });
 });
 
+
+import { BadRequestError } from 'openai';
+import { ContextLengthExceededError } from '../../src/providers/bedrock.js';
+
+describe('Token-aware fallback', () => {
+  /**
+   * Make an adapter that fails with a context length error.
+   * Supports both ContextLengthExceededError (Bedrock native) and
+   * BadRequestError with context_length_exceeded code (OpenAI-compat providers).
+   */
+  function makeContextExceededAdapter(name: ProviderName, style: 'bedrock' | 'openai' = 'openai'): ProviderAdapter {
+    const err = style === 'bedrock'
+      ? new ContextLengthExceededError('Context length exceeded')
+      : new BadRequestError(400, { error: { code: 'context_length_exceeded', message: 'max context length exceeded' } }, 'max context length exceeded', new Headers());
+    return {
+      name,
+      isConfigured: () => true,
+      complete: vi.fn(async () => { throw err; }),
+      stream: vi.fn(async () => { throw err; }),
+    };
+  }
+
+  it('falls back to a provider with a larger context window when context is exceeded (non-streaming)', async () => {
+    // google (1M context) fails with context exceeded; anthropic (200K) succeeds
+    // Context-aware fallback should pick by context window size
+    const googleAdapter = makeContextExceededAdapter('google', 'openai');
+    const anthropicAdapter = makeSuccessAdapter('anthropic', 'Fallback context response');
+
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['google', googleAdapter],
+      ['anthropic', anthropicAdapter],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['google', 'anthropic']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.choices[0].message.content).toBe('Fallback context response');
+    // Primary was attempted (possibly multiple google models in context fallback) and failed
+    expect(googleAdapter.complete).toHaveBeenCalled();
+    // Anthropic was tried and succeeded
+    expect(anthropicAdapter.complete).toHaveBeenCalledOnce();
+  });
+
+  it('handles ContextLengthExceededError from native Bedrock adapter (non-streaming)', async () => {
+    const bedrockAdapter = makeContextExceededAdapter('bedrock', 'bedrock');
+    const openaiAdapter = makeSuccessAdapter('openai', 'Fallback from bedrock context exceeded');
+
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['bedrock', bedrockAdapter],
+      ['openai', openaiAdapter],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['bedrock', 'openai']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...minimalRequest, model: 'deepseek.v3.2' }),
+    }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.choices[0].message.content).toBe('Fallback from bedrock context exceeded');
+  });
+
+  it('falls back to a provider with larger context window when context is exceeded (streaming)', async () => {
+    const googleAdapter = makeContextExceededAdapter('google', 'openai');
+    const anthropicAdapter = makeSuccessAdapter('anthropic', 'Streaming fallback context');
+
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['google', googleAdapter],
+      ['anthropic', anthropicAdapter],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['google', 'anthropic']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...minimalRequest, stream: true }),
+    }));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('text/event-stream');
+    const text = await res.text();
+    expect(text).toContain('Streaming fallback context');
+    expect(googleAdapter.stream).toHaveBeenCalled();
+    expect(anthropicAdapter.stream).toHaveBeenCalledOnce();
+  });
+
+  it('returns 502 when all providers have context exceeded', async () => {
+    const googleAdapter = makeContextExceededAdapter('google', 'openai');
+    const anthropicAdapter = makeContextExceededAdapter('anthropic', 'openai');
+
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['google', googleAdapter],
+      ['anthropic', anthropicAdapter],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['google', 'anthropic']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    // All providers failed — should be 502 (not 429, since this isn't rate limiting)
+    expect(res.status).toBe(502);
+    const body = await res.json() as any;
+    // provider_error: providers were found but all failed to handle the request
+    expect(body.error.code).toBe('provider_error');
+  });
+});
+
+
 describe('POST /v1/chat/completions — streaming', () => {
   it('streams from the primary provider on success', async () => {
     const googleAdapter = makeSuccessAdapter('google');

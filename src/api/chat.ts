@@ -18,13 +18,41 @@ import type { UserStore } from '../auth/users.js';
 import type { EmailSender } from '../auth/email.js';
 import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../config.js';
 import type { ApiKey, User, ChatCompletionRequest, ProviderName } from '../types.js';
-import { RateLimitError } from 'openai';
+import { RateLimitError, BadRequestError } from 'openai';
 import { getHeader } from 'openai/core';
+import { ContextLengthExceededError } from '../providers/bedrock.js';
 import type { StripeService } from '../billing/stripe.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
 import { startRequestSpan, type RequestSpan } from '../telemetry-instruments.js';
 import { exportUserSpan, parseOtelHeaders, type UserOtelConfig, type UserSpanData } from '../telemetry-user.js';
 import { randomUUID } from 'node:crypto';
+
+
+/**
+ * Detect whether an error represents a context/token length exceeded condition
+ * from any provider. Returns true for:
+ *   - ContextLengthExceededError (Bedrock native SDK)
+ *   - BadRequestError with context-related error codes/messages (OpenAI-compatible providers)
+ */
+function isContextLengthError(err: unknown): boolean {
+  if (err instanceof ContextLengthExceededError) return true;
+  if (err instanceof BadRequestError) {
+    const code = (err as BadRequestError & { code?: string }).code ?? '';
+    const msg = err.message?.toLowerCase() ?? '';
+    return (
+      code === 'context_length_exceeded' ||
+      code === 'max_tokens_exceeded' ||
+      msg.includes('context_length_exceeded') ||
+      msg.includes('too many tokens') ||
+      msg.includes('max context length') ||
+      msg.includes('context window') ||
+      msg.includes('maximum context') ||
+      msg.includes('this model\'s maximum context')
+    );
+  }
+  return false;
+}
+
 
 export interface ChatDeps {
   router: RoutingEngine;
@@ -291,19 +319,26 @@ async function handleNonStreaming(
     return c.json(result.response);
   } catch (err) {
     const primaryIsRateLimit = err instanceof RateLimitError;
+    const primaryIsContextExceeded = isContextLengthError(err);
+
     if (primaryIsRateLimit) {
       console.warn(`[chat] Primary provider rate limited (${decision.provider}/${decision.model}): 429`);
       // Don't record a circuit-breaker failure — the provider is healthy, just rate limited
+    } else if (primaryIsContextExceeded) {
+      console.warn(`[chat] Primary provider context exceeded (${decision.provider}/${decision.model}) — using token-aware fallback`);
+      // Don't penalize circuit breaker — this is a request characteristic, not a provider failure
     } else {
       console.error(`[chat] Primary provider failed (${decision.provider}/${decision.model}):`, err);
       deps.router.recordFailure(decision.provider, decision.model);
     }
 
     // Try failover — iterate through all ranked candidates until one succeeds.
-    // This handles cases where multiple providers fail (e.g., large-context requests
-    // with a narrow pool: if the first fallback also fails, we try the next, etc.)
+    // Token-aware fallback: when context is exceeded, prefer models with larger context windows
+    // (searched across all tiers). Otherwise use standard same-tier cost-optimised fallback.
     const failedSet = new Set([`${decision.provider}/${decision.model}`]);
-    const fallbackCandidates = deps.router.selectFallbackCandidates(failedSet, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
+    const fallbackCandidates = primaryIsContextExceeded
+      ? deps.router.selectContextFallbackCandidates(failedSet, request.messages, blockedProviders, freeProvidersOnly)
+      : deps.router.selectFallbackCandidates(failedSet, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
 
     // Track whether all failures were rate limits (to return 429 vs 502 at the end).
     // retryAfterSecs keeps the first non-null value seen across primary + fallbacks.
@@ -379,11 +414,15 @@ async function handleNonStreaming(
         return c.json(result.response);
       } catch (fallbackErr) {
         const fallbackIsRateLimit = fallbackErr instanceof RateLimitError;
+        const fallbackIsContextExceeded = isContextLengthError(fallbackErr);
         if (fallbackIsRateLimit) {
           console.warn(`[chat] Fallback provider rate limited (${fallback.provider}/${fallback.model}): 429`);
           if (retryAfterSecs === undefined) {
             retryAfterSecs = extractRetryAfter(fallbackErr as RateLimitError);
           }
+        } else if (fallbackIsContextExceeded) {
+          console.warn(`[chat] Fallback provider context also exceeded (${fallback.provider}/${fallback.model}) — trying next`);
+          allRateLimited = false;
         } else {
           console.error(`[chat] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
           deps.router.recordFailure(fallback.provider, fallback.model);
@@ -500,6 +539,7 @@ async function handleStreaming(
   // Try primary provider
   let streamAllRateLimited = false;
   let streamRetryAfterSecs: number | undefined;
+  let streamPrimaryIsContextExceeded = false;
 
   const primaryAdapter = deps.providers.get(decision.provider);
   if (primaryAdapter) {
@@ -511,6 +551,10 @@ async function handleStreaming(
         console.warn(`[chat/stream] Primary provider rate limited (${decision.provider}/${decision.model}): 429`);
         streamAllRateLimited = true;
         streamRetryAfterSecs = extractRetryAfter(primaryErr);
+      } else if (isContextLengthError(primaryErr)) {
+        console.warn(`[chat/stream] Primary provider context exceeded (${decision.provider}/${decision.model}) — using token-aware fallback`);
+        streamPrimaryIsContextExceeded = true;
+        streamAllRateLimited = false;
       } else {
         console.error(`[chat/stream] Primary provider failed (${decision.provider}/${decision.model}):`, primaryErr);
         deps.router.recordFailure(decision.provider, decision.model);
@@ -520,11 +564,12 @@ async function handleStreaming(
   }
 
   // If primary failed, iterate through all fallback candidates until one succeeds.
-  // This handles large-context requests where a narrow provider pool means the first
-  // fallback may also be unavailable — we keep trying rather than stranding the user.
+  // Token-aware fallback: when context is exceeded, prefer models with larger context windows.
   if (!completion) {
     const streamFailedSet = new Set([`${decision.provider}/${decision.model}`]);
-    const streamFallbackCandidates = deps.router.selectFallbackCandidates(streamFailedSet, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
+    const streamFallbackCandidates = streamPrimaryIsContextExceeded
+      ? deps.router.selectContextFallbackCandidates(streamFailedSet, request.messages, blockedProviders, freeProvidersOnly)
+      : deps.router.selectFallbackCandidates(streamFailedSet, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
 
     for (const fallback of streamFallbackCandidates) {
       console.info(`[chat/stream] Attempting fallback: ${fallback.provider}/${fallback.model}`);
@@ -542,6 +587,9 @@ async function handleStreaming(
           if (streamRetryAfterSecs === undefined) {
             streamRetryAfterSecs = extractRetryAfter(fallbackErr as RateLimitError);
           }
+        } else if (isContextLengthError(fallbackErr)) {
+          console.warn(`[chat/stream] Fallback provider context also exceeded (${fallback.provider}/${fallback.model}) — trying next`);
+          streamAllRateLimited = false;
         } else {
           console.error(`[chat/stream] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
           deps.router.recordFailure(fallback.provider, fallback.model);
