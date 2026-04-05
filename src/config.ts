@@ -375,6 +375,18 @@ export const MODEL_ALIASES: Record<string, string> = {
   'minimax': 'standard',
   'minimax-m2.1': 'standard',
 
+  // Devstral coding aliases (Mistral coding specialist)
+  'devstral': 'standard',
+  'devstral-2': 'standard',
+
+  // Qwen Coder aliases
+  'qwen3-coder': 'standard',
+  'qwen-coder': 'standard',
+
+  // Nemotron Super aliases
+  'nemotron-super': 'standard',
+  'nemotron-super-120b': 'standard',
+
   // GLM aliases (via Bedrock)
   'glm': 'standard',
   'glm-5': 'premium',
