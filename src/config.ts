@@ -197,8 +197,8 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'bedrock',   model: 'nvidia.nemotron-nano-3-30b',  quality: 0.63, inputPer1M: 0.06,  outputPer1M: 0.24,  latencyMs: 350,  maxContextTokens: 262_144, isThinkingModel: true,  priceSource: 'manual' },
       { provider: 'bedrock',   model: 'nvidia.nemotron-nano-9b-v2',  quality: 0.45, inputPer1M: 0.06,  outputPer1M: 0.23,  latencyMs: 250,  maxContextTokens: 128_000,                         priceSource: 'manual' },
       { provider: 'bedrock',   model: 'zai.glm-4.7-flash',          quality: 0.51, inputPer1M: 0.070, outputPer1M: 0.400, latencyMs: 350,  maxContextTokens: 202_752,                         priceSource: 'manual' },
-      { provider: 'bedrock',   model: 'qwen.qwen3-32b',             quality: 0.48, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 300,  maxContextTokens: 131_072,                         priceSource: 'manual' },
-      { provider: 'bedrock',   model: 'openai.gpt-oss-120b',        quality: 0.50, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 450,  maxContextTokens: 128_000,                         priceSource: 'litellm' },
+      { provider: 'bedrock',   model: 'qwen.qwen3-32b-v1:0',        quality: 0.48, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 300,  maxContextTokens: 131_072,                         priceSource: 'manual' },
+      { provider: 'bedrock',   model: 'openai.gpt-oss-120b-1:0',    quality: 0.50, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 450,  maxContextTokens: 128_000,                         priceSource: 'litellm' },
       // Free-provider models — hosted by providers with permanent free tiers.
       // isFreeProvider: true means these are routed to zero-balance users and are never billed.
       // Quality/latency estimates are approximate; inputPer1M/outputPer1M are 0 (free to us).
@@ -224,13 +224,13 @@ export const TIERS: Record<string, TierConfig> = {
       // Bedrock standard models — manual: verify prices at https://aws.amazon.com/bedrock/pricing/ (US West Oregon)
       { provider: 'bedrock',   model: 'zai.glm-4.7',                quality: 0.90, inputPer1M: 0.62, outputPer1M: 2.27,  latencyMs: 550,  maxContextTokens: 202_752,                         priceSource: 'manual'  },
       { provider: 'bedrock',   model: 'deepseek.v3.2',              quality: 0.83, inputPer1M: 0.62, outputPer1M: 1.85,  latencyMs: 600,  maxContextTokens: 128_000,                         priceSource: 'litellm' },
-      { provider: 'bedrock',   model: 'qwen.qwen3-235b-a22b-2507',  quality: 0.83, inputPer1M: 0.23, outputPer1M: 0.91,  latencyMs: 500,  maxContextTokens: 131_072,                         priceSource: 'manual', dedupKey: 'qwen3-235b' },
+      { provider: 'bedrock',   model: 'qwen.qwen3-235b-a22b-2507-v1:0', quality: 0.83, inputPer1M: 0.23, outputPer1M: 0.91,  latencyMs: 500,  maxContextTokens: 131_072,                     priceSource: 'manual', dedupKey: 'qwen3-235b' },
       { provider: 'bedrock',   model: 'mistral.mistral-large-3-675b-instruct', quality: 0.80, inputPer1M: 0.52, outputPer1M: 1.55, latencyMs: 600, maxContextTokens: 131_072,              priceSource: 'litellm' },
       { provider: 'bedrock',   model: 'moonshotai.kimi-k2.5',       quality: 0.88, inputPer1M: 0.62, outputPer1M: 3.09,  latencyMs: 600,  maxContextTokens: 131_072,                         priceSource: 'litellm' },
       { provider: 'bedrock',   model: 'minimax.minimax-m2.1',       quality: 0.72, inputPer1M: 0.30, outputPer1M: 1.20,  latencyMs: 500,  maxContextTokens: 1_000_000,                        priceSource: 'litellm' },
-      { provider: 'bedrock',   model: 'qwen.qwen3-next-80b-a3b-instruct', quality: 0.75, inputPer1M: 0.15, outputPer1M: 1.24, latencyMs: 450, maxContextTokens: 131_072,                   priceSource: 'manual'  },
-      { provider: 'bedrock',   model: 'meta.llama4-maverick-17b-instruct-v1:0', quality: 0.84, inputPer1M: 0.24, outputPer1M: 0.97, latencyMs: 450, maxContextTokens: 1_000_000,              priceSource: 'manual'  },
-      { provider: 'bedrock',   model: 'meta.llama4-scout-17b-instruct-v1:0',    quality: 0.72, inputPer1M: 0.17, outputPer1M: 0.66, latencyMs: 350, maxContextTokens: 10_000_000,             priceSource: 'manual'  },
+      { provider: 'bedrock',   model: 'qwen.qwen3-next-80b-a3b',         quality: 0.75, inputPer1M: 0.15, outputPer1M: 1.24, latencyMs: 450, maxContextTokens: 131_072,                   priceSource: 'manual'  },
+      { provider: 'bedrock',   model: 'us.meta.llama4-maverick-17b-instruct-v1:0', quality: 0.84, inputPer1M: 0.24, outputPer1M: 0.97, latencyMs: 450, maxContextTokens: 1_000_000,          priceSource: 'manual'  },
+      { provider: 'bedrock',   model: 'us.meta.llama4-scout-17b-instruct-v1:0',    quality: 0.72, inputPer1M: 0.17, outputPer1M: 0.66, latencyMs: 350, maxContextTokens: 10_000_000,         priceSource: 'manual'  },
     ],
     description: 'Balanced quality and cost. The default for most applications.',
   },

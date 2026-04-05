@@ -154,14 +154,14 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     mmluPro: 83.0,
     simpleBench: 52.0,
   },
-  'qwen.qwen3-32b': {
+  'qwen.qwen3-32b-v1:0': {
     arenaElo: 1347,
     gpqaDiamond: 55.0,
     sweBench: 35.0,
     mmluPro: 72.0,
     simpleBench: 38.0,
   },
-  'openai.gpt-oss-120b': {
+  'openai.gpt-oss-120b-1:0': {
     arenaElo: 1354,
     gpqaDiamond: 80.9,
     sweBench: 62.4,
@@ -222,7 +222,7 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     mmluPro: 85.0,
     simpleBench: 54.0,
   },
-  'qwen.qwen3-235b-a22b-2507': {
+  'qwen.qwen3-235b-a22b-2507-v1:0': {
     arenaElo: 1422,
     gpqaDiamond: 81.1,
     sweBench: 62.0,
@@ -250,7 +250,7 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     mmluPro: 76.0,
     simpleBench: 45.0,
   },
-  'qwen.qwen3-next-80b-a3b-instruct': {
+  'qwen.qwen3-next-80b-a3b': {
     arenaElo: 1402,
     gpqaDiamond: 72.0,
     sweBench: 50.0,
@@ -260,7 +260,7 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
 
   // Llama 4 Maverick — Meta's flagship MoE (17B active / 400B total), 1M context
   // Arena Elo ~1417, SWE-bench 7.1% (not a coding specialist), MMLU-Pro 80.5, GPQA 69.8
-  'meta.llama4-maverick-17b-instruct-v1:0': {
+  'us.meta.llama4-maverick-17b-instruct-v1:0': {
     arenaElo: 1417,
     gpqaDiamond: 69.8,
     sweBench: 7.1,
@@ -269,7 +269,7 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
   },
   // Llama 4 Scout — Meta's efficient MoE (17B active / 109B total), 10M context window
   // Lower quality than Maverick but exceptional context length at very low cost
-  'meta.llama4-scout-17b-instruct-v1:0': {
+  'us.meta.llama4-scout-17b-instruct-v1:0': {
     arenaElo: 1380,
     gpqaDiamond: 57.2,
     sweBench: 5.0,
