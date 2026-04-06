@@ -197,8 +197,8 @@ export function authMiddleware(
     let routeToFreeTierOnly = false;
     const isBillingPath = c.req.path.includes('/billing');
     if (!isBillingPath) {
-      if (user && user.stripeCustomerId && user.creditBalanceCents <= 0) {
-        // User has a Stripe account but is out of credits — route to free tier.
+      if (user && user.creditBalanceCents <= 0) {
+        // User is out of credits (Stripe or promo-only) — route to free tier.
         routeToFreeTierOnly = true;
       } else if (!user && apiKey.stripeCustomerId && apiKey.creditBalanceCents <= 0) {
         // Legacy key — key has billing but is out of credits — route to free tier.

@@ -797,8 +797,8 @@ export async function reserveCreditsForRequest(
   tier: string,
   user?: User,
 ): Promise<number | null> {
-  if (!user || !deps.userStore || !user.stripeCustomerId) {
-    // No user billing configured — no reservation needed
+  if (!user || !deps.userStore) {
+    // No user — no reservation needed (legacy key path handled separately)
     return 0;
   }
 
@@ -919,7 +919,7 @@ export function settleStripeCredits(
   user?: User,
 ): void {
   try {
-    if (user && deps.userStore && user.stripeCustomerId) {
+    if (user && deps.userStore) {
       if (reservedCents > 0) {
         // Reservation was pre-deducted — return the unused portion
         const refund = reservedCents - actualCents;

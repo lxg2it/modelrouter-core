@@ -973,6 +973,96 @@ describe('User-owned key billing — pre-request credit reservation', () => {
   });
 });
 
+// ─── Non-Stripe (promo-credit) user billing ───────────────────────────────
+// Users who signed up via promo credit (no stripeCustomerId) must have their
+// credit_balance_cents decremented just like Stripe users.
+
+describe('Non-Stripe user credit enforcement', () => {
+  const promoUser: User = {
+    id: 'usr-promo',
+    email: 'promo@example.com',
+    createdAt: new Date().toISOString(),
+    stripeCustomerId: undefined, // No Stripe account — promo credits only
+    creditBalanceCents: 50000,
+    blockedProviders: [],
+    autoRechargeEnabled: false,
+    autoRechargeAmountCents: 0,
+    dailySpendLimitCents: 0,
+    fallbackTimeoutMs: 60000,
+  };
+
+  const promoUserKey: ApiKey = {
+    ...fakeApiKey,
+    id: 'key-promo',
+    tier: 'standard',
+  };
+
+  const engine = new RoutingEngine({
+    availableProviders: new Set(['google']),
+    defaultTier: 'standard',
+    defaultOutputRatio: 0.33,
+  });
+
+  it('reserves and settles credits for a non-Stripe promo user', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Hello from promo!');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const mockUserStore = makeMockUserStore();
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: promoUserKey,
+      user: promoUser,
+      userStore: mockUserStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(200);
+
+    // Credit reservation should have been attempted regardless of Stripe status
+    expect(mockUserStore.tryReserveCredits).toHaveBeenCalledOnce();
+    const [reserveUserId, reserveCents] = mockUserStore.tryReserveCredits.mock.calls[0] as [string, number];
+    expect(reserveUserId).toBe(promoUser.id);
+    expect(reserveCents).toBe(200); // TIER_MAX_RESERVE_CENTS.standard
+
+    // Unused portion should have been refunded
+    expect(mockUserStore.refundCredits).toHaveBeenCalledOnce();
+    const [refundUserId] = mockUserStore.refundCredits.mock.calls[0] as [string, number];
+    expect(refundUserId).toBe(promoUser.id);
+  });
+
+  it('returns 402 when a non-Stripe promo user has insufficient credits', async () => {
+    const googleAdapter = makeSuccessAdapter('google', 'Hello!');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const mockUserStore = makeMockUserStore({
+      tryReserveCredits: vi.fn().mockReturnValue(false),
+    });
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: promoUserKey,
+      user: { ...promoUser, creditBalanceCents: 5 }, // Only 5 cents — not enough
+      userStore: mockUserStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(402);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('insufficient_credits');
+
+    // Provider must NOT be called
+    expect(googleAdapter.complete).not.toHaveBeenCalled();
+  });
+});
+
+
 // ─── Auto-recharge in request path ───────────────────────
 
 describe('Auto-recharge — triggered when reservation fails', () => {
