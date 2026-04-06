@@ -287,7 +287,9 @@ describe('authMiddleware — user-owned key balance check', () => {
     expect(res.status).toBe(200);
   });
 
-  it('passes through when user has no stripeCustomerId (no billing configured)', async () => {
+  it('routes to free tier when user has no stripeCustomerId but zero balance (promo credit exhausted)', async () => {
+    // Non-Stripe users with promo credits must be subject to the same credit gate.
+    // A promo user at zero balance should be routed to free-tier providers only.
     const key = makeApiKey({ userId: 'user-id', creditBalanceCents: 0 });
     const user = makeUser({ id: 'user-id', stripeCustomerId: undefined, creditBalanceCents: 0 });
     const app = makeApp(makeKeyStore(key), makeUserStore(user));
@@ -297,6 +299,23 @@ describe('authMiddleware — user-owned key balance check', () => {
     }));
 
     expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.routeToFreeTierOnly).toBe(true);
+  });
+
+  it('passes through normally when user has no stripeCustomerId but has positive promo balance', async () => {
+    // A promo user with remaining credits should be treated like any funded user.
+    const key = makeApiKey({ userId: 'user-id', creditBalanceCents: 0 });
+    const user = makeUser({ id: 'user-id', stripeCustomerId: undefined, creditBalanceCents: 100 });
+    const app = makeApp(makeKeyStore(key), makeUserStore(user));
+
+    const res = await app.fetch(new Request('http://test/', {
+      headers: { Authorization: 'Bearer mr_sk_valid' },
+    }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.routeToFreeTierOnly).toBe(false);
   });
 });
 
