@@ -543,6 +543,13 @@ curl https://api.lxg2it.com/v1/chat/completions \\
       </tbody>
     </table>
 
+    <div class="callout">
+      <strong>Pro tip — coding workloads:</strong> <code class="inline-code">tier:&quot;premium&quot; + prefer:&quot;coding&quot;</code>
+      often delivers better results at lower cost than <code class="inline-code">tier:&quot;standard&quot; + prefer:&quot;coding&quot;</code>.
+      Coding-specialist models (Devstral, Codestral) are in the premium tier but priced at commodity Bedrock rates —
+      the tier&rsquo;s quality ranking reflects coding performance, not general-purpose prestige.
+    </div>
+
     <!-- Tool calls -->
     <div class="section-head">Tool calls</div>
 
