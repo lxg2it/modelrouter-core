@@ -1060,6 +1060,37 @@ describe('Non-Stripe user credit enforcement', () => {
     // Provider must NOT be called
     expect(googleAdapter.complete).not.toHaveBeenCalled();
   });
+
+  it('issues a full refund to a non-Stripe promo user when all providers fail', async () => {
+    // Regression: fullRefundReservation previously bailed on !stripeCustomerId,
+    // meaning a promo user whose reserved credits were never used would have them
+    // permanently deducted rather than returned after a provider failure.
+    const googleAdapter = makeFailingStreamAdapter('google');
+    const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
+    const mockUserStore = makeMockUserStore();
+
+    const app = makeTestApp(providers, engine, makeMockLogger(), {
+      apiKey: promoUserKey,
+      user: promoUser,
+      userStore: mockUserStore,
+    });
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(502);
+
+    // Reservation was made
+    expect(mockUserStore.tryReserveCredits).toHaveBeenCalledOnce();
+    // Full refund must be issued — no cost was incurred
+    expect(mockUserStore.refundCredits).toHaveBeenCalledOnce();
+    const [refundUserId, refundCents] = mockUserStore.refundCredits.mock.calls[0] as [string, number];
+    expect(refundUserId).toBe(promoUser.id);
+    expect(refundCents).toBe(200); // Full standard tier ceiling refunded
+  });
 });
 
 

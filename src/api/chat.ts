@@ -976,7 +976,7 @@ function fullRefundReservation(
   reservedCents: number,
   user?: User,
 ): void {
-  if (reservedCents <= 0 || !user || !deps.userStore || !user.stripeCustomerId) return;
+  if (reservedCents <= 0 || !user || !deps.userStore) return;
   try {
     deps.userStore.refundCredits(user.id, reservedCents);
   } catch (err) {
