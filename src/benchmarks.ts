@@ -331,6 +331,13 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     mmluPro: 88.2,
     simpleBench: 67.6,
   },
+  'claude-opus-4-7': {
+    arenaElo: 1415,      // estimated (step up from 4-6)
+    gpqaDiamond: 91.5,   // estimated
+    sweBench: 87.6,      // SWE-bench Verified (Anthropic, Apr 2026)
+    mmluPro: 89.0,       // estimated
+    simpleBench: 69.0,   // estimated
+  },
   'gpt-5.2': {
     arenaElo: 1402,
     gpqaDiamond: 88.0,

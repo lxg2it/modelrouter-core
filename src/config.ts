@@ -222,7 +222,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'anthropic', model: 'claude-sonnet-4-6',   quality: 0.85, inputPer1M: 3.00,  outputPer1M: 15.00, latencyMs: 650,  maxContextTokens: 1_000_000,                        priceSource: 'litellm' },
       { provider: 'grok',      model: 'grok-3-beta',         quality: 0.74, inputPer1M: 3.00,  outputPer1M: 15.00, latencyMs: 580,  maxContextTokens: 131_072,                          priceSource: 'litellm' },
       // Bedrock standard models — manual: verify prices at https://aws.amazon.com/bedrock/pricing/ (US West Oregon)
-      { provider: 'bedrock',   model: 'zai.glm-4.7',                quality: 0.90, inputPer1M: 0.62, outputPer1M: 2.27,  latencyMs: 550,  maxContextTokens: 202_752,                         priceSource: 'manual'  },
+      { provider: 'bedrock',   model: 'zai.glm-4.7',                quality: 0.90, inputPer1M: 0.60, outputPer1M: 2.20,  latencyMs: 550,  maxContextTokens: 202_752,                         priceSource: 'manual'  },
       { provider: 'bedrock',   model: 'deepseek.v3.2',              quality: 0.83, inputPer1M: 0.62, outputPer1M: 1.85,  latencyMs: 600,  maxContextTokens: 128_000,                         priceSource: 'litellm' },
       { provider: 'bedrock',   model: 'qwen.qwen3-235b-a22b-2507-v1:0', quality: 0.83, inputPer1M: 0.23, outputPer1M: 0.91,  latencyMs: 500,  maxContextTokens: 131_072,                     priceSource: 'manual', dedupKey: 'qwen3-235b' },
       { provider: 'bedrock',   model: 'mistral.mistral-large-3-675b-instruct', quality: 0.80, inputPer1M: 0.52, outputPer1M: 1.55, latencyMs: 600, maxContextTokens: 131_072,              priceSource: 'litellm' },
@@ -242,9 +242,10 @@ export const TIERS: Record<string, TierConfig> = {
   premium: {
     models: [
       { provider: 'google',    model: 'gemini-3.1-pro-preview', quality: 1.00, inputPer1M: 2.00,  outputPer1M: 12.00, latencyMs: 900,  maxContextTokens: 1_048_576, priceSource: 'manual'  },
-      { provider: 'anthropic', model: 'claude-opus-4-6',        quality: 1.00, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 1_000_000, priceSource: 'litellm' },
-      { provider: 'openai',    model: 'gpt-5.4',                quality: 0.96, inputPer1M: 2.50,  outputPer1M: 15.00, latencyMs: 900,  maxContextTokens: 1_050_000, priceSource: 'manual'  },
-      { provider: 'bedrock',   model: 'zai.glm-5',              quality: 0.93, inputPer1M: 0.72,  outputPer1M: 2.30,  latencyMs: 650,  maxContextTokens: 200_000,   priceSource: 'manual'  },
+      { provider: 'anthropic', model: 'claude-opus-4-7',        quality: 1.00, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 1_000_000, priceSource: 'manual'   },
+      { provider: 'anthropic', model: 'claude-opus-4-6',        quality: 0.99, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 1_000_000, priceSource: 'litellm'  },
+      { provider: 'openai',    model: 'gpt-5.4',                quality: 0.96, inputPer1M: 2.50,  outputPer1M: 15.00, latencyMs: 900,  maxContextTokens: 1_050_000, priceSource: 'manual'   },
+      { provider: 'bedrock',   model: 'zai.glm-5',              quality: 0.93, inputPer1M: 1.00,  outputPer1M: 3.20,  latencyMs: 650,  maxContextTokens: 200_000,   priceSource: 'manual'   },
     ],
     description: 'Maximum capability. For complex reasoning, creative work, difficult tasks.',
   },
@@ -336,6 +337,7 @@ export const MODEL_ALIASES: Record<string, string> = {
   'gpt-5.4': 'premium',
   'gpt-5.2': 'premium',              // legacy; routes to gpt-5.4 now
   'claude-opus': 'premium',
+  'claude-opus-4-7': 'premium',
   'claude-3-opus': 'premium',
   'o1': 'premium',
   'o1-pro': 'premium',
