@@ -38,10 +38,16 @@ export interface BillingRouterDeps {
   billingTxStore: BillingTransactionStore;
   /** Stripe publishable key to include in responses (for client-side Stripe.js). */
   publishableKey: string;
+  /**
+   * Public base URL of this service (e.g. https://api.lxg2it.com).
+   * Used to build absolute redirect URLs for Stripe Hosted Checkout.
+   * Must not end with a slash.
+   */
+  publicBaseUrl: string;
 }
 
 export function createBillingRouter(deps: BillingRouterDeps): Hono<SessionEnv> {
-  const { userStore, stripe, billingTxStore, publishableKey } = deps;
+  const { userStore, stripe, billingTxStore, publishableKey, publicBaseUrl } = deps;
   const router = new Hono<SessionEnv>();
 
   // ─── GET /v1/billing/status ────────────────────────────────
@@ -116,9 +122,8 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<SessionEnv> {
       userStore.setStripeCustomerId(user.id, stripeCustomerId);
     }
 
-    const origin = new URL(c.req.url).origin;
-    const successUrl = `${origin}/profile?checkout=success&session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${origin}/profile?checkout=cancelled`;
+    const successUrl = `${publicBaseUrl}/profile?checkout=success&session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${publicBaseUrl}/profile?checkout=cancelled`;
 
     const result = await stripe.createCheckoutSession(stripeCustomerId, successUrl, cancelUrl);
 

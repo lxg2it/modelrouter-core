@@ -299,6 +299,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
       stripe: stripeService,
       billingTxStore,
       publishableKey: config.stripe.publishableKey,
+      publicBaseUrl: config.publicBaseUrl,
     });
     app.use('/v1/billing/*', sessionAuth);
     app.route('/v1/billing', billingRouter);

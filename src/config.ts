@@ -13,6 +13,12 @@ export interface Config {
   host: string;
   dbPath: string;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
+  /**
+   * Public base URL of this service (e.g. https://api.lxg2it.com).
+   * Used to construct absolute URLs for Stripe redirect callbacks.
+   * Must be set in production — without it, Stripe will redirect to localhost.
+   */
+  publicBaseUrl: string;
 
   // Provider API keys
   providers: {
@@ -95,6 +101,7 @@ export function loadConfig(): Config {
     host: env('HOST', '0.0.0.0'),
     dbPath: env('DB_PATH', './data/modelrouter.db'),
     logLevel: env('LOG_LEVEL', 'info') as Config['logLevel'],
+    publicBaseUrl: env('PUBLIC_BASE_URL', 'http://localhost:3003'),
 
     providers: {
       anthropic: process.env.ANTHROPIC_API_KEY
