@@ -68,6 +68,7 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
       creditBalanceUsd: formatUsd(user.creditBalanceCents),
       stripeEnabled: !!user.stripeCustomerId,
       blockedProviders: user.blockedProviders,
+      operationalNotificationsEnabled: user.operationalNotificationsEnabled,
       dailySpendLimitCents: user.dailySpendLimitCents,
       otelEndpoint: user.otelEndpoint ?? null,
       otelConfigured: !!user.otelEndpoint,
@@ -232,7 +233,7 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
   router.patch('/settings', async (c: Context<SessionEnv>) => {
     const user = c.get('user');
 
-    let body: { dailySpendLimitCents?: unknown; otelEndpoint?: unknown; otelHeaders?: unknown; fallbackTimeoutMs?: unknown };
+    let body: { dailySpendLimitCents?: unknown; otelEndpoint?: unknown; otelHeaders?: unknown; fallbackTimeoutMs?: unknown; operationalNotificationsEnabled?: unknown };
     try {
       body = await c.req.json() as typeof body;
     } catch {
@@ -242,8 +243,9 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
     const hasSpendLimit = 'dailySpendLimitCents' in body;
     const hasOtel = 'otelEndpoint' in body;
     const hasTimeout = 'fallbackTimeoutMs' in body;
+    const hasNotifications = 'operationalNotificationsEnabled' in body;
 
-    if (!hasSpendLimit && !hasOtel && !hasTimeout) {
+    if (!hasSpendLimit && !hasOtel && !hasTimeout && !hasNotifications) {
       return c.json({ error: { message: 'No settings to update', code: 'invalid_request' } }, 400);
     }
 
@@ -297,6 +299,24 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
       }
     }
 
+    // ── Operational notifications ──
+    if (hasNotifications) {
+      const raw = body.operationalNotificationsEnabled;
+      if (typeof raw !== 'boolean') {
+        return c.json({
+          error: { message: 'operationalNotificationsEnabled must be a boolean', code: 'invalid_request' },
+        }, 400);
+      }
+      userStore.ensureUnsubscribeToken(user.id);
+      userStore.setOperationalNotifications(user.id, raw);
+      messages.push(
+        raw
+          ? 'Operational notifications enabled.'
+          : 'Operational notifications disabled.',
+      );
+    }
+
+
     // ── Fallback timeout ──
     if (hasTimeout) {
       const raw = body.fallbackTimeoutMs;
@@ -319,9 +339,29 @@ export function createAccountRouter(deps: AccountRouterDeps): Hono<SessionEnv> {
       otelEndpoint: updated.otelEndpoint ?? null,
       otelHeaders: updated.otelHeaders ? '••••••' : null,
       fallbackTimeoutMs: updated.fallbackTimeoutMs,
+      operationalNotificationsEnabled: updated.operationalNotificationsEnabled,
       message: messages.join(' '),
     });
   });
+
+  // ─── GET /v1/account/unsubscribe ──────────────────────────
+  //
+  // One-click unsubscribe via token (no login required).
+  // Redirects to the profile page with a confirmation message.
+  //
+  router.get('/unsubscribe', (c: Context) => {
+    const token = c.req.query('token');
+    if (!token) {
+      return c.redirect('/profile?unsubscribed=missing_token');
+    }
+
+    const success = userStore.unsubscribeByToken(token);
+    if (success) {
+      return c.redirect('/profile?unsubscribed=true');
+    }
+    return c.redirect('/profile?unsubscribed=invalid_token');
+  });
+
 
   return router;
 }

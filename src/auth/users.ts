@@ -195,6 +195,32 @@ export class UserStore {
         ALTER TABLE users ADD COLUMN activation_nudge_sent INTEGER NOT NULL DEFAULT 0;
       `);
     }
+
+    // Migration: add model_update_notified column (v0.9)
+    const userColsV9b = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>;
+    if (!userColsV9b.some((c) => c.name === 'model_update_notified')) {
+      this.db.exec(`
+        ALTER TABLE users ADD COLUMN model_update_notified INTEGER NOT NULL DEFAULT 0;
+      `);
+    }
+
+
+    // Migration: add operational notifications pref + unsubscribe token (v0.10)
+    const userColsV10 = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>;
+    if (!userColsV10.some((c) => c.name === 'operational_notifications_enabled')) {
+      this.db.exec(`
+        ALTER TABLE users ADD COLUMN operational_notifications_enabled INTEGER NOT NULL DEFAULT 1;
+      `);
+    }
+    // unsubscribe_token — opaque token for one-click unsubscribe (no login required)
+    const userColsV10b = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>;
+    if (!userColsV10b.some((c) => c.name === 'unsubscribe_token')) {
+      this.db.exec(`
+        ALTER TABLE users ADD COLUMN unsubscribe_token TEXT;
+        -- Generate tokens for existing users (use first 16 hex chars of id as simple token)
+        UPDATE users SET unsubscribe_token = hex(randomblob(16)) WHERE unsubscribe_token IS NULL;
+      `);
+    }
   }
 
   // ─── Passwordless auth ────────────────────────────────
@@ -405,6 +431,69 @@ export class UserStore {
     return result.changes > 0;
   }
 
+  // ─── Operational notifications ──────────────────────────
+
+  /**
+   * Get the user's operational notifications preference.
+   * Defaults to true if not set.
+   */
+  getOperationalNotificationsEnabled(userId: string): boolean {
+    const row = this.db.prepare(
+      `SELECT operational_notifications_enabled FROM users WHERE id = ?`,
+    ).get(userId) as { operational_notifications_enabled: number } | undefined;
+    return (row?.operational_notifications_enabled ?? 1) === 1;
+  }
+
+  /**
+   * Set the user's operational notifications preference.
+   */
+  setOperationalNotifications(userId: string, enabled: boolean): void {
+    this.db.prepare(
+      `UPDATE users SET operational_notifications_enabled = ? WHERE id = ?`,
+    ).run(enabled ? 1 : 0, userId);
+  }
+
+  /**
+   * Ensure the user has an unsubscribe token. Generates one if missing.
+   * Returns the token.
+   */
+  ensureUnsubscribeToken(userId: string): string {
+    const row = this.db.prepare(
+      `SELECT unsubscribe_token FROM users WHERE id = ?`,
+    ).get(userId) as { unsubscribe_token: string | null } | undefined;
+    if (row && row.unsubscribe_token) return row.unsubscribe_token;
+    const token = randomBytes(16).toString('hex');
+    this.db.prepare(
+      `UPDATE users SET unsubscribe_token = ? WHERE id = ?`,
+    ).run(token, userId);
+    return token;
+  }
+
+  /**
+   * Unsubscribe via token (no login required).
+   * Returns true if the token was valid and the user was unsubscribed.
+   */
+  unsubscribeByToken(token: string): boolean {
+    const result = this.db.prepare(`
+      UPDATE users SET operational_notifications_enabled = 0
+      WHERE unsubscribe_token = ?
+    `).run(token);
+    return result.changes > 0;
+  }
+
+  /**
+   * Returns users who have operational notifications enabled and have not
+   * already received a model update notification.
+   */
+  getUsersForModelUpdateNotification(): Array<{ id: string; email: string }> {
+    return this.db.prepare(`
+      SELECT id, email FROM users
+      WHERE operational_notifications_enabled = 1
+        AND (model_update_notified IS NULL OR model_update_notified = 0)
+    `).all() as Array<{ id: string; email: string }>;
+  }
+
+  // ─── Welcome email ────────────────────────────────────
   // ─── Welcome email ────────────────────────────────────
 
   /**
@@ -671,6 +760,8 @@ export class UserStore {
       freeTierNotifiedAt: row.free_tier_notified_at ?? undefined,
       lastCreditAddedAt: row.last_credit_added_at ?? undefined,
       fallbackTimeoutMs: row.fallback_timeout_ms ?? 60000,
+      operationalNotificationsEnabled: row.operational_notifications_enabled === 1,
+      unsubscribeToken: row.unsubscribe_token ?? undefined,
     };
   }
 
@@ -746,5 +837,8 @@ interface DbUserRow {
   free_tier_notified_at: string | null;
   last_credit_added_at: string | null;
   fallback_timeout_ms: number;
+  operational_notifications_enabled: number;
+  unsubscribe_token: string | null;
+  model_update_notified: number;
 }
 

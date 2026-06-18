@@ -16,6 +16,7 @@ export interface EmailSender {
   sendFreeTierNotification(to: string): Promise<void>;
   sendFeedbackEmail(to: string): Promise<void>;
   sendActivationNudge(to: string): Promise<void>;
+  sendModelUpdateNotification(to: string, unsubscribeUrl: string): Promise<void>;
 }
 
 /**
@@ -148,6 +149,35 @@ export class ResendEmailSender implements EmailSender {
     }
   }
 
+  async sendModelUpdateNotification(to: string, unsubscribeUrl: string): Promise<void> {
+    const { error } = await this.resend.emails.send({
+      from: this.welcomeFromEmail,
+      to,
+      subject: 'New models added to Model Router',
+      html: `
+        <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px; color: #111827;">
+          <p>Hey,</p>
+          <p>I just added three new models to the Model Router:</p>
+          <ul style="line-height: 1.8; padding-left: 20px;">
+            <li><strong>Claude Opus 4-8</strong> (Anthropic) — latest Opus, \$5.00/M input / \$25.00/M output. Premium tier.</li>
+            <li><strong>GPT-5.5</strong> (OpenAI) — new flagship, \$5.00/M input / \$30.00/M output. Premium tier.</li>
+            <li><strong>Gemini 3.1 Flash Lite</strong> (Google) — fastest/cheapest Gemini, \$0.25/M input / \$1.50/M output. Economy tier.</li>
+          </ul>
+          <p>These models are available right now — just use the <code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">premium</code> or <code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">economy</code> tier in your requests. The router picks the best available model automatically.</p>
+          <p>Nothing else has changed — your existing setup will keep working the same way.</p>
+          <p style="margin-top: 24px; font-size: 12px; color: #9ca3af;">
+            <a href="${unsubscribeUrl}" style="color: #9ca3af;">Unsubscribe from these notifications</a>
+          </p>
+        </div>
+      `,
+      text: `Hey,\n\nI just added three new models to the Model Router:\n\n1. Claude Opus 4-8 (Anthropic) — latest Opus, $5/M input / $25/M output. Premium tier.\n2. GPT-5.5 (OpenAI) — new flagship, $5/M input / $30/M output. Premium tier.\n3. Gemini 3.1 Flash Lite (Google) — fastest/cheapest Gemini, $0.25/M input / $1.50/M output. Economy tier.\n\nThese are available right now. Use the "premium" or "economy" tier in your requests.\n\nNothing else has changed.\n\nTo unsubscribe from these notifications: ${unsubscribeUrl}`,
+    });
+
+    if (error) {
+      throw new Error(`Model update notification email failed: ${error.message}`);
+    }
+  }
+
   async sendActivationNudge(to: string): Promise<void> {
     const { error } = await this.resend.emails.send({
       from: this.welcomeFromEmail,
@@ -207,5 +237,9 @@ export class ConsoleEmailSender implements EmailSender {
 
   async sendActivationNudge(to: string): Promise<void> {
     console.log(`[Email:dev] Activation nudge email for ${to}`);
+  }
+
+  async sendModelUpdateNotification(to: string, unsubscribeUrl: string): Promise<void> {
+    console.log(`[Email:dev] Model update notification for ${to}: unsubscribe at ${unsubscribeUrl}`);
   }
 }

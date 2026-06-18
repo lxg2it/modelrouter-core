@@ -28,6 +28,8 @@ const MODEL_LOOKUP: Record<string, string[]> = {
   'anthropic/claude-haiku-4-5-20251001': ['claude-haiku-4-5'],
   'anthropic/claude-sonnet-4-6':         ['claude-sonnet-4-6'],
   'anthropic/claude-opus-4-6':           ['claude-opus-4-6'],
+  'anthropic/claude-opus-4-8':           ['claude-opus-4-8'],
+  'openai/gpt-5.5':                      ['gpt-5.5'],
 
   // OpenAI direct
   'openai/gpt-4.1':        ['gpt-4.1'],
@@ -37,6 +39,7 @@ const MODEL_LOOKUP: Record<string, string[]> = {
 
   // Google direct (gemini/ prefix in LiteLLM)
   'google/gemini-2.5-flash': ['gemini/gemini-2.5-flash', 'gemini-2.5-flash'],
+  'google/gemini-3.1-flash-lite': ['gemini/gemini-3.1-flash-lite', 'gemini-3.1-flash-lite'],
   'google/gemini-2.5-pro':   ['gemini/gemini-2.5-pro',   'gemini-2.5-pro'],
 
   // Grok direct
@@ -49,7 +52,7 @@ const MODEL_LOOKUP: Record<string, string[]> = {
   'bedrock/deepseek.v3.2':              ['bedrock/us-west-2/deepseek.v3.2'],
   'bedrock/minimax.minimax-m2.1':       ['bedrock/us-west-2/minimax.minimax-m2.1'],
   'bedrock/moonshotai.kimi-k2.5':       ['bedrock/us-west-2/moonshotai.kimi-k2.5'],
-  'bedrock/openai.gpt-oss-120b':        ['bedrock_mantle/openai.gpt-oss-120b'],
+  'bedrock/openai.gpt-oss-120b-1:0':    ['bedrock_mantle/openai.gpt-oss-120b'],
   'bedrock/openai.gpt-oss-safeguard-120b': ['bedrock_mantle/openai.gpt-oss-safeguard-120b'],
   'bedrock/qwen.qwen3-235b-a22b-2507':  ['bedrock/us-west-2/qwen.qwen3-235b-a22b'],
   'bedrock/mistral.mistral-large-3-675b-instruct': ['azure_ai/mistral-large-3'], // best proxy until LiteLLM adds Bedrock entry

@@ -196,6 +196,7 @@ export const TIERS: Record<string, TierConfig> = {
       // maxContextTokens = model's context window limit (filter applied before routing)
       // priceSource: 'litellm' = auto-verified by check-prices.ts | 'manual' = verify at https://aws.amazon.com/bedrock/pricing/ before deploy
       { provider: 'google',    model: 'gemini-2.5-flash',          quality: 0.67, inputPer1M: 0.30,  outputPer1M: 2.50,  latencyMs: 280,  maxContextTokens: 1_048_576, isThinkingModel: true,  priceSource: 'litellm' },
+      { provider: 'google',    model: 'gemini-3.1-flash-lite',     quality: 0.40, inputPer1M: 0.25,  outputPer1M: 1.50,  latencyMs: 200,  maxContextTokens: 65_536,                          priceSource: 'litellm' },
       { provider: 'openai',    model: 'gpt-4.1-mini',              quality: 0.58, inputPer1M: 0.40,  outputPer1M: 1.60,  latencyMs: 380,  maxContextTokens: 1_047_576,                         priceSource: 'litellm' },
       { provider: 'openai',    model: 'o4-mini',                   quality: 0.74, inputPer1M: 1.10,  outputPer1M: 4.40,  latencyMs: 2500, maxContextTokens: 200_000,   isThinkingModel: true,  priceSource: 'litellm' },
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', quality: 0.60, inputPer1M: 1.00,  outputPer1M: 5.00,  latencyMs: 320,  maxContextTokens: 200_000,                          priceSource: 'litellm' },
@@ -205,7 +206,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'bedrock',   model: 'nvidia.nemotron-nano-9b-v2',  quality: 0.45, inputPer1M: 0.06,  outputPer1M: 0.23,  latencyMs: 250,  maxContextTokens: 128_000,                         priceSource: 'manual' },
       { provider: 'bedrock',   model: 'zai.glm-4.7-flash',          quality: 0.51, inputPer1M: 0.070, outputPer1M: 0.400, latencyMs: 350,  maxContextTokens: 202_752,                         priceSource: 'manual' },
       { provider: 'bedrock',   model: 'qwen.qwen3-32b-v1:0',        quality: 0.48, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 300,  maxContextTokens: 131_072,                         priceSource: 'manual' },
-      { provider: 'bedrock',   model: 'openai.gpt-oss-120b-1:0',    quality: 0.50, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 450,  maxContextTokens: 128_000,                         priceSource: 'litellm' },
+      { provider: 'bedrock',   model: 'openai.gpt-oss-120b-1:0',    quality: 0.50, inputPer1M: 0.15,  outputPer1M: 0.60,  latencyMs: 450,  maxContextTokens: 128_000,                         priceSource: 'litellm' },
       // Free-provider models — hosted by providers with permanent free tiers.
       // isFreeProvider: true means these are routed to zero-balance users and are never billed.
       // Quality/latency estimates are approximate; inputPer1M/outputPer1M are 0 (free to us).
@@ -251,6 +252,8 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'google',    model: 'gemini-3.1-pro-preview', quality: 1.00, inputPer1M: 2.00,  outputPer1M: 12.00, latencyMs: 900,  maxContextTokens: 1_048_576, priceSource: 'manual'  },
       { provider: 'anthropic', model: 'claude-opus-4-7',        quality: 1.00, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 1_000_000, priceSource: 'manual'   },
       { provider: 'anthropic', model: 'claude-opus-4-6',        quality: 0.99, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 1_000_000, priceSource: 'litellm'  },
+      { provider: 'anthropic', model: 'claude-opus-4-8',        quality: 0.99, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1100, maxContextTokens: 128_000,  priceSource: 'litellm'  },
+      { provider: 'openai',    model: 'gpt-5.5',                quality: 0.98, inputPer1M: 5.00,  outputPer1M: 30.00, latencyMs: 1000, maxContextTokens: 128_000,   priceSource: 'litellm'  },
       { provider: 'openai',    model: 'gpt-5.4',                quality: 0.96, inputPer1M: 2.50,  outputPer1M: 15.00, latencyMs: 900,  maxContextTokens: 1_050_000, priceSource: 'manual'   },
       { provider: 'bedrock',   model: 'zai.glm-5',              quality: 0.93, inputPer1M: 1.00,  outputPer1M: 3.20,  latencyMs: 650,  maxContextTokens: 200_000,   priceSource: 'manual'   },
     ],
@@ -323,6 +326,7 @@ export const MODEL_ALIASES: Record<string, string> = {
   'claude-3-5-haiku-20241022': 'economy',
   'gemini-flash': 'economy',
   'gemini-2.0-flash': 'economy',
+  'gemini-3.1-flash-lite': 'economy',
 
   // Standard tier aliases
   'gpt-4o': 'standard',
@@ -342,9 +346,11 @@ export const MODEL_ALIASES: Record<string, string> = {
   'gpt-4.5': 'premium',
   'gpt-5': 'premium',
   'gpt-5.4': 'premium',
+  'gpt-5.5': 'premium',
   'gpt-5.2': 'premium',              // legacy; routes to gpt-5.4 now
   'claude-opus': 'premium',
   'claude-opus-4-7': 'premium',
+  'claude-opus-4-8': 'premium',
   'claude-3-opus': 'premium',
   'o1': 'premium',
   'o1-pro': 'premium',

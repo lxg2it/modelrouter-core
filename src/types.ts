@@ -295,6 +295,18 @@ export interface User {
   lastCreditAddedAt?: string;
 
   /**
+   * Whether the user wants to receive operational notifications
+   * (model updates, service announcements, etc.). Default true.
+   */
+  operationalNotificationsEnabled: boolean;
+
+  /**
+   * Opaque token for one-click unsubscribe (no login required).
+   */
+  unsubscribeToken?: string;
+
+
+  /**
    * User-configurable timeout for provider calls, in milliseconds.
    * If a provider doesn't start responding within this window, the router
    * triggers an error and falls back to the next candidate.

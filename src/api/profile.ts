@@ -240,6 +240,17 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- Unsubscribe confirmation banner -->
+  <div id="unsubscribedMsg" style="display:none; background:#1a2e1a; border:1px solid #2a4a2a; border-radius:8px; padding:16px 20px; margin-bottom:20px;">
+    <div style="font-size:14px; font-weight:600; color:var(--green);">
+      ✓ You've been unsubscribed from operational notifications.
+    </div>
+    <div style="font-size:13px; color:var(--muted); margin-top:4px;">
+      You can re-enable them anytime from the Notifications section below.
+    </div>
+  </div>
+
+
   <!-- Main dashboard (shown when logged in) -->
   <div id="dashboard" style="display:none">
 
@@ -475,7 +486,23 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       <p id="autoRechargeMsg" class="text-sm mt-2 hidden"></p>
     </div>
 
-    <!-- Provider Preferences -->
+        <!-- Notification Preferences -->
+    <div class="card">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between;">
+        <div>
+          <div class="card-title">Notifications</div>
+          <p style="font-size:13px; color:var(--muted); margin-top:4px;">Receive emails about new models, service updates, and other operational announcements.</p>
+        </div>
+        <label class="toggle-wrap" style="margin-left:16px;">
+          <input type="checkbox" id="notificationsToggle" onchange="onNotificationsToggle()" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p id="notificationsMsg" class="text-sm mt-2 hidden"></p>
+    </div>
+
+
+<!-- Provider Preferences -->
     <div class="card">
       <div class="card-title" style="margin-bottom:4px;">Provider Preferences</div>
       <p style="font-size:13px; color:var(--muted); margin-bottom:16px;">Block specific AI providers. Unblocked providers are routed automatically based on tier and preference.</p>
@@ -592,6 +619,19 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
   // ─── Init ─────────────────────────────────────────────────
 
+  // Check for unsubscribe confirmation from URL param
+  (function checkUnsubscribed() {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('unsubscribed');
+    if (status === 'true') {
+      setTimeout(() => {
+        const msg = document.getElementById('unsubscribedMsg');
+        if (msg) msg.style.display = 'block';
+      }, 500);
+    }
+  })();
+
+
   window.addEventListener('DOMContentLoaded', async () => {
     if (sessionToken) {
       await loadDashboard();
@@ -685,6 +725,39 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
 
   // ─── Render ───────────────────────────────────────────────
 
+  // ─── Notifications ───────────────────────────────────────
+
+  function onNotificationsToggle() {
+    saveNotifications();
+  }
+
+  async function saveNotifications() {
+    const toggle = document.getElementById('notificationsToggle');
+    const msgEl = document.getElementById('notificationsMsg');
+    msgEl.classList.add('hidden');
+
+    const enabled = toggle.checked;
+    const res = await apiFetch('PATCH', '/v1/account/settings', { operationalNotificationsEnabled: enabled });
+    const data = await res.json();
+
+    if (res.ok) {
+      if (profileData) profileData.operationalNotificationsEnabled = enabled;
+      msgEl.textContent = enabled
+        ? 'Notifications enabled. You\'ll receive updates about new models and service changes.'
+        : 'Notifications disabled. You won\'t receive operational emails.';
+      msgEl.className = 'text-sm mt-2 success-msg';
+      msgEl.classList.remove('hidden');
+      setTimeout(() => msgEl.classList.add('hidden'), 4000);
+    } else {
+      // Revert on failure
+      toggle.checked = !enabled;
+      msgEl.textContent = data.error?.message || 'Failed to save preference.';
+      msgEl.className = 'text-sm mt-2 error-msg';
+      msgEl.classList.remove('hidden');
+    }
+  }
+
+
   function renderDashboard() {
     const p = profileData;
     document.getElementById('accountEmail').textContent = p.email;
@@ -720,6 +793,13 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
         ? '<span style="color:#4ade80;">● Telemetry active</span> — traces are being sent to your endpoint'
         : '<span style="color:var(--muted);">○ Not configured</span>';
     }
+
+    // Render notification toggle state
+    const notifyToggle = document.getElementById('notificationsToggle');
+    if (notifyToggle) {
+      notifyToggle.checked = p.operationalNotificationsEnabled !== false;
+    }
+
 
     renderProviderToggles(p.blockedProviders || []);
     renderUsage(currentUsageTab);
