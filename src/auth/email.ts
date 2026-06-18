@@ -156,7 +156,7 @@ export class ResendEmailSender implements EmailSender {
       subject: 'New models added to Model Router',
       html: `
         <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px; color: #111827;">
-          <p>Hey,</p>
+          <p>Hi,</p>
           <p>I just added three new models to the Model Router:</p>
           <ul style="line-height: 1.8; padding-left: 20px;">
             <li><strong>Claude Opus 4-8</strong> (Anthropic) — latest Opus, \$5.00/M input / \$25.00/M output. Premium tier.</li>
@@ -170,7 +170,7 @@ export class ResendEmailSender implements EmailSender {
           </p>
         </div>
       `,
-      text: `Hey,\n\nI just added three new models to the Model Router:\n\n1. Claude Opus 4-8 (Anthropic) — latest Opus, $5/M input / $25/M output. Premium tier.\n2. GPT-5.5 (OpenAI) — new flagship, $5/M input / $30/M output. Premium tier.\n3. Gemini 3.1 Flash Lite (Google) — fastest/cheapest Gemini, $0.25/M input / $1.50/M output. Economy tier.\n\nThese are available right now. Use the "premium" or "economy" tier in your requests.\n\nNothing else has changed.\n\nTo unsubscribe from these notifications: ${unsubscribeUrl}`,
+      text: `Hi,\n\nI just added three new models to the Model Router:\n\n1. Claude Opus 4-8 (Anthropic) — latest Opus, $5/M input / $25/M output. Premium tier.\n2. GPT-5.5 (OpenAI) — new flagship, $5/M input / $30/M output. Premium tier.\n3. Gemini 3.1 Flash Lite (Google) — fastest/cheapest Gemini, $0.25/M input / $1.50/M output. Economy tier.\n\nThese are available right now. Use the "premium" or "economy" tier in your requests.\n\nNothing else has changed.\n\nTo unsubscribe from these notifications: ${unsubscribeUrl}`,
     });
 
     if (error) {
