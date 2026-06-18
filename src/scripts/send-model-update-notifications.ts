@@ -16,8 +16,7 @@ import { ResendEmailSender, ConsoleEmailSender } from '../auth/email.js';
 import type { EmailSender } from '../auth/email.js';
 import { createHash, randomBytes } from 'node:crypto';
 
-const BATCH_SIZE = 10;
-const BATCH_DELAY_MS = 2000; // 2 seconds between batches
+const PER_EMAIL_DELAY_MS = 250; // send at 4/sec (Resend limit: 5/sec)
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -49,53 +48,33 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.log(`📧  Found ${total} users to notify (batch size: ${BATCH_SIZE}, delay: ${BATCH_DELAY_MS}ms).`);
+  console.log(`📧  Found ${total} users to notify (sequential, ${PER_EMAIL_DELAY_MS}ms delay).`);
 
   let sent = 0;
   let errors = 0;
 
-  for (let i = 0; i < total; i += BATCH_SIZE) {
-    const batch = users.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < total; i++) {
+    const user = users[i];
 
-    const results = await Promise.allSettled(
-      batch.map(async (user) => {
-        try {
-          const token = userStore.ensureUnsubscribeToken(user.id);
-          const unsubscribeUrl = `${publicBaseUrl}/v1/account/unsubscribe?token=${token}`;
-          await emailSender.sendModelUpdateNotification(user.email, unsubscribeUrl);
-          // Mark as notified directly (no separate column update needed — the query uses model_update_notified)
-          // We store this in a simple query
-          return { user, success: true };
-        } catch (err) {
-          return { user, success: false, error: err };
-        }
-      }),
-    );
-
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        const r = result.value;
-        if (r.success) {
-          // Mark as notified
-          const stmt = db.prepare('UPDATE users SET model_update_notified = 1 WHERE id = ?');
-          stmt.run(r.user.id);
-          sent++;
-        } else {
-          console.error(`❌  Failed to send to ${r.user.email}:`, r.error);
-          errors++;
-        }
-      } else {
-        console.error('❌  Unexpected error:', result.reason);
-        errors++;
-      }
+    try {
+      const token = userStore.ensureUnsubscribeToken(user.id);
+      const unsubscribeUrl = `${publicBaseUrl}/v1/account/unsubscribe?token=${token}`;
+      await emailSender.sendModelUpdateNotification(user.email, unsubscribeUrl);
+      const stmt = db.prepare('UPDATE users SET model_update_notified = 1 WHERE id = ?');
+      stmt.run(user.id);
+      sent++;
+    } catch (err) {
+      console.error(`❌  Failed to send to ${user.email}:`, (err as Error).message?.slice(0, 120));
+      errors++;
     }
 
-    const progress = Math.min(i + BATCH_SIZE, total);
-    console.log(`  Progress: ${progress}/${total}  (sent: ${sent}, errors: ${errors})`);
+    if ((i + 1) % 10 === 0) {
+      console.log(`  Progress: ${i + 1}/${total}  (sent: ${sent}, errors: ${errors})`);
+    }
 
-    // Delay between batches (unless this was the last batch)
-    if (i + BATCH_SIZE < total) {
-      await sleep(BATCH_DELAY_MS);
+    // Resend rate limit: 5/sec. Send at 4/sec to stay safely under.
+    if (i < total - 1) {
+      await sleep(250);
     }
   }
 
