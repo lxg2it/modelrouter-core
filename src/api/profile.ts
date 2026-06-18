@@ -743,8 +743,8 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
     if (res.ok) {
       if (profileData) profileData.operationalNotificationsEnabled = enabled;
       msgEl.textContent = enabled
-        ? 'Notifications enabled. You\'ll receive updates about new models and service changes.'
-        : 'Notifications disabled. You won\'t receive operational emails.';
+        ? "Notifications enabled. You'll receive updates about new models and service changes."
+        : "Notifications disabled. You won't receive operational emails.";
       msgEl.className = 'text-sm mt-2 success-msg';
       msgEl.classList.remove('hidden');
       setTimeout(() => msgEl.classList.add('hidden'), 4000);
