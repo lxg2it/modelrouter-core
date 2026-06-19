@@ -46,6 +46,11 @@ export interface AdminStats {
     topModels: ModelStat[];
     statusCodes: { status_code: number; count: number }[];
   };
+  uiRequests: {
+    total: number;
+    last30Days: number;
+    daily: DayStat[];
+  };
   revenue: {
     totalCents: number;
     last30DaysCents: number;
@@ -295,6 +300,20 @@ function queryAdminStats(db: Database.Database, usageStore?: UsageStore): AdminS
   `).all() as { day: string; cumulative: number }[];
 
   // ── Top errors (4xx/5xx, last 30d) ──
+
+  // ── UI requests (page views) ──
+  const totalUiRequests = (db.prepare(`SELECT COALESCE(SUM(count), 0) as n FROM page_views`).get() as { n: number }).n;
+
+  const uiRequestsLast30 = (db.prepare(`
+    SELECT COALESCE(SUM(count), 0) as n FROM page_views
+    WHERE day > date('now', '-30 days')
+  `).get() as { n: number }).n;
+
+  const dailyUiRequestsRaw = db.prepare(`
+    SELECT day, count FROM page_views
+    WHERE day > date('now', '-30 days')
+    ORDER BY day ASC
+  `).all() as { day: string; count: number }[];
   const topErrorsRaw = db.prepare(`
     SELECT status_code, COUNT(*) as count
     FROM usage_log
@@ -319,6 +338,11 @@ function queryAdminStats(db: Database.Database, usageStore?: UsageStore): AdminS
       daily: fillDays(days30, dailyRequestsRaw),
       topModels,
       statusCodes: statusCodeBreakdown,
+    },
+    uiRequests: {
+      total: totalUiRequests,
+      last30Days: uiRequestsLast30,
+      daily: fillDays(days30, dailyUiRequestsRaw),
     },
     revenue: {
       totalCents: totalRevenue,
@@ -596,9 +620,15 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
       root.innerHTML = \`
         <div class="metric-grid">
           \${metric('Total Users', '<span class="green">' + s.users.total.toLocaleString() + '</span>', '+' + s.users.last30Days + ' last 30d')}
-          \${metric('Total Requests', '<span class="accent">' + s.requests.total.toLocaleString() + '</span>', s.requests.last30Days.toLocaleString() + ' last 30d')}
+          \${metric('API Requests', '<span class="accent">' + s.requests.total.toLocaleString() + '</span>', s.requests.last30Days.toLocaleString() + ' last 30d')}
+          \${metric('UI Page Views', '<span class="accent">' + s.uiRequests.total.toLocaleString() + '</span>', s.uiRequests.last30Days.toLocaleString() + ' last 30d')}
           \${metric('Total Revenue', '<span class="accent">' + cents(s.revenue.totalCents) + '</span>', cents(s.revenue.last30DaysCents) + ' last 30d')}
           \${metric('Credits Held', s.creditBalanceHeldCents > 0 ? cents(s.creditBalanceHeldCents) : '$0.00', 'across all users')}
+        </div>
+
+        <div class="section-head">API Requests per Day (last 30 days)</div>
+        <div style="margin:12px 0">
+          \${svgLineChart(s.requests.daily, 600, 160)}
         </div>
 
         <div class="section-head">Top Spenders (last 30 days)</div>
@@ -612,6 +642,11 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
         <div class="section-head">User Growth (all time)</div>
         <div style="margin:12px 0">
           \${svgLineChart(s.userGrowth, 600, 160)}
+        </div>
+
+        <div class="section-head">UI Page Views per Day (last 30 days)</div>
+        <div style="margin:12px 0">
+          \${svgLineChart(s.uiRequests.daily, 600, 160)}
         </div>
 
         <div class="section-head">Response Codes (all time)</div>

@@ -83,6 +83,26 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   const usageStore = new UsageStore(db);
   const usageLogger = new UsageLogger(usageStore);
 
+  // Page view tracking — counter for non-API web page views
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS page_views (
+      day TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day)
+    )
+  `);
+  const trackPageView = (() => {
+    const stmt = db.prepare(`
+      INSERT INTO page_views (day, count) VALUES (?, 1)
+      ON CONFLICT(day) DO UPDATE SET count = count + 1
+    `);
+    return () => {
+      try {
+        stmt.run(new Date().toISOString().slice(0, 10));
+      } catch { /* never let tracking fail the response */ }
+    };
+  })();
+
   // Provider adapters
   const providers = new Map<ProviderName, ProviderAdapter>();
 
@@ -172,6 +192,16 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     app.use('*', honoLogger());
   }
 
+
+  // Page view tracking — counts non-API GET requests as UI page views
+  app.use('*', async (c, next) => {
+    await next();
+    const path = c.req.path;
+    // Only track GET requests to non-API routes (not /v1/*, not static files)
+    if (c.req.method === 'GET' && !path.startsWith('/v1/') && !path.startsWith('/health')) {
+      trackPageView();
+    }
+  });
   // Landing page (unauthenticated)
   app.route('/', createLandingRouter());
 
