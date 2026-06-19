@@ -1,0 +1,401 @@
+/**
+ * GET /v1/models — list available models (tiers).
+ * GET /v1/usage  — usage statistics for the authenticated key.
+ *
+ * /v1/models is intentionally unauthenticated: the model catalog is public
+ * information (useful for discovery, and for marketing). /v1/usage requires
+ * an API key.
+ *
+ * Both endpoints support content negotiation: pass Accept: text/html to get
+ * a human-readable page rather than raw JSON.
+ */
+import { Hono } from 'hono';
+import { TIERS, MODEL_ALIASES, PROVIDER_META, EMBEDDING_MODELS, EMBEDDING_ALIASES } from '../config.js';
+import { findModelById } from '../routing/tiers.js';
+import { BENCHMARK_LABELS, BENCHMARK_WEIGHTS } from '../benchmarks.js';
+import { RoutingEngine } from '../routing/engine.js';
+// ─── Content negotiation helper ──────────────────────────
+//
+// Returns true when the client's Accept header prefers HTML over JSON.
+// Browsers send: text/html,application/xhtml+xml,...
+// API clients typically send: application/json or */*
+//
+function wantsHtml(req) {
+    const accept = req.headers.get('Accept') ?? '';
+    const htmlIdx = accept.indexOf('text/html');
+    if (htmlIdx === -1)
+        return false;
+    const jsonIdx = accept.indexOf('application/json');
+    // If both present, prefer whichever appears first (standard q-value parsing
+    // is an edge case we intentionally skip — browsers always list html first).
+    if (jsonIdx !== -1)
+        return htmlIdx < jsonIdx;
+    return true;
+}
+// ─── Models router (public — no auth required) ───────────
+export function createModelsRouter(_deps) {
+    const app = new Hono();
+    /**
+     * List available "models" — in our case, tiers + model aliases.
+     *
+     * We present both:
+     * 1. Tier names (economy, standard, premium) as models
+     * 2. Common model aliases that map to tiers
+     *
+     * This lets clients use familiar model names in their existing code.
+     */
+    app.get('/', (c) => {
+        const now = Math.floor(Date.now() / 1000);
+        const models = [];
+        // Add tier models
+        for (const [tier] of Object.entries(TIERS)) {
+            models.push({
+                id: tier,
+                object: 'model',
+                created: now,
+                owned_by: `modelrouter:${tier}`,
+            });
+        }
+        // Add common aliases
+        const seenAliases = new Set();
+        for (const [alias, tier] of Object.entries(MODEL_ALIASES)) {
+            if (seenAliases.has(alias))
+                continue;
+            if (alias === 'economy' || alias === 'standard' || alias === 'premium')
+                continue;
+            seenAliases.add(alias);
+            // If this alias is also a direct model ID in the catalog, carry its apiType
+            const allProviders = new Set(Object.keys(PROVIDER_META));
+            const found = findModelById(alias, allProviders);
+            const apiType = found?.config.apiType;
+            models.push({
+                id: alias,
+                object: 'model',
+                created: now,
+                owned_by: `modelrouter:${tier}`,
+                ...(apiType ? { api_type: apiType } : {}),
+            });
+        }
+        const response = {
+            object: 'list',
+            data: models,
+        };
+        if (wantsHtml(c.req.raw)) {
+            c.header('Content-Type', 'text/html; charset=utf-8');
+            return c.body(renderModelsHtml(models));
+        }
+        return c.json(response);
+    });
+    return app;
+}
+// ─── Usage router (authenticated) ────────────────────────
+export function createUsageRouter(deps) {
+    const app = new Hono();
+    app.get('/', (c) => {
+        const apiKey = c.get('apiKey');
+        const periodParam = c.req.query('period') ?? '7d';
+        // Parse period
+        const days = parsePeriod(periodParam);
+        const summary = deps.usageStore.getUsageSummary(apiKey.id, days);
+        const outputRatio = deps.usageStore.getOutputRatio(apiKey.id, days);
+        return c.json({
+            period: periodParam,
+            days,
+            key: apiKey.keyPrefix,
+            ...summary,
+            outputRatio,
+        });
+    });
+    return app;
+}
+function parsePeriod(period) {
+    const match = period.match(/^(\d+)([dhm])$/);
+    if (!match)
+        return 7;
+    const [, num, unit] = match;
+    const n = parseInt(num, 10);
+    switch (unit) {
+        case 'd': return n;
+        case 'h': return Math.max(1, Math.ceil(n / 24));
+        case 'm': return n * 30;
+        default: return 7;
+    }
+}
+// ─── HTML templates ───────────────────────────────────────
+import { SHARED_CSS, SHARED_HEAD, pageFooter } from './shared-styles.js';
+const MODELS_STYLES = /* html */ `
+  <style>
+    ${SHARED_CSS}
+    .page-wide { max-width: 860px; }
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { min-width: 420px; }
+    .page-sub { color: var(--muted); margin-bottom: 28px; }
+    .grid-table { font-size: 13px; }
+    .grid-table th, .grid-table td { text-align: center; padding: 10px 12px; }
+    .grid-corner { text-align: left !important; color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .grid-prefer { text-align: left !important; font-family: var(--mono); font-size: 12px; color: var(--accent); }
+    .grid-table code { font-size: 11px; white-space: nowrap; }
+    .tier-economy { color: #4a9; }
+    .tier-standard { color: #58a6ff; }
+    .tier-premium { color: #c084fc; }
+  </style>
+`;
+function renderSpecialApiModels(tierEntries) {
+    const special = tierEntries.flatMap(({ models: ms }) => ms.filter((m) => m.apiType === 'completions' || m.apiType === 'responses'));
+    if (special.length === 0)
+        return '';
+    const rows = special.map((m) => {
+        const endpoint = m.apiType === 'responses' ? '/v1/chat/completions' : '/v1/completions';
+        const label = m.apiType === 'responses'
+            ? 'Responses API (pin required)'
+            : 'Legacy completions API';
+        return `
+      <tr>
+        <td><code>${displayModel(m.model)}</code></td>
+        <td>${m.provider}</td>
+        <td><code>${endpoint}</code></td>
+        <td>${label}</td>
+      </tr>`;
+    }).join('');
+    return `
+    <div class="section-head">Specialist models</div>
+    <p style="font-size:13px; color:var(--text); margin-bottom:16px;">
+      The following models have API differences and are excluded from automatic selection.
+      Pin them explicitly with a <code>model</code> field to use them.
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Provider</th>
+            <th>Endpoint</th>
+            <th>API type</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p style="font-size:12px; color:var(--muted); margin-top:10px;">
+      See <a href="/docs#specialist-models" style="color:var(--accent);">documentation</a> for usage details.
+    </p>`;
+}
+function formatContext(tokens) {
+    if (tokens >= 1_000_000)
+        return `${(tokens / 1_000_000).toFixed(0)}M`;
+    if (tokens >= 1_000)
+        return `${(tokens / 1_000).toFixed(0)}k`;
+    return String(tokens);
+}
+/** Strip date suffixes from model IDs for display. */
+function displayModel(id) {
+    return id.replace(/-\d{8}$/, '');
+}
+/**
+ * Build a RoutingEngine for display purposes — all known providers available,
+ * no circuit breakers tripped, default output ratio. This ensures the grid
+ * shows exactly what a real request would get (assuming all providers configured).
+ */
+function buildDisplayEngine() {
+    const allProviders = new Set(Object.keys(PROVIDER_META));
+    return new RoutingEngine({
+        availableProviders: allProviders,
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+    });
+}
+/** Build the tier×prefer grid HTML showing which model is selected for each combo. */
+function renderSelectionGrid() {
+    const tiers = Object.keys(TIERS);
+    const prefers = ['cheap', 'fast', 'balanced', 'quality', 'coding'];
+    const engine = buildDisplayEngine();
+    const headerCells = tiers.map((t) => `<th class="grid-tier tier-${t}">${t}</th>`).join('');
+    const rows = prefers.map((p) => {
+        const cells = tiers.map((t) => {
+            const decision = engine.selectModel({ model: t, prefer: p, messages: [] });
+            const modelId = decision?.model ?? '—';
+            return `<td><code>${displayModel(modelId)}</code></td>`;
+        }).join('');
+        return `<tr><td class="grid-prefer">${p}</td>${cells}</tr>`;
+    }).join('\n      ');
+    return `
+  <div class="table-scroll">
+    <table class="grid-table">
+      <thead>
+        <tr>
+          <th class="grid-corner">prefer ↓ &nbsp; tier →</th>
+          ${headerCells}
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  </div>`;
+}
+/** Build the embeddings section listing available embedding models and aliases. */
+function renderEmbeddingsSection() {
+    const aliasRows = Object.entries(EMBEDDING_ALIASES)
+        .map(([alias, target]) => `<tr><td><code>${alias}</code></td><td><code>${target}</code></td></tr>`).join('\n      ');
+    const modelRows = Object.entries(EMBEDDING_MODELS)
+        .map(([id, cfg]) => `
+      <tr>
+        <td><code>${id}</code></td>
+        <td>${cfg.dimensions.toLocaleString()}</td>
+        <td>${cfg.maxInputTokens.toLocaleString()}</td>
+        <td>$${cfg.inputPer1M.toFixed(2)}</td>
+        <td style="color:var(--muted); font-size:12px;">${cfg.description}</td>
+      </tr>`)
+        .join('');
+    return `
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Model ID</th><th>Dimensions</th><th>Max Input Tokens</th><th>Price / 1M tokens</th><th>Notes</th></tr></thead>
+      <tbody>${modelRows}
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:13px; color:var(--text); margin:16px 0 8px;">Aliases</p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Alias</th><th>Resolves to</th></tr></thead>
+      <tbody>
+      ${aliasRows}
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:13px; color:var(--text); margin-top:16px;">
+    Use <code>POST /v1/embeddings</code> with the same API key — no separate account needed.
+  </p>
+  <code style="display:block;background:var(--code-bg);padding:12px 14px;font-size:12px;line-height:1.8;">
+    curl https://api.lxg2it.com/v1/embeddings \\<br>
+    &nbsp;&nbsp;-H "Authorization: Bearer YOUR_API_KEY" \\<br>
+    &nbsp;&nbsp;-d '{"model":"embed-small","input":"Your text here"}'
+  </code>`;
+}
+/** Build the scoring methodology section. */
+function renderMethodology() {
+    const benchmarkRows = Object.keys(BENCHMARK_WEIGHTS)
+        .map((key) => {
+        const pct = (BENCHMARK_WEIGHTS[key] * 100).toFixed(0);
+        return `<tr><td>${BENCHMARK_LABELS[key]}</td><td>${pct}%</td></tr>`;
+    }).join('\n      ');
+    return `
+  <p style="font-size:13px; color:var(--text); margin-bottom:16px;">
+    Quality scores are derived from a weighted composite of public benchmarks.
+    Each benchmark is normalised across our model catalogue, then combined.
+    The best model scores 1.00; the floor is 0.50.
+  </p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Benchmark</th><th>Weight</th></tr></thead>
+      <tbody>
+        ${benchmarkRows}
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:12px; color:var(--muted); margin-top:12px;">
+    Sources: <a href="https://arena.ai/leaderboard">Chatbot Arena</a>,
+    <a href="https://lmcouncil.ai/benchmarks">LM Council</a>.
+    Last updated March 2026.
+  </p>`;
+}
+function renderModelsHtml(models) {
+    // Build tier → models breakdown from TIERS config for rich display
+    const tierEntries = Object.entries(TIERS).map(([tier, cfg]) => ({
+        tier,
+        models: cfg.models,
+        description: cfg.description,
+    }));
+    const tierSections = tierEntries.map(({ tier, models: tierModels, description }) => {
+        const rows = tierModels.map((m) => {
+            const qualityPct = (m.quality * 100).toFixed(0);
+            return `
+      <tr>
+        <td><code>${displayModel(m.model)}</code></td>
+        <td>${m.provider}</td>
+        <td>${qualityPct}</td>
+        <td>$${m.inputPer1M.toFixed(2)}</td>
+        <td>$${m.outputPer1M.toFixed(2)}</td>
+        <td>${m.latencyMs.toLocaleString()}ms</td>
+        <td>${m.maxContextTokens !== undefined ? formatContext(m.maxContextTokens) : '—'}</td>
+      </tr>`;
+        }).join('');
+        return `
+    <div class="section-head">${tier} <span style="font-weight:400; text-transform:none; letter-spacing:0;">— ${description}</span></div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Provider</th>
+            <th>Quality</th>
+            <th>Input / 1M</th>
+            <th>Output / 1M</th>
+            <th>Latency</th>
+            <th>Context</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+    }).join('\n');
+    // Count aliases
+    const aliasCount = models.filter((m) => !['economy', 'standard', 'premium'].includes(m.id)).length;
+    return /* html */ `<!DOCTYPE html>
+<html lang="en">
+<head>
+  ${SHARED_HEAD}
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzFhMWExYSIvPjxwYXRoIGQ9Ik04IDE2IEwxNiAxNiIgc3Ryb2tlPSIjZmY2YjM1IiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTE2IDE2IEwyNCA4IiBzdHJva2U9IiNmZjZiMzUiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMTYgMTYgTDI0IDE2IiBzdHJva2U9IiNmZjZiMzUiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMTYgMTYgTDI0IDI0IiBzdHJva2U9IiNmZjZiMzUiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48Y2lyY2xlIGN4PSI4IiBjeT0iMTYiIHI9IjIuNSIgZmlsbD0iI2ZmNmIzNSIvPjxjaXJjbGUgY3g9IjI0IiBjeT0iOCIgcj0iMi41IiBmaWxsPSIjNGE5Ii8+PGNpcmNsZSBjeD0iMjQiIGN5PSIxNiIgcj0iMi41IiBmaWxsPSIjNGE5Ii8+PGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMi41IiBmaWxsPSIjNGE5Ii8+PC9zdmc+">
+  <title>Models — model-router</title>
+  ${MODELS_STYLES}
+</head>
+<body>
+  <div class="page-wide">
+    <div class="header">
+      <div class="header-top">
+        <div class="title"><a href="/">model-router</a></div>
+        <a href="/profile" class="nav-link">profile →</a>
+      </div>
+      <p class="subtitle">
+        Route by tier or use a familiar model name — we map ${aliasCount} common aliases automatically.
+      </p>
+    </div>
+
+    <div class="section-head">Routing Grid</div>
+    <p style="font-size:13px; color:var(--text); margin-bottom:16px;">
+      Which model you get for each <code>model</code> (tier) × <code>prefer</code> combination.
+      All providers healthy, default output ratio.
+    </p>
+    ${renderSelectionGrid()}
+
+    ${tierSections}
+
+    ${renderSpecialApiModels(tierEntries)}
+
+    <div class="section-head">Embeddings</div>
+    <p style="font-size:13px; color:var(--text); margin-bottom:16px;">
+      Generate embeddings using the same API key — no separate account or provider setup needed.
+    </p>
+    ${renderEmbeddingsSection()}
+
+    <div class="section-head">Quality Scoring</div>
+    ${renderMethodology()}
+
+    <div class="section-head">Usage</div>
+    <p style="font-size:13px;color:var(--text);margin-bottom:10px;">
+      Pass a tier name or any alias as the <code>model</code> field in your request.
+      The router picks the best available provider based on your <code>prefer</code> setting.
+    </p>
+    <code style="display:block;background:var(--code-bg);padding:12px 14px;font-size:12px;line-height:1.8;">
+      curl https://api.lxg2it.com/v1/chat/completions \\<br>
+      &nbsp;&nbsp;-H "Authorization: Bearer YOUR_API_KEY" \\<br>
+      &nbsp;&nbsp;-d '{"model":"standard","messages":[...]}'
+    </code>
+
+    ${pageFooter('models')}
+  </div>
+</body>
+</html>`;
+}
+//# sourceMappingURL=models.js.map

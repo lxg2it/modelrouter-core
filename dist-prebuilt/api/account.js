@@ -1,0 +1,318 @@
+/**
+ * GET/PATCH /v1/account/profile — user profile for the authenticated session.
+ * GET /v1/account/usage          — daily usage data for charts (30 days).
+ *
+ * Returns account metadata, credit balance, usage summary across all keys,
+ * and allows updating the display name.
+ *
+ * Routes:
+ *   GET  /v1/account/profile         — fetch profile + 30-day usage summary
+ *   PATCH /v1/account/profile        — update display name
+ *   GET  /v1/account/usage           — daily + model breakdown for charts
+ */
+import { Hono } from 'hono';
+export function createAccountRouter(deps) {
+    const { userStore, keyStore, usageStore } = deps;
+    const router = new Hono();
+    // ─── GET /v1/account/profile ──────────────────────────────
+    router.get('/profile', (c) => {
+        const user = c.get('user');
+        const keys = keyStore.listByUser(user.id);
+        // Aggregate usage across all active keys
+        let totalRequests7d = 0, totalTokens7d = 0, totalCostCents7d = 0;
+        let totalRequests30d = 0, totalTokens30d = 0, totalCostCents30d = 0;
+        const modelRequestCounts = {};
+        const latencies = [];
+        for (const key of keys.filter((k) => k.active)) {
+            const s7d = usageStore.getUsageSummary(key.id, 7);
+            const s30d = usageStore.getUsageSummary(key.id, 30);
+            totalRequests7d += s7d.totalRequests;
+            totalTokens7d += s7d.totalTokens;
+            totalCostCents7d += s7d.totalCostCents;
+            totalRequests30d += s30d.totalRequests;
+            totalTokens30d += s30d.totalTokens;
+            totalCostCents30d += s30d.totalCostCents;
+            if (s7d.avgLatencyMs > 0)
+                latencies.push(s7d.avgLatencyMs);
+            for (const entry of s30d.modelDistribution) {
+                const key_ = `${entry.provider}/${entry.model}`;
+                modelRequestCounts[key_] = (modelRequestCounts[key_] ?? 0) + entry.requestCount;
+            }
+        }
+        const avgLatencyMs = latencies.length > 0
+            ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+            : 0;
+        return c.json({
+            id: user.id,
+            email: user.email,
+            name: user.accountName ?? null,
+            createdAt: user.createdAt,
+            creditBalanceCents: user.creditBalanceCents,
+            creditBalanceUsd: formatUsd(user.creditBalanceCents),
+            stripeEnabled: !!user.stripeCustomerId,
+            blockedProviders: user.blockedProviders,
+            operationalNotificationsEnabled: user.operationalNotificationsEnabled,
+            dailySpendLimitCents: user.dailySpendLimitCents,
+            otelEndpoint: user.otelEndpoint ?? null,
+            otelConfigured: !!user.otelEndpoint,
+            fallbackTimeoutMs: user.fallbackTimeoutMs,
+            keyCount: keys.length,
+            activeKeyCount: keys.filter((k) => k.active).length,
+            usage: {
+                last7Days: {
+                    requestCount: totalRequests7d,
+                    totalTokens: totalTokens7d,
+                    costCents: totalCostCents7d,
+                    costUsd: formatUsd(totalCostCents7d),
+                    avgLatencyMs,
+                },
+                last30Days: {
+                    requestCount: totalRequests30d,
+                    totalTokens: totalTokens30d,
+                    costCents: totalCostCents30d,
+                    costUsd: formatUsd(totalCostCents30d),
+                    modelDistribution: modelRequestCounts,
+                },
+            },
+        });
+    });
+    // ─── PATCH /v1/account/profile ────────────────────────────
+    router.patch('/profile', async (c) => {
+        const user = c.get('user');
+        let body;
+        try {
+            body = await c.req.json();
+        }
+        catch {
+            return c.json({ error: { message: 'Invalid JSON body', code: 'invalid_request' } }, 400);
+        }
+        if (!('name' in body)) {
+            return c.json({ error: { message: 'No fields to update', code: 'invalid_request' } }, 400);
+        }
+        const name = body.name === null
+            ? null
+            : typeof body.name === 'string' && body.name.trim().length > 0
+                ? body.name.trim().slice(0, 100)
+                : undefined;
+        if (name === undefined) {
+            return c.json({
+                error: { message: 'name must be a non-empty string or null', code: 'invalid_request' },
+            }, 400);
+        }
+        userStore.updateAccountName(user.id, name);
+        return c.json({ id: user.id, email: user.email, name });
+    });
+    // ─── GET /v1/account/usage ────────────────────────────────
+    //
+    // Returns daily usage data for the last 30 days, aggregated across all
+    // active API keys for the authenticated user. Designed for chart rendering.
+    //
+    // Response:
+    //   {
+    //     daily: Array<{ day: string; requestCount: number; totalTokens: number; costCents: number }>,
+    //     modelDistribution: Array<{ model: string; provider: string; requestCount: number; totalTokens: number }>
+    //   }
+    //
+    router.get('/usage', (c) => {
+        const user = c.get('user');
+        const keys = keyStore.listByUser(user.id).filter((k) => k.active);
+        // Aggregate daily usage across all keys
+        const dailyMap = new Map();
+        const modelMap = new Map();
+        for (const key of keys) {
+            const daily = usageStore.getDailyUsage(key.id, 30);
+            for (const row of daily) {
+                const existing = dailyMap.get(row.day) ?? { requestCount: 0, totalTokens: 0, costCents: 0 };
+                dailyMap.set(row.day, {
+                    requestCount: existing.requestCount + row.requestCount,
+                    totalTokens: existing.totalTokens + row.totalTokens,
+                    costCents: existing.costCents + row.costCents,
+                });
+            }
+            const summary = usageStore.getUsageSummary(key.id, 30);
+            for (const entry of summary.modelDistribution) {
+                const mapKey = `${entry.provider}/${entry.model}`;
+                const existing = modelMap.get(mapKey) ?? { model: entry.model, provider: entry.provider, requestCount: 0, totalTokens: 0 };
+                modelMap.set(mapKey, {
+                    model: entry.model,
+                    provider: entry.provider,
+                    requestCount: existing.requestCount + entry.requestCount,
+                    totalTokens: existing.totalTokens + entry.totalTokens,
+                });
+            }
+        }
+        // Sort daily entries chronologically (fill gaps with zero)
+        const daily = Array.from(dailyMap.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([day, data]) => ({ day, ...data }));
+        const modelDistribution = Array.from(modelMap.values())
+            .sort((a, b) => b.requestCount - a.requestCount);
+        return c.json({ daily, modelDistribution });
+    });
+    // ─── PATCH /v1/account/providers ─────────────────────────────
+    //
+    // Update the user's provider blocking preferences.
+    //
+    // Body: { blockedProviders: string[] }
+    //   - Pass an empty array to unblock all providers.
+    //   - Unknown provider names are silently ignored.
+    //   - The updated list is returned in the response.
+    //
+    router.patch('/providers', async (c) => {
+        const user = c.get('user');
+        let body;
+        try {
+            body = await c.req.json();
+        }
+        catch {
+            return c.json({ error: { message: 'Invalid JSON body', code: 'invalid_request' } }, 400);
+        }
+        if (!Array.isArray(body.blockedProviders)) {
+            return c.json({
+                error: { message: 'blockedProviders must be an array of provider names', code: 'invalid_request' },
+            }, 400);
+        }
+        // Validate provider names — only known providers are accepted
+        const knownProviders = new Set(['anthropic', 'openai', 'google', 'grok']);
+        const validated = body.blockedProviders
+            .filter((p) => typeof p === 'string' && knownProviders.has(p));
+        userStore.setBlockedProviders(user.id, validated);
+        return c.json({
+            blockedProviders: validated,
+            message: validated.length === 0
+                ? 'All providers unblocked.'
+                : `Blocked providers: ${validated.join(', ')}.`,
+        });
+    });
+    // ─── PATCH /v1/account/settings ───────────────────────────
+    //
+    // Update user-configurable account settings. Supports:
+    //   dailySpendLimitCents — personal daily spend cap. 0 = use system default.
+    //   otelEndpoint — OTLP HTTP endpoint for personal telemetry export.
+    //   otelHeaders — headers for the OTLP endpoint (e.g. auth tokens).
+    //
+    // Body fields are independently optional — send only what you want to change.
+    //
+    router.patch('/settings', async (c) => {
+        const user = c.get('user');
+        let body;
+        try {
+            body = await c.req.json();
+        }
+        catch {
+            return c.json({ error: { message: 'Invalid JSON body', code: 'invalid_request' } }, 400);
+        }
+        const hasSpendLimit = 'dailySpendLimitCents' in body;
+        const hasOtel = 'otelEndpoint' in body;
+        const hasTimeout = 'fallbackTimeoutMs' in body;
+        const hasNotifications = 'operationalNotificationsEnabled' in body;
+        if (!hasSpendLimit && !hasOtel && !hasTimeout && !hasNotifications) {
+            return c.json({ error: { message: 'No settings to update', code: 'invalid_request' } }, 400);
+        }
+        const messages = [];
+        // ── Daily spend limit ──
+        if (hasSpendLimit) {
+            const raw = body.dailySpendLimitCents;
+            if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 0 || raw > 50000) {
+                return c.json({
+                    error: {
+                        message: 'dailySpendLimitCents must be a non-negative integer (0–50000)',
+                        code: 'invalid_request',
+                    },
+                }, 400);
+            }
+            userStore.setDailySpendLimit(user.id, raw);
+            messages.push(raw === 0
+                ? 'Daily spend limit cleared. System default applies.'
+                : `Daily spend limit set to $${(raw / 100).toFixed(2)}.`);
+        }
+        // ── OTEL endpoint ──
+        if (hasOtel) {
+            const endpoint = body.otelEndpoint;
+            const headers = body.otelHeaders;
+            // null or empty string clears the config
+            if (endpoint === null || endpoint === '') {
+                userStore.setOtelConfig(user.id, null, null);
+                messages.push('Telemetry export disabled.');
+            }
+            else if (typeof endpoint === 'string') {
+                // Basic URL validation
+                try {
+                    new URL(endpoint);
+                }
+                catch {
+                    return c.json({
+                        error: { message: 'otelEndpoint must be a valid URL', code: 'invalid_request' },
+                    }, 400);
+                }
+                const headersStr = typeof headers === 'string' ? headers : null;
+                userStore.setOtelConfig(user.id, endpoint, headersStr);
+                messages.push(`Telemetry export enabled → ${endpoint}`);
+            }
+            else {
+                return c.json({
+                    error: { message: 'otelEndpoint must be a string URL or null', code: 'invalid_request' },
+                }, 400);
+            }
+        }
+        // ── Operational notifications ──
+        if (hasNotifications) {
+            const raw = body.operationalNotificationsEnabled;
+            if (typeof raw !== 'boolean') {
+                return c.json({
+                    error: { message: 'operationalNotificationsEnabled must be a boolean', code: 'invalid_request' },
+                }, 400);
+            }
+            userStore.ensureUnsubscribeToken(user.id);
+            userStore.setOperationalNotifications(user.id, raw);
+            messages.push(raw
+                ? 'Operational notifications enabled.'
+                : 'Operational notifications disabled.');
+        }
+        // ── Fallback timeout ──
+        if (hasTimeout) {
+            const raw = body.fallbackTimeoutMs;
+            if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 5000 || raw > 600000) {
+                return c.json({
+                    error: {
+                        message: 'fallbackTimeoutMs must be an integer between 5000 and 600000 (5s–600s)',
+                        code: 'invalid_request',
+                    },
+                }, 400);
+            }
+            userStore.setFallbackTimeout(user.id, raw);
+            messages.push(`Fallback timeout set to ${raw / 1000}s.`);
+        }
+        // Return current state
+        const updated = userStore.findById(user.id);
+        return c.json({
+            dailySpendLimitCents: updated.dailySpendLimitCents,
+            otelEndpoint: updated.otelEndpoint ?? null,
+            otelHeaders: updated.otelHeaders ? '••••••' : null,
+            fallbackTimeoutMs: updated.fallbackTimeoutMs,
+            operationalNotificationsEnabled: updated.operationalNotificationsEnabled,
+            message: messages.join(' '),
+        });
+    });
+    // ─── GET /v1/account/unsubscribe ──────────────────────────
+    //
+    // One-click unsubscribe via token (no login required).
+    // Redirects to the profile page with a confirmation message.
+    //
+    router.get('/unsubscribe', (c) => {
+        const token = c.req.query('token');
+        if (!token) {
+            return c.redirect('/profile?unsubscribed=missing_token');
+        }
+        const success = userStore.unsubscribeByToken(token);
+        if (success) {
+            return c.redirect('/profile?unsubscribed=true');
+        }
+        return c.redirect('/profile?unsubscribed=invalid_token');
+    });
+    return router;
+}
+function formatUsd(cents) {
+    return `$${(cents / 100).toFixed(2)}`;
+}
+//# sourceMappingURL=account.js.map

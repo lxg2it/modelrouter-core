@@ -284,6 +284,19 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   //
   const sessionAuth = sessionMiddleware(userStore);
 
+  // One-click unsubscribe — no auth required (used by email links)
+  app.get('/v1/account/unsubscribe', (c) => {
+    const token = c.req.query('token');
+    if (!token) {
+      return c.redirect('/profile?unsubscribed=missing_token');
+    }
+    const success = userStore.unsubscribeByToken(token);
+    if (success) {
+      return c.redirect('/profile?unsubscribed=true');
+    }
+    return c.redirect('/profile?unsubscribed=invalid_token');
+  });
+
   const accountRouter = createAccountRouter({ userStore, keyStore, usageStore });
   app.use('/v1/account/*', sessionAuth);
   app.route('/v1/account', accountRouter);

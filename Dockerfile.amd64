@@ -1,0 +1,30 @@
+# AMD64 production-only build (pre-built dist from arm64)
+FROM node:22-alpine AS production
+
+WORKDIR /app
+
+# Install only production dependencies (native modules compiled for amd64)
+COPY package*.json ./
+RUN npm ci --omit=dev --ignore-scripts 2>/dev/null; npm rebuild better-sqlite3 && npm cache clean --force
+
+# Copy pre-built JS (from arm64 build — JS is platform-agnostic)
+COPY dist-prebuilt/ ./dist/
+
+# Runtime configuration
+ENV NODE_ENV=production
+ENV PORT=3003
+ENV HOST=0.0.0.0
+ENV LOG_LEVEL=info
+ENV DEFAULT_TIER=standard
+ENV DEFAULT_OUTPUT_RATIO=0.33
+
+# Data directory for SQLite
+RUN mkdir -p /data
+ENV DB_PATH=/data/modelrouter.db
+
+EXPOSE 3003
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3003/health || exit 1
+
+CMD ["node", "dist/index.js"]

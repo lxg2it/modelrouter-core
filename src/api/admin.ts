@@ -53,6 +53,9 @@ export interface AdminStats {
   };
   creditBalanceHeldCents: number;
   recentUsers: RecentUser[];
+  topSpenders: { email: string; requests: number; spendCents: number }[];
+  userGrowth: DayStat[];
+  topErrors: { status_code: number; count: number }[];
   autoRouting?: AutoRoutingStats;
 }
 
@@ -271,6 +274,36 @@ function queryAdminStats(db: Database.Database, usageStore?: UsageStore): AdminS
     LIMIT 20
   `).all() as { email: string; credit_balance_cents: number; created_at: string }[];
 
+  // ── Top spenders (last 30d) ──
+  const topSpendersRaw = db.prepare(`
+    SELECT u.email, COUNT(*) as requests, COALESCE(SUM(ul.cost_cents), 0) as spend_cents
+    FROM usage_log ul
+    JOIN api_keys ak ON ul.key_id = ak.id
+    JOIN users u ON ak.user_id = u.id
+    WHERE ul.created_at > datetime('now', '-30 days')
+    GROUP BY u.id
+    ORDER BY spend_cents DESC
+    LIMIT 10
+  `).all() as { email: string; requests: number; spend_cents: number }[];
+
+  // ── Cumulative user growth (all time) ──
+  const userGrowthRaw = db.prepare(`
+    SELECT day, SUM(count) OVER (ORDER BY day) as cumulative FROM (
+      SELECT date(created_at) as day, COUNT(*) as count FROM users
+      GROUP BY date(created_at)
+    ) ORDER BY day
+  `).all() as { day: string; cumulative: number }[];
+
+  // ── Top errors (4xx/5xx, last 30d) ──
+  const topErrorsRaw = db.prepare(`
+    SELECT status_code, COUNT(*) as count
+    FROM usage_log
+    WHERE status_code >= 400 AND created_at > datetime('now', '-30 days')
+    GROUP BY status_code
+    ORDER BY count DESC
+    LIMIT 10
+  `).all() as { status_code: number; count: number }[];
+
   // Fill 30-day range with zeros for missing days
   const days30 = buildDayRange(30);
 
@@ -301,6 +334,16 @@ function queryAdminStats(db: Database.Database, usageStore?: UsageStore): AdminS
       creditBalanceCents: u.credit_balance_cents,
       createdAt: u.created_at,
     })),
+    topSpenders: topSpendersRaw.map((u) => ({
+      email: u.email,
+      requests: u.requests,
+      spendCents: Math.round(u.spend_cents),
+    })),
+    userGrowth: userGrowthRaw.map((d) => ({
+      day: d.day,
+      count: d.cumulative,
+    })),
+    topErrors: topErrorsRaw,
     autoRouting: usageStore?.getAutoRoutingStats(30),
   };
 }
@@ -489,6 +532,40 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
       </div>\`).join('');
     }
 
+    function spenderRows(spenders) {
+      if (!spenders.length) return '<tr><td colspan="3" style="color:var(--muted);text-align:center;padding:16px">No spenders yet</td></tr>';
+      return spenders.map((s, i) => \`<tr>
+        <td style="color:var(--muted)">\${i + 1}</td>
+        <td><code>\${s.email}</code></td>
+        <td>\${s.requests.toLocaleString()}</td>
+        <td style="font-family:var(--mono);color:var(--accent)">\${cents(s.spendCents)}</td>
+      </tr>\`).join('');
+    }
+
+    function svgLineChart(data, width, height) {
+      if (!data || data.length < 2) return '<p style="color:var(--muted);font-size:13px">Insufficient data for chart.</p>';
+      const max = Math.max(...data.map(d => d.count), 1);
+      const pad = { top: 8, right: 8, bottom: 20, left: 50 };
+      const innerW = width - pad.left - pad.right;
+      const innerH = height - pad.top - pad.bottom;
+      const xScale = innerW / (data.length - 1);
+      const yScale = innerH / max;
+      const points = data.map((d, i) => \`\${pad.left + i * xScale},\${pad.top + innerH - d.count * yScale}\`);
+      const polyline = points.join(' ');
+      // Y-axis labels
+      const yLabels = [0, Math.round(max/2), max].map(v => \`<text x="\${pad.left - 6}" y="\${pad.top + innerH - v * yScale + 4}" text-anchor="end" fill="var(--muted)" font-size="11" font-family="var(--mono)">\${v.toLocaleString()}</text>\`);
+      // Last data point label
+      const last = data[data.length - 1];
+      const lastX = pad.left + (data.length - 1) * xScale;
+      const lastY = pad.top + innerH - last.count * yScale;
+      return \`<svg width="\${width}" height="\${height}" viewBox="0 0 \${width} \${height}" style="background:var(--surface);border-radius:8px;width:100%;height:auto">
+        <polyline fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="\${polyline}" />
+        <circle cx="\${lastX}" cy="\${lastY}" r="3" fill="var(--accent)" />
+        <text x="\${lastX}" y="\${lastY - 8}" text-anchor="middle" fill="var(--accent)" font-size="12" font-family="var(--mono)">\${last.count.toLocaleString()}</text>
+        \${yLabels.join('')}
+      </svg>\`;
+    }
+
     function autoRoutingSection(ar) {
       if (!ar || ar.totalAutoRequests === 0) {
         return \`<div class="section-head">Auto-Routing</div>
@@ -524,8 +601,24 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
           \${metric('Credits Held', s.creditBalanceHeldCents > 0 ? cents(s.creditBalanceHeldCents) : '$0.00', 'across all users')}
         </div>
 
+        <div class="section-head">Top Spenders (last 30 days)</div>
+        <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>#</th><th>Email</th><th>Requests</th><th>Spend</th></tr></thead>
+          <tbody>\${spenderRows(s.topSpenders)}</tbody>
+        </table>
+        </div>
+
+        <div class="section-head">User Growth (all time)</div>
+        <div style="margin:12px 0">
+          \${svgLineChart(s.userGrowth, 600, 160)}
+        </div>
+
         <div class="section-head">Response Codes (all time)</div>
         <div style="padding:10px 0 4px">\${statusCodeBadges(s.requests.statusCodes)}</div>
+
+        <div class="section-head">Top Errors (last 30 days)</div>
+        <div style="padding:10px 0 4px">\${s.topErrors && s.topErrors.length > 0 ? statusCodeBadges(s.topErrors) : '<span style="color:var(--muted);font-size:13px">No errors in the last 30 days</span>'}</div>
 
 
         <div class="section-head">Top Models (last 30 days)</div>

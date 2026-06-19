@@ -1,0 +1,1 @@
+{"version":3,"file":"grok.d.ts","sourceRoot":"","sources":["../../src/providers/grok.ts"],"names":[],"mappings":"AAAA;;;;;;;;GAQG;AAEH,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,aAAa,CAAC;AAChD,OAAO,EAAE,aAAa,EAAE,MAAM,aAAa,CAAC;AAI5C,qBAAa,WAAY,SAAQ,aAAa;IAC5C,SAAkB,IAAI,EAAE,YAAY,CAAU;gBAElC,MAAM,CAAC,EAAE,MAAM;CAG5B"}

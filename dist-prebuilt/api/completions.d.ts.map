@@ -1,0 +1,1 @@
+{"version":3,"file":"completions.d.ts","sourceRoot":"","sources":["../../src/api/completions.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAEH,OAAO,EAAE,IAAI,EAAE,MAAM,MAAM,CAAC;AAC5B,OAAO,KAAK,EAAE,OAAO,EAAE,MAAM,uBAAuB,CAAC;AACrD,OAAO,KAAK,EAAE,QAAQ,EAAE,MAAM,WAAW,CAAC;AAO1C,wBAAgB,uBAAuB,CAAC,IAAI,EAAE,QAAQ,GAAG,IAAI,CAAC,OAAO,CAAC,CA2IrE"}
