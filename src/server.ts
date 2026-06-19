@@ -196,10 +196,14 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   // Page view tracking — counts non-API GET requests as UI page views
   app.use('*', async (c, next) => {
     await next();
-    const path = c.req.path;
-    // Only track GET requests to non-API routes (not /v1/*, not static files)
-    if (c.req.method === 'GET' && !path.startsWith('/v1/') && !path.startsWith('/health')) {
-      trackPageView();
+    try {
+      const path = c.req.path;
+      const method = c.req.method;
+      if (method === 'GET' && !path.startsWith('/v1/') && !path.startsWith('/health')) {
+        trackPageView();
+      }
+    } catch (err) {
+      console.error('[PageView] Error:', err);
     }
   });
   // Landing page (unauthenticated)
