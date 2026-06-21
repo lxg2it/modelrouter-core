@@ -642,7 +642,7 @@ export class UserStore {
    * No-op if amountCents <= 0.
    */
   deductCredits(userId: string, amountCents: number): number {
-    const amount = Math.round(amountCents);
+    const amount = Math.ceil(amountCents);
     if (amount <= 0) {
       const row = this.db.prepare(
         `SELECT credit_balance_cents FROM users WHERE id = ?`,
@@ -706,7 +706,7 @@ export class UserStore {
    * No-op if refundCents <= 0.
    */
   refundCredits(userId: string, refundCents: number): void {
-    const amount = Math.round(refundCents);
+    const amount = Math.floor(refundCents);
     if (amount <= 0) return;
     this.db.prepare(`
       UPDATE users

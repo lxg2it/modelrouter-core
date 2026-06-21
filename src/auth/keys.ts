@@ -150,7 +150,7 @@ export class KeyStore {
    * No-op (returns current balance) if amountCents <= 0 or key has no Stripe billing.
    */
   deductCredits(keyId: string, amountCents: number): number {
-    const amount = Math.round(amountCents);
+    const amount = Math.ceil(amountCents);
     if (amount <= 0) {
       const row = this.db.prepare(
         `SELECT credit_balance_cents FROM api_keys WHERE id = ?`,
