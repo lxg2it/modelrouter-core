@@ -150,8 +150,7 @@ export class KeyStore {
    * No-op (returns current balance) if amountCents <= 0 or key has no Stripe billing.
    */
   deductCredits(keyId: string, amountCents: number): number {
-    const amount = Math.ceil(amountCents);
-    if (amount <= 0) {
+    if (amountCents <= 0) {
       const row = this.db.prepare(
         `SELECT credit_balance_cents FROM api_keys WHERE id = ?`,
       ).get(keyId) as { credit_balance_cents: number } | undefined;
@@ -163,7 +162,7 @@ export class KeyStore {
       SET credit_balance_cents = credit_balance_cents - ?
       WHERE id = ? AND active = 1
       RETURNING credit_balance_cents
-    `).get(amount, keyId) as { credit_balance_cents: number } | undefined;
+    `).get(amountCents, keyId) as { credit_balance_cents: number } | undefined;
 
     if (!result) throw new Error(`Key not found or inactive: ${keyId}`);
     return result.credit_balance_cents;

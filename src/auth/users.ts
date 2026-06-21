@@ -642,8 +642,7 @@ export class UserStore {
    * No-op if amountCents <= 0.
    */
   deductCredits(userId: string, amountCents: number): number {
-    const amount = Math.ceil(amountCents);
-    if (amount <= 0) {
+    if (amountCents <= 0) {
       const row = this.db.prepare(
         `SELECT credit_balance_cents FROM users WHERE id = ?`,
       ).get(userId) as { credit_balance_cents: number } | undefined;
@@ -655,7 +654,7 @@ export class UserStore {
       SET credit_balance_cents = credit_balance_cents - ?
       WHERE id = ?
       RETURNING credit_balance_cents
-    `).get(amount, userId) as { credit_balance_cents: number } | undefined;
+    `).get(amountCents, userId) as { credit_balance_cents: number } | undefined;
 
     if (!result) throw new Error(`User not found: ${userId}`);
     return result.credit_balance_cents;
@@ -706,13 +705,12 @@ export class UserStore {
    * No-op if refundCents <= 0.
    */
   refundCredits(userId: string, refundCents: number): void {
-    const amount = Math.floor(refundCents);
-    if (amount <= 0) return;
+    if (refundCents <= 0) return;
     this.db.prepare(`
       UPDATE users
       SET credit_balance_cents = credit_balance_cents + ?
       WHERE id = ?
-    `).run(amount, userId);
+    `).run(refundCents, userId);
   }
 
 
