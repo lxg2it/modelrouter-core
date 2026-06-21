@@ -107,6 +107,27 @@ function makeTestDb(): Database.Database {
       source TEXT NOT NULL DEFAULT 'stripe',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE api_keys (
+      id TEXT PRIMARY KEY,
+      key_hash TEXT NOT NULL UNIQUE,
+      key_prefix TEXT NOT NULL,
+      tier TEXT NOT NULL DEFAULT 'standard',
+      name TEXT,
+      budget_cents_per_month INTEGER,
+      rate_limit_per_minute INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_used_at TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      user_id TEXT REFERENCES users(id),
+      satbill_account_id TEXT,
+      stripe_customer_id TEXT,
+      credit_balance_cents INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE page_views (
+      day TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day)
+    );
   `);
 
   return db;

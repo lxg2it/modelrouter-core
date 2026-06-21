@@ -74,6 +74,6 @@ export class UsageLogger {
   ): number {
     const inputCost = (promptTokens / 1_000_000) * inputPer1M * 100; // Convert $ to cents
     const outputCost = (completionTokens / 1_000_000) * outputPer1M * 100;
-    return inputCost + outputCost;
+    return Math.round(inputCost + outputCost);
   }
 }

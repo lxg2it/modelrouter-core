@@ -60,7 +60,7 @@ function makeSuccessfulStream(content = 'Hello!'): StreamingCompletion {
       yield 'data: [DONE]\n\n';
     })(),
     finalize: async () => ({
-      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 },
     }),
   };
 }
@@ -79,9 +79,9 @@ function makeSuccessAdapter(name: ProviderName, content = 'Hello!'): ProviderAda
         created: 1234567890,
         model: 'test-model',
         choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' as const }],
-        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 },
       },
-      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 },
     })),
     stream: vi.fn(async () => makeSuccessfulStream(content)),
   };
@@ -1490,9 +1490,9 @@ describe('Thinking model token floor', () => {
             created: 1234567890,
             model: 'test-model',
             choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
-            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+            usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 },
           },
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 },
         };
       }),
       stream: vi.fn(),
