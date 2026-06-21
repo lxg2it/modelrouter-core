@@ -17,6 +17,7 @@ import type { KeyStore } from '../auth/keys.js';
 import type { UserStore } from '../auth/users.js';
 import type { EmailSender } from '../auth/email.js';
 import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../config.js';
+import { creditsAfterFee } from '../billing/platform-fee.js';
 import type { ApiKey, User, ChatCompletionRequest, ProviderName } from '../types.js';
 import { RateLimitError, BadRequestError } from 'openai';
 import { getHeader } from 'openai/core';
@@ -997,8 +998,8 @@ export async function reserveCreditsForRequest(
           const result = await deps.stripe.charge(freshUser.stripeCustomerId, rechargeAmount, description);
 
           if (result.status === 'succeeded') {
-            // Apply 4% fee and credit the account
-            const creditsToAdd = Math.floor(rechargeAmount * 0.96);
+            // Apply platform fee (with minimum) and credit the account
+            const creditsToAdd = creditsAfterFee(rechargeAmount);
             deps.userStore.addCredits(user.id, creditsToAdd);
             deps.billingTxStore.record({
               userId: user.id,

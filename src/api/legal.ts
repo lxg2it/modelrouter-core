@@ -163,7 +163,7 @@ const TERMS_HTML = /* html */`<!DOCTYPE html>
     <h2>Account and billing</h2>
     <ul>
       <li><strong>Prepaid credits:</strong> you add credits via Stripe before using the service. We deduct the cost of each request. There is no monthly subscription — you only pay when you use it.</li>
-      <li><strong>Pricing:</strong> a 4% fee is applied when you deposit credits. Requests are then charged at actual provider rates — no per-request markup. Current pricing is shown on the <a href="/v1/models">models page</a>.</li>
+      <li><strong>Pricing:</strong> a 4% fee (minimum $0.80) is applied when you deposit credits. Requests are then charged at actual provider rates — no per-request markup. Current pricing is shown on the <a href="/v1/models">models page</a>.</li>
       <li><strong>No refunds on used credits:</strong> credits that have been used to make API calls are non-refundable. Unused credits may be refunded by contacting us.</li>
       <li><strong>We reserve the right to adjust pricing</strong> with 14 days notice to registered users.</li>
     </ul>

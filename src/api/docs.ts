@@ -269,7 +269,7 @@ curl https://api.lxg2it.com/v1/messages \\
 
     <p>
       Provider costs are passed through at exact rates &mdash; no per-request markup.
-      We charge a <strong>4% fee on credit top-ups</strong> via Stripe. That&rsquo;s it.
+      We charge a <strong>4% fee on credit top-ups (minimum $0.80)</strong> via Stripe. That&rsquo;s it.
     </p>
 
     <p style="font-size:13px; color:var(--muted);">

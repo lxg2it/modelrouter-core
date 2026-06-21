@@ -328,7 +328,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
   <!-- Feature: Pricing -->
   <div class="section-head">Transparent pricing</div>
   <p class="feature-body">
-    A 4% fee on credit deposits. Requests are billed at actual provider market rates —
+    A 4% fee (minimum $0.80) on credit deposits. Requests are billed at actual provider market rates —
     you pay what the model costs, nothing more.
     Every response includes <code>X-Model-Router-Model</code> and <code>X-Model-Router-Provider</code>
     headers so you always know exactly what ran and what it cost.
