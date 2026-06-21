@@ -470,9 +470,9 @@ describe('Token-aware fallback', () => {
     expect(anthropicAdapter.complete).toHaveBeenCalledOnce();
   });
 
-  it('handles ContextLengthExceededError from native Bedrock adapter (non-streaming)', async () => {
+  it('returns 502 for pinned model context exceeded (no fallback by design)', async () => {
     const bedrockAdapter = makeContextExceededAdapter('bedrock', 'bedrock');
-    const openaiAdapter = makeSuccessAdapter('openai', 'Fallback from bedrock context exceeded');
+    const openaiAdapter = makeSuccessAdapter('openai', 'Should not be called');
 
     const providers = new Map<ProviderName, ProviderAdapter>([
       ['bedrock', bedrockAdapter],
@@ -491,9 +491,11 @@ describe('Token-aware fallback', () => {
       body: JSON.stringify({ ...minimalRequest, model: 'deepseek.v3.2' }),
     }));
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(502);
     const body = await res.json() as any;
-    expect(body.choices[0].message.content).toBe('Fallback from bedrock context exceeded');
+    expect(body.error.type).toBe('server_error');
+    // Pinned models don't fall back — the user chose this model explicitly
+    expect(openaiAdapter.complete).not.toHaveBeenCalled();
   });
 
   it('falls back to a provider with larger context window when context is exceeded (streaming)', async () => {
@@ -1155,8 +1157,8 @@ describe('Auto-recharge — triggered when reservation fails', () => {
     expect(mockStripe.charge).toHaveBeenCalledOnce();
     expect(mockStripe.charge).toHaveBeenCalledWith('cus_auto_test', 1000, expect.stringContaining('auto@example.com'));
 
-    // Credits should have been added (96% of 1000 = 960)
-    expect(mockUserStore.addCredits).toHaveBeenCalledWith('usr-auto-recharge', 960);
+    // Credits after platform fee minimum ($0.80): 1000 - 80 = 920
+    expect(mockUserStore.addCredits).toHaveBeenCalledWith('usr-auto-recharge', 920);
 
     // Transaction should be recorded as auto_recharge
     expect(mockTxStore.record).toHaveBeenCalledWith(

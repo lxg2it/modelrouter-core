@@ -116,7 +116,7 @@ function buildApp(
 // ─── Tests ───────────────────────────────────────────────
 
 describe('POST /top-up — platform fee', () => {
-  it('credits 96% of the charge amount (4% fee)', async () => {
+  it('credits after fee (4% with $0.80 minimum)', async () => {
     const userStore = mockUserStore();
     const stripe = mockStripe();
     const user = fakeUser();
@@ -131,22 +131,21 @@ describe('POST /top-up — platform fee', () => {
     expect(res.status).toBe(200);
     const body = await res.json() as Record<string, unknown>;
 
-    // $10.00 charged → $9.60 in credits (floor(1000 * 0.96) = 960)
+    // $10.00 charged → $9.20 in credits ($0.80 minimum fee exceeds 4% = $0.40)
     expect(body.amountCents).toBe(1000);
-    expect(body.creditsAddedCents).toBe(960);
-    expect(body.creditsAddedUsd).toBe('$9.60');
+    expect(body.creditsAddedCents).toBe(920);
+    expect(body.creditsAddedUsd).toBe('$9.20');
 
-    // addCredits called with the fee-adjusted amount on the user
-    expect(userStore.addCredits).toHaveBeenCalledWith(user.id, 960);
+    expect(userStore.addCredits).toHaveBeenCalledWith(user.id, 920);
   });
 
-  it('floors fractional credits correctly', async () => {
+  it('applies minimum fee for small top-ups', async () => {
     const userStore = mockUserStore();
     const stripe = mockStripe({
       charge: vi.fn().mockResolvedValue({
         paymentIntentId: 'pi_test',
         status: 'succeeded',
-        amountCents: 501, // floor(501 * 0.96) = floor(480.96) = 480
+        amountCents: 501,
         clientSecret: null,
       }),
     });
@@ -161,8 +160,9 @@ describe('POST /top-up — platform fee', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json() as Record<string, unknown>;
-    expect(body.creditsAddedCents).toBe(480);
-    expect(userStore.addCredits).toHaveBeenCalledWith(user.id, 480);
+    // $5.01 → 4% = $0.20, but $0.80 minimum → $4.21 in credits
+    expect(body.creditsAddedCents).toBe(421);
+    expect(userStore.addCredits).toHaveBeenCalledWith(user.id, 421);
   });
 
   it('does not add credits if status is requires_action', async () => {

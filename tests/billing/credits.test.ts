@@ -219,33 +219,29 @@ describe('UserStore credit operations', () => {
 
   // ── Defense in depth: float inputs ─────────────────────
 
-  describe('defense against float corruption', () => {
-    it('deductCredits with a float amount rounds to integer', () => {
-      // Defense-in-depth: Math.round in deductCredits prevents float corruption
-      store.deductCredits(userId, 17.3);
+  describe('fractional cent preservation', () => {
+    it('deductCredits preserves fractional cents', () => {
+      store.deductCredits(userId, 17.346);
       const balance = db.prepare(
         'SELECT credit_balance_cents FROM users WHERE id = ?',
       ).get(userId) as { credit_balance_cents: number };
-      expect(Number.isInteger(balance.credit_balance_cents)).toBe(true);
-      expect(balance.credit_balance_cents).toBe(83); // 100 - 17
+      // Fractional cents are preserved — no rounding (avoids zero-cost bug)
+      expect(balance.credit_balance_cents).toBeCloseTo(82.654, 3);
     });
 
-    it('refundCredits with a float amount rounds to integer', () => {
-      store.refundCredits(userId, 33.7);
+    it('refundCredits preserves fractional cents', () => {
+      store.refundCredits(userId, 33.752);
       const balance = db.prepare(
         'SELECT credit_balance_cents FROM users WHERE id = ?',
       ).get(userId) as { credit_balance_cents: number };
-      expect(Number.isInteger(balance.credit_balance_cents)).toBe(true);
-      expect(balance.credit_balance_cents).toBe(134); // 100 + 34
+      expect(balance.credit_balance_cents).toBeCloseTo(133.752, 3);
     });
 
-    it('reserve + float cost cycle preserves integer balance', () => {
-      // This test verifies the full defense-in-depth fix:
-      // Even if calculateCost() returned a float (which it no longer does),
-      // the rounding in deductCredits/refundCredits would protect balances.
+    it('reserve + float cost cycle tracks exact fractional amounts', () => {
+      // With Math.round removed, the balance accurately tracks every fraction
+      // of a cent — no pennies lost to rounding.
       store.tryReserveCredits(userId, 50);
 
-      // Simulate what the OLD calculateCost returned
       const floatCost = 16.516652;
       const floatRefund = 50 - floatCost; // 33.483348
       if (floatRefund > 0) store.refundCredits(userId, floatRefund);
@@ -253,9 +249,8 @@ describe('UserStore credit operations', () => {
       const balance = db.prepare(
         'SELECT credit_balance_cents FROM users WHERE id = ?',
       ).get(userId) as { credit_balance_cents: number };
-      expect(Number.isInteger(balance.credit_balance_cents)).toBe(true);
-      // 100 - 50 (reserve) + 33 (rounded refund) = 83
-      expect(balance.credit_balance_cents).toBe(83);
+      // 100 - 50 (reserve) + 33.483348 (exact refund) = 83.483348
+      expect(balance.credit_balance_cents).toBeCloseTo(83.483348, 5);
     });
   });
 });

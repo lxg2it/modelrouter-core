@@ -465,10 +465,10 @@ describe('POST /try/run — credit billing', () => {
     expect(mockUserStore.refundCredits).not.toHaveBeenCalled();
   });
 
-  it('skips billing entirely when user has no stripeCustomerId', async () => {
+  it('bills users without stripeCustomerId for non-free models', async () => {
     const googleAdapter = makeSuccessAdapter('google', 'Hello!');
     const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
-    // User without Stripe — no billing should occur
+    // User without Stripe — billing should still occur (fixed — was previously bypassed)
     const noStripeUser: User = { ...fakeUser, stripeCustomerId: undefined };
     const mockUserStore = makeMockUserStore({
       validateSession: vi.fn().mockReturnValue(noStripeUser),
@@ -478,9 +478,10 @@ describe('POST /try/run — credit billing', () => {
     const res = await runRequest(app, minimalRequest);
 
     expect(res.status).toBe(200);
-    expect(mockUserStore.tryReserveCredits).not.toHaveBeenCalled();
-    expect(mockUserStore.refundCredits).not.toHaveBeenCalled();
-    expect(mockUserStore.deductCredits).not.toHaveBeenCalled();
+    // Billing now works regardless of Stripe status
+    expect(mockUserStore.tryReserveCredits).toHaveBeenCalled();
+    // Reserving 500¢ succeeds, so unused portion is refunded (not deducted)
+    expect(mockUserStore.refundCredits).toHaveBeenCalled();
   });
 });
 
