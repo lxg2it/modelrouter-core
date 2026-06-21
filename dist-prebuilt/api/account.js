@@ -294,22 +294,6 @@ export function createAccountRouter(deps) {
             message: messages.join(' '),
         });
     });
-    // ─── GET /v1/account/unsubscribe ──────────────────────────
-    //
-    // One-click unsubscribe via token (no login required).
-    // Redirects to the profile page with a confirmation message.
-    //
-    router.get('/unsubscribe', (c) => {
-        const token = c.req.query('token');
-        if (!token) {
-            return c.redirect('/profile?unsubscribed=missing_token');
-        }
-        const success = userStore.unsubscribeByToken(token);
-        if (success) {
-            return c.redirect('/profile?unsubscribed=true');
-        }
-        return c.redirect('/profile?unsubscribed=invalid_token');
-    });
     return router;
 }
 function formatUsd(cents) {

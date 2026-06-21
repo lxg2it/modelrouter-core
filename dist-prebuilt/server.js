@@ -41,6 +41,8 @@ import { createChangelogRouter } from './api/changelog.js';
 import { createStatusRouter } from './api/status.js';
 import { createAdminRouter } from './api/admin.js';
 import { createDocsRouter } from './api/docs.js';
+import { createMessagesRouter } from './api/messages.js';
+import { createNativeAnthropicClients } from './providers/anthropic-native.js';
 import { createTryRouter } from './api/try.js';
 import { ResendEmailSender, ConsoleEmailSender } from './auth/email.js';
 import { WelcomeEmailScheduler } from './welcome-scheduler.js';
@@ -61,6 +63,26 @@ export function createApp() {
     const userStore = new UserStore(db);
     const usageStore = new UsageStore(db);
     const usageLogger = new UsageLogger(usageStore);
+    // Page view tracking — counter for non-API web page views
+    db.exec(`
+    CREATE TABLE IF NOT EXISTS page_views (
+      day TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day)
+    )
+  `);
+    const trackPageView = (() => {
+        const stmt = db.prepare(`
+      INSERT INTO page_views (day, count) VALUES (?, 1)
+      ON CONFLICT(day) DO UPDATE SET count = count + 1
+    `);
+        return () => {
+            try {
+                stmt.run(new Date().toISOString().slice(0, 10));
+            }
+            catch { /* never let tracking fail the response */ }
+        };
+    })();
     // Provider adapters
     const providers = new Map();
     if (config.providers.anthropic) {
@@ -92,6 +114,11 @@ export function createApp() {
         providers.set('cerebras', new CerebrasAdapter(config.providers.cerebras.apiKey));
     }
     // Routing engine
+    // Native Anthropic clients (for /v1/messages passthrough)
+    const nativeClients = createNativeAnthropicClients({
+        anthropicApiKey: config.providers.anthropic?.apiKey,
+        grokApiKey: config.providers.grok?.apiKey,
+    });
     const availableProviders = new Set(providers.keys());
     const router = new RoutingEngine({
         availableProviders,
@@ -134,6 +161,20 @@ export function createApp() {
     if (config.logLevel === 'debug') {
         app.use('*', honoLogger());
     }
+    // Page view tracking — counts non-API GET requests as UI page views
+    app.use('*', async (c, next) => {
+        await next();
+        try {
+            const path = c.req.path;
+            const method = c.req.method;
+            if (method === 'GET' && !path.startsWith('/v1/') && !path.startsWith('/health')) {
+                trackPageView();
+            }
+        }
+        catch (err) {
+            console.error('[PageView] Error:', err);
+        }
+    });
     // Landing page (unauthenticated)
     app.route('/', createLandingRouter());
     // Health check (unauthenticated, content-negotiated)
@@ -213,6 +254,23 @@ export function createApp() {
     });
     app.use('/v1/completions', apiAuth);
     app.route('/v1/completions', completionsRouter);
+    // Anthropic Messages API compatibility endpoint
+    const messagesRouter = createMessagesRouter({
+        router,
+        providers,
+        nativeClients,
+        logger: usageLogger,
+        billing,
+        userStore: stripeService ? userStore : undefined,
+        keyStore: stripeService ? keyStore : undefined,
+        stripe: stripeService,
+        billingTxStore: stripeService ? billingTxStore : undefined,
+        maxDailySpendCents: config.maxDailySpendCents,
+        emailSender: emailSender ?? undefined,
+    });
+    app.use('/v1/messages/*', apiAuth);
+    app.use('/v1/messages', apiAuth);
+    app.route('/v1/messages', messagesRouter);
     app.use('/v1/embeddings/*', apiAuth);
     const embeddingsRouter = createEmbeddingsRouter({
         usageStore,
@@ -232,6 +290,18 @@ export function createApp() {
     // session tokens (mr_st_...) returned by /v1/auth/login.
     //
     const sessionAuth = sessionMiddleware(userStore);
+    // One-click unsubscribe — no auth required (used by email links)
+    app.get('/v1/account/unsubscribe', (c) => {
+        const token = c.req.query('token');
+        if (!token) {
+            return c.redirect('/profile?unsubscribed=missing_token');
+        }
+        const success = userStore.unsubscribeByToken(token);
+        if (success) {
+            return c.redirect('/profile?unsubscribed=true');
+        }
+        return c.redirect('/profile?unsubscribed=invalid_token');
+    });
     const accountRouter = createAccountRouter({ userStore, keyStore, usageStore });
     app.use('/v1/account/*', sessionAuth);
     app.route('/v1/account', accountRouter);

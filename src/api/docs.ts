@@ -181,8 +181,8 @@ const OVERVIEW_HTML = `${docsHead('Documentation')}
 
     <h1>Documentation</h1>
     <p class="subtitle" style="margin-bottom: 32px;">
-      An OpenAI-compatible API that routes your requests to the cheapest capable model
-      across multiple providers.
+      An API gateway for AI models — routes your requests to the cheapest capable model
+      across multiple providers. Supports OpenAI-compatible and Anthropic-native endpoints.
     </p>
 
     <div class="section-head">How it works</div>
@@ -210,8 +210,9 @@ const OVERVIEW_HTML = `${docsHead('Documentation')}
     <p><strong>2. Create an API key</strong> — on the profile page, generate a key
     (starts with <code class="inline-code">mr_sk_</code>).</p>
 
-    <p><strong>3. Make a request</strong> — point any OpenAI-compatible client at
-    <code class="inline-code">https://api.lxg2it.com</code>:</p>
+    <p><strong>3. Make a request</strong> — two endpoints available:</p>
+
+    <p><strong>OpenAI-compatible</strong> — works with any OpenAI SDK or tool:</p>
 
     <div class="code-block"><span class="c"># Free models — uses economy tier (Groq/Cerebras, no cost)</span>
 curl https://api.lxg2it.com/v1/chat/completions \\
@@ -229,8 +230,23 @@ curl https://api.lxg2it.com/v1/chat/completions \\
       See <a href="/docs/api#tiers">Tiers</a>.
     </p>
 
-    <p>That&rsquo;s it. The response format is identical to OpenAI&rsquo;s &mdash; any existing client library
-    or tool that speaks the OpenAI API will work without modification.</p>
+    <p><strong>Anthropic-native</strong> — use the native Anthropic Messages API for full-fidelity
+    Claude access (including thinking blocks and interleaved reasoning):</p>
+
+    <div class="code-block"><span class="c"># Anthropic-native — route to Claude via the Messages API</span>
+curl https://api.lxg2it.com/v1/messages \\
+  -H <span class="s">"Authorization: Bearer YOUR_API_KEY"</span> \\
+  -H <span class="s">"Content-Type: application/json"</span> \\
+  -H <span class="s">"anthropic-version: 2023-06-01"</span> \\
+  -d <span class="s">'{
+    "model": "claude-opus-4-8",
+    "max_tokens": 1024,
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'</span></div>
+
+    <p>That&rsquo;s it. For the OpenAI-compatible endpoint, the response format is identical to OpenAI&rsquo;s —
+    any existing client library or tool that speaks the OpenAI API will work without modification.
+    For the Anthropic-native endpoint, use the standard Anthropic Messages API format.</p>
 
     <div class="section-head">Learn more</div>
 
@@ -360,6 +376,47 @@ const API_HTML = `${docsHead('API Reference')}
     <code class="inline-code">id</code>, <code class="inline-code">choices</code>,
     <code class="inline-code">usage</code>, etc. The <code class="inline-code">model</code>
     field in the response contains the actual model that served the request.</p>
+
+    <!-- Anthropic-native Messages -->
+    <div class="section-head">Anthropic-native Messages API</div>
+
+    <div class="endpoint">
+      <span class="endpoint-method">POST</span>
+      <span class="endpoint-path">/v1/messages</span>
+      <div class="endpoint-desc">Anthropic Messages API passthrough. Native Anthropic format for full-fidelity Claude access, including thinking blocks and interleaved reasoning. Routes through the same engine as chat completions.</div>
+    </div>
+
+    <p>
+      This endpoint accepts standard Anthropic Messages API requests and returns standard
+      Anthropic responses. For providers that natively support the Messages API (Anthropic, xAI/Grok),
+      requests are forwarded directly with zero translation. For other providers, the router
+      handles Anthropic ↔ OpenAI format translation transparently.
+    </p>
+
+    <p>
+      Requires the <code class="inline-code">anthropic-version: 2023-06-01</code> header (same as the
+      native Anthropic API). The <code class="inline-code">x-api-key</code> header is also supported
+      as an alternative to <code class="inline-code">Authorization: Bearer</code>.
+    </p>
+
+    <p><strong>Example:</strong></p>
+
+    <div class="code-block"><span class="c">curl</span> https://api.lxg2it.com/v1/messages \\
+  -H <span class="s">"Authorization: Bearer $KEY"</span> \\
+  -H <span class="s">"Content-Type: application/json"</span> \\
+  -H <span class="s">"anthropic-version: 2023-06-01"</span> \\
+  -d <span class="s">'{
+  "model": "claude-opus-4-8",
+  "max_tokens": 1024,
+  "messages": [{"role": "user", "content": "Hello!"}]
+}'</span></div>
+
+    <p>
+      <strong>Supported features:</strong> streaming (SSE), tool use, thinking blocks,
+      interleaved reasoning, extended thinking, stop sequences, temperature, top_p, top_k.
+      <strong>Model pinning semantics:</strong> when you pin a specific model, failed requests
+      return an error instead of silently falling back to a different model.
+    </p>
 
     <p><strong>Response headers:</strong></p>
     <table class="param-table">

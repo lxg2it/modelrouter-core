@@ -206,7 +206,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'bedrock',   model: 'nvidia.nemotron-nano-9b-v2',  quality: 0.45, inputPer1M: 0.06,  outputPer1M: 0.23,  latencyMs: 250,  maxContextTokens: 128_000,                         priceSource: 'manual' },
       { provider: 'bedrock',   model: 'zai.glm-4.7-flash',          quality: 0.51, inputPer1M: 0.070, outputPer1M: 0.400, latencyMs: 350,  maxContextTokens: 202_752,                         priceSource: 'manual' },
       { provider: 'bedrock',   model: 'qwen.qwen3-32b-v1:0',        quality: 0.48, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 300,  maxContextTokens: 131_072,                         priceSource: 'manual' },
-      { provider: 'bedrock',   model: 'openai.gpt-oss-120b-1:0',    quality: 0.50, inputPer1M: 0.15,  outputPer1M: 0.60,  latencyMs: 450,  maxContextTokens: 128_000,                         priceSource: 'litellm' },
+      { provider: 'bedrock',   model: 'openai.gpt-oss-120b-1:0',    quality: 0.50, inputPer1M: 0.15,  outputPer1M: 0.60,  latencyMs: 450,  maxContextTokens: 128_000,                         priceSource: 'litellm', dedupKey: 'gpt-oss-120b' },
       // Free-provider models — hosted by providers with permanent free tiers.
       // isFreeProvider: true means these are routed to zero-balance users and are never billed.
       // Quality/latency estimates are approximate; inputPer1M/outputPer1M are 0 (free to us).
@@ -214,8 +214,8 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'groq',     model: 'llama-3.3-70b-versatile',   quality: 0.63, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 200,  maxContextTokens: 128_000,   isFreeProvider: true,  priceSource: 'manual' },
       { provider: 'groq',     model: 'meta-llama/llama-4-scout-17b-16e-instruct', quality: 0.58, inputPer1M: 0, outputPer1M: 0, latencyMs: 180, maxContextTokens: 131_072, isFreeProvider: true, priceSource: 'manual' },
       // Cerebras: permanent free tier, 30 RPM / 14,400 RPD. Wafer-scale silicon — fastest inference.
-      { provider: 'cerebras', model: 'llama3.1-8b',               quality: 0.40, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 100,  maxContextTokens: 8_192,     isFreeProvider: true,  priceSource: 'manual' },
-      { provider: 'cerebras', model: 'qwen-3-235b-a22b-instruct-2507', quality: 0.83, inputPer1M: 0, outputPer1M: 0,    latencyMs: 200,  maxContextTokens: 131_072,   isFreeProvider: true,  priceSource: 'manual', dedupKey: 'qwen3-235b' },
+      { provider: 'cerebras', model: 'gpt-oss-120b',             quality: 0.50, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 150,  maxContextTokens: 128_000,   isFreeProvider: true,  priceSource: 'manual', dedupKey: 'gpt-oss-120b' },
+      { provider: 'cerebras', model: 'zai-glm-4.7',               quality: 0.90, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 200,  maxContextTokens: 202_752,   isFreeProvider: true,  priceSource: 'manual', dedupKey: 'glm-4.7' },
     ],
     description: 'Fast and cheap. Good for classification, extraction, simple generation.',
   },
@@ -230,7 +230,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'anthropic', model: 'claude-sonnet-4-6',   quality: 0.85, inputPer1M: 3.00,  outputPer1M: 15.00, latencyMs: 650,  maxContextTokens: 1_000_000,                        priceSource: 'litellm' },
       { provider: 'grok',      model: 'grok-3-beta',         quality: 0.74, inputPer1M: 3.00,  outputPer1M: 15.00, latencyMs: 580,  maxContextTokens: 131_072,                          priceSource: 'litellm' },
       // Bedrock standard models — manual: verify prices at https://aws.amazon.com/bedrock/pricing/ (US West Oregon)
-      { provider: 'bedrock',   model: 'zai.glm-4.7',                quality: 0.90, inputPer1M: 0.60, outputPer1M: 2.20,  latencyMs: 550,  maxContextTokens: 202_752,                         priceSource: 'manual'  },
+      { provider: 'bedrock',   model: 'zai.glm-4.7',                quality: 0.90, inputPer1M: 0.60, outputPer1M: 2.20,  latencyMs: 550,  maxContextTokens: 202_752,                         priceSource: 'manual',  dedupKey: 'glm-4.7' },
       { provider: 'bedrock',   model: 'deepseek.v3.2',              quality: 0.83, inputPer1M: 0.62, outputPer1M: 1.85,  latencyMs: 600,  maxContextTokens: 128_000,                         priceSource: 'litellm' },
       { provider: 'bedrock',   model: 'qwen.qwen3-235b-a22b-2507-v1:0', quality: 0.83, inputPer1M: 0.23, outputPer1M: 0.91,  latencyMs: 500,  maxContextTokens: 131_072,                     priceSource: 'manual', dedupKey: 'qwen3-235b' },
       { provider: 'bedrock',   model: 'mistral.mistral-large-3-675b-instruct', quality: 0.80, inputPer1M: 0.52, outputPer1M: 1.55, latencyMs: 600, maxContextTokens: 131_072,              priceSource: 'litellm' },
@@ -452,7 +452,7 @@ export const PROVIDER_META: Record<ProviderName, { label: string; models: string
   bedrock:   { label: 'AWS Bedrock',       models: 'Llama 4, Nemotron, GLM, DeepSeek, Qwen, Kimi, Mistral, MiniMax' },
   vertex:    { label: 'Google Vertex AI',  models: 'Nemotron 3 Super, Meta Llama, third-party models' },
   groq:      { label: 'Groq',             models: 'Llama (free models)' },
-  cerebras:  { label: 'Cerebras',         models: 'Llama (free models)' },
+  cerebras:  { label: 'Cerebras',         models: 'GPT-OSS 120B, GLM-4.7 (free models)' },
 };
 
 

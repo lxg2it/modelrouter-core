@@ -111,12 +111,13 @@ export class KeyStore {
      * Returns the new balance in cents.
      */
     addCredits(keyId, amountCents) {
+        const amount = Math.round(amountCents);
         const result = this.db.prepare(`
       UPDATE api_keys
       SET credit_balance_cents = credit_balance_cents + ?
       WHERE id = ? AND active = 1
       RETURNING credit_balance_cents
-    `).get(amountCents, keyId);
+    `).get(amount, keyId);
         if (!result)
             throw new Error(`Key not found or inactive: ${keyId}`);
         return result.credit_balance_cents;
@@ -129,7 +130,8 @@ export class KeyStore {
      * No-op (returns current balance) if amountCents <= 0 or key has no Stripe billing.
      */
     deductCredits(keyId, amountCents) {
-        if (amountCents <= 0) {
+        const amount = Math.round(amountCents);
+        if (amount <= 0) {
             const row = this.db.prepare(`SELECT credit_balance_cents FROM api_keys WHERE id = ?`).get(keyId);
             return row?.credit_balance_cents ?? 0;
         }
@@ -138,7 +140,7 @@ export class KeyStore {
       SET credit_balance_cents = credit_balance_cents - ?
       WHERE id = ? AND active = 1
       RETURNING credit_balance_cents
-    `).get(amountCents, keyId);
+    `).get(amount, keyId);
         if (!result)
             throw new Error(`Key not found or inactive: ${keyId}`);
         return result.credit_balance_cents;

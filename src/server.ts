@@ -43,6 +43,8 @@ import { createChangelogRouter } from './api/changelog.js';
 import { createStatusRouter } from './api/status.js';
 import { createAdminRouter } from './api/admin.js';
 import { createDocsRouter } from './api/docs.js';
+import { createMessagesRouter, type MessagesDeps } from './api/messages.js';
+import { createNativeAnthropicClients } from './providers/anthropic-native.js';
 import { createTryRouter, type TryRouterDeps } from './api/try.js';
 import { ResendEmailSender, ConsoleEmailSender } from './auth/email.js';
 import type { EmailSender } from './auth/email.js';
@@ -52,6 +54,7 @@ import { ActivationNudgeScheduler } from './activation-nudge-scheduler.js';
 import { RateLimiter } from './ratelimit/token-bucket.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ProviderName, Tier } from './types.js';
+import type { NativeAnthropicClient } from './providers/anthropic-native.js';
 
 export interface AppContext {
   config: Config;
@@ -139,6 +142,13 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   }
 
   // Routing engine
+
+  // Native Anthropic clients (for /v1/messages passthrough)
+  const nativeClients = createNativeAnthropicClients({
+    anthropicApiKey: config.providers.anthropic?.apiKey,
+    grokApiKey: config.providers.grok?.apiKey,
+  });
+
   const availableProviders = new Set<ProviderName>(providers.keys());
   const router = new RoutingEngine({
     availableProviders,
@@ -293,6 +303,24 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   });
   app.use('/v1/completions', apiAuth);
   app.route('/v1/completions', completionsRouter);
+
+  // Anthropic Messages API compatibility endpoint
+  const messagesRouter = createMessagesRouter({
+    router,
+    providers,
+    nativeClients,
+    logger: usageLogger,
+    billing,
+    userStore: stripeService ? userStore : undefined,
+    keyStore: stripeService ? keyStore : undefined,
+    stripe: stripeService,
+    billingTxStore: stripeService ? billingTxStore : undefined,
+    maxDailySpendCents: config.maxDailySpendCents,
+    emailSender: emailSender ?? undefined,
+  });
+  app.use('/v1/messages/*', apiAuth);
+  app.use('/v1/messages', apiAuth);
+  app.route('/v1/messages', messagesRouter);
 
   app.use('/v1/embeddings/*', apiAuth);
 

@@ -329,4 +329,207 @@ export interface UsageRecord {
     /** Present when auto-routing was used. JSON-serialised signal breakdown. */
     autoSignals?: string;
 }
+export interface AnthropicMessagesRequest {
+    model: string;
+    messages: AnthropicMessageParam[];
+    system?: string | AnthropicTextBlockParam[];
+    max_tokens: number;
+    temperature?: number;
+    top_p?: number;
+    top_k?: number;
+    stop_sequences?: string[];
+    stream?: boolean;
+    tools?: AnthropicToolParam[];
+    tool_choice?: AnthropicToolChoice;
+    thinking?: AnthropicThinkingConfig;
+    metadata?: Record<string, string>;
+}
+export interface AnthropicThinkingConfig {
+    type: 'enabled';
+    budget_tokens: number;
+}
+export type AnthropicToolChoice = {
+    type: 'auto';
+} | {
+    type: 'any';
+} | {
+    type: 'tool';
+    name: string;
+} | {
+    type: 'none';
+};
+export interface AnthropicToolParam {
+    name: string;
+    description?: string;
+    input_schema: Record<string, unknown>;
+}
+export interface AnthropicMessageParam {
+    role: 'user' | 'assistant';
+    content: string | AnthropicContentBlockParam[];
+}
+export type AnthropicContentBlockParam = AnthropicTextBlockParam | AnthropicImageBlockParam | AnthropicDocumentBlockParam | AnthropicToolUseBlockParam | AnthropicToolResultBlockParam;
+export interface AnthropicTextBlockParam {
+    type: 'text';
+    text: string;
+    cache_control?: {
+        type: 'ephemeral';
+    };
+    citations?: unknown[];
+}
+export interface AnthropicImageBlockParam {
+    type: 'image';
+    source: {
+        type: 'base64';
+        media_type: string;
+        data: string;
+    };
+    cache_control?: {
+        type: 'ephemeral';
+    };
+}
+export interface AnthropicDocumentBlockParam {
+    type: 'document';
+    source: {
+        type: 'base64' | 'text' | 'content';
+        media_type?: string;
+        data?: string;
+        content?: string;
+    };
+    title?: string;
+    context?: string;
+    cache_control?: {
+        type: 'ephemeral';
+    };
+}
+export interface AnthropicToolUseBlockParam {
+    type: 'tool_use';
+    id: string;
+    name: string;
+    input: Record<string, unknown>;
+    cache_control?: {
+        type: 'ephemeral';
+    };
+}
+export interface AnthropicToolResultBlockParam {
+    type: 'tool_result';
+    tool_use_id: string;
+    content: string | AnthropicTextBlockParam[];
+    is_error?: boolean;
+    cache_control?: {
+        type: 'ephemeral';
+    };
+}
+export interface AnthropicMessagesResponse {
+    id: string;
+    type: 'message';
+    role: 'assistant';
+    content: AnthropicContentBlock[];
+    model: string;
+    stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use' | null;
+    stop_sequence: string | null;
+    usage: AnthropicUsage;
+}
+export interface AnthropicUsage {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+}
+export type AnthropicContentBlock = AnthropicTextBlock | AnthropicThinkingBlock | AnthropicToolUseBlock | AnthropicImageBlock | AnthropicDocumentBlock;
+export interface AnthropicTextBlock {
+    type: 'text';
+    text: string;
+    citations?: unknown[];
+}
+export interface AnthropicThinkingBlock {
+    type: 'thinking';
+    thinking: string;
+    signature: string;
+}
+export interface AnthropicToolUseBlock {
+    type: 'tool_use';
+    id: string;
+    name: string;
+    input: Record<string, unknown>;
+}
+export interface AnthropicImageBlock {
+    type: 'image';
+    source: {
+        type: 'base64';
+        media_type: string;
+        data: string;
+    };
+}
+export interface AnthropicDocumentBlock {
+    type: 'document';
+    source: {
+        type: 'base64' | 'text';
+        media_type?: string;
+        data: string;
+    };
+    title?: string;
+}
+export type AnthropicSSEEvent = AnthropicMessageStartEvent | AnthropicContentBlockStartEvent | AnthropicContentBlockDeltaEvent | AnthropicContentBlockStopEvent | AnthropicMessageDeltaEvent | AnthropicMessageStopEvent | AnthropicPingEvent | AnthropicErrorEvent;
+export interface AnthropicMessageStartEvent {
+    type: 'message_start';
+    message: {
+        id: string;
+        type: 'message';
+        role: 'assistant';
+        model: string;
+        content: [];
+        usage: AnthropicUsage;
+        stop_reason: null;
+        stop_sequence: null;
+    };
+}
+export interface AnthropicContentBlockStartEvent {
+    type: 'content_block_start';
+    index: number;
+    content_block: AnthropicContentBlock;
+}
+export interface AnthropicContentBlockDeltaEvent {
+    type: 'content_block_delta';
+    index: number;
+    delta: AnthropicTextDelta | AnthropicInputJsonDelta | AnthropicThinkingDelta;
+}
+export interface AnthropicContentBlockStopEvent {
+    type: 'content_block_stop';
+    index: number;
+}
+export interface AnthropicMessageDeltaEvent {
+    type: 'message_delta';
+    delta: {
+        stop_reason: 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use' | null;
+        stop_sequence: string | null;
+    };
+    usage: {
+        output_tokens: number;
+    };
+}
+export interface AnthropicMessageStopEvent {
+    type: 'message_stop';
+}
+export interface AnthropicPingEvent {
+    type: 'ping';
+}
+export interface AnthropicErrorEvent {
+    type: 'error';
+    error: {
+        type: string;
+        message: string;
+    };
+}
+export interface AnthropicTextDelta {
+    type: 'text_delta';
+    text: string;
+}
+export interface AnthropicInputJsonDelta {
+    type: 'input_json_delta';
+    partial_json: string;
+}
+export interface AnthropicThinkingDelta {
+    type: 'thinking_delta';
+    thinking: string;
+}
 //# sourceMappingURL=types.d.ts.map

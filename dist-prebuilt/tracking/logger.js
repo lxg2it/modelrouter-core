@@ -44,7 +44,7 @@ export class UsageLogger {
     static calculateCost(promptTokens, completionTokens, inputPer1M, outputPer1M) {
         const inputCost = (promptTokens / 1_000_000) * inputPer1M * 100; // Convert $ to cents
         const outputCost = (completionTokens / 1_000_000) * outputPer1M * 100;
-        return inputCost + outputCost;
+        return Math.round(inputCost + outputCost);
     }
 }
 //# sourceMappingURL=logger.js.map

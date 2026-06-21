@@ -318,6 +318,46 @@ async function handleNonStreaming(
 
     return c.json(result.response);
   } catch (err) {
+    // ── Pinned model: no fallback ───────────────────────────
+    // When the user explicitly pinned a specific model ID (not a tier alias,
+    // not 'auto'), silently falling back to a different model is worse than
+    // returning a clear error. The user chose this model for a reason.
+    if (decision.pinned) {
+      deps.router.recordFailure(decision.provider, decision.model);
+      fullRefundReservation(deps, reservedCents, user);
+      console.error(`[chat] Pinned model failed (${decision.provider}/${decision.model}) — no fallback:`, err);
+
+      deps.logger.log({
+        keyId,
+        provider: decision.provider,
+        model: decision.model,
+        tier: decision.tier,
+        promptTokens: 0,
+        completionTokens: 0,
+        costCents: 0,
+        latencyMs: Date.now() - startTime,
+        streaming: false,
+        statusCode: 502,
+        ...autoLogFields(decision),
+      });
+
+      telemetrySpan?.end({
+        statusCode: 502,
+        promptTokens: 0,
+        completionTokens: 0,
+        costCents: 0,
+        latencyMs: Date.now() - startTime,
+        streaming: false,
+      });
+
+      return c.json({
+        error: {
+          message: `Provider call failed for '${decision.model}'. Try again or choose a different model.`,
+          type: 'server_error',
+        },
+      }, 502);
+    }
+
     const primaryIsRateLimit = err instanceof RateLimitError;
     const primaryIsContextExceeded = isContextLengthError(err);
 
@@ -566,6 +606,42 @@ async function handleStreaming(
   // If primary failed, iterate through all fallback candidates until one succeeds.
   // Token-aware fallback: when context is exceeded, prefer models with larger context windows.
   if (!completion) {
+    // ── Pinned model: no fallback ───────────────────────────
+    if (decision.pinned) {
+      fullRefundReservation(deps, reservedCents, user);
+      console.error(`[chat/stream] Pinned model failed (${decision.provider}/${decision.model}) — no fallback`);
+
+      telemetrySpan?.end({
+        statusCode: 502,
+        promptTokens: 0,
+        completionTokens: 0,
+        costCents: 0,
+        latencyMs: Date.now() - startTime,
+        streaming: true,
+      });
+
+      deps.logger.log({
+        keyId,
+        provider: decision.provider,
+        model: decision.model,
+        tier: decision.tier,
+        promptTokens: 0,
+        completionTokens: 0,
+        costCents: 0,
+        latencyMs: Date.now() - startTime,
+        streaming: true,
+        statusCode: 502,
+        ...autoLogFields(decision),
+      });
+
+      return c.json({
+        error: {
+          message: `Provider call failed for '${decision.model}'. Try again or choose a different model.`,
+          type: 'server_error',
+        },
+      }, 502);
+    }
+
     const streamFailedSet = new Set([`${decision.provider}/${decision.model}`]);
     const streamFallbackCandidates = streamPrimaryIsContextExceeded
       ? deps.router.selectContextFallbackCandidates(streamFailedSet, request.messages, blockedProviders, freeProvidersOnly)

@@ -1,0 +1,1 @@
+{"version":3,"file":"anthropic-to-openai.d.ts","sourceRoot":"","sources":["../../src/translate/anthropic-to-openai.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;GAaG;AAEH,OAAO,KAAK,EACV,wBAAwB,EAKxB,qBAAqB,EAItB,MAAM,aAAa,CAAC;AAErB;;GAEG;AACH,wBAAgB,0BAA0B,CACxC,OAAO,EAAE,wBAAwB,GAChC,qBAAqB,CAmBvB"}

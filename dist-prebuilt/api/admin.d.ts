@@ -42,6 +42,11 @@ export interface AdminStats {
             count: number;
         }[];
     };
+    uiRequests: {
+        total: number;
+        last30Days: number;
+        daily: DayStat[];
+    };
     revenue: {
         totalCents: number;
         last30DaysCents: number;

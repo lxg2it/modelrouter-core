@@ -21,7 +21,9 @@ export class OpenAIAdapter implements ProviderAdapter {
 
   constructor(apiKey?: string, baseURL?: string) {
     if (apiKey) {
-      this.client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+      // Pass native fetch to bypass node-fetch v2's broken gzip decompression on Node 22+
+      // (node-fetch 2.7.0 triggers ERR_STREAM_PREMATURE_CLOSE in Docker on small instances)
+      this.client = new OpenAI({ apiKey, fetch: globalThis.fetch as any, ...(baseURL ? { baseURL } : {}) });
     }
   }
 

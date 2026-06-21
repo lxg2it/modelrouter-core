@@ -486,13 +486,14 @@ export class UserStore {
      * Returns the new balance in cents.
      */
     addCredits(userId, amountCents) {
+        const amount = Math.round(amountCents);
         const result = this.db.prepare(`
       UPDATE users
       SET credit_balance_cents = credit_balance_cents + ?,
           last_credit_added_at = datetime('now')
       WHERE id = ?
       RETURNING credit_balance_cents
-    `).get(amountCents, userId);
+    `).get(amount, userId);
         if (!result)
             throw new Error(`User not found: ${userId}`);
         return result.credit_balance_cents;
@@ -543,7 +544,8 @@ export class UserStore {
      * No-op if amountCents <= 0.
      */
     deductCredits(userId, amountCents) {
-        if (amountCents <= 0) {
+        const amount = Math.round(amountCents);
+        if (amount <= 0) {
             const row = this.db.prepare(`SELECT credit_balance_cents FROM users WHERE id = ?`).get(userId);
             return row?.credit_balance_cents ?? 0;
         }
@@ -568,13 +570,14 @@ export class UserStore {
      * once the actual cost is known (settle the reservation-to-actual cycle).
      */
     tryReserveCredits(userId, amountCents) {
-        if (amountCents <= 0)
+        const amount = Math.round(amountCents);
+        if (amount <= 0)
             return true;
         const result = this.db.prepare(`
       UPDATE users
       SET credit_balance_cents = credit_balance_cents - ?
       WHERE id = ? AND credit_balance_cents >= ?
-    `).run(amountCents, userId, amountCents);
+    `).run(amount, userId, amount);
         return result.changes > 0;
     }
     /**
@@ -600,13 +603,14 @@ export class UserStore {
      * No-op if refundCents <= 0.
      */
     refundCredits(userId, refundCents) {
-        if (refundCents <= 0)
+        const amount = Math.round(refundCents);
+        if (amount <= 0)
             return;
         this.db.prepare(`
       UPDATE users
       SET credit_balance_cents = credit_balance_cents + ?
       WHERE id = ?
-    `).run(refundCents, userId);
+    `).run(amount, userId);
     }
     // ─── Private helpers ──────────────────────────────────
     createSession(userId) {
