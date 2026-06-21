@@ -18,6 +18,7 @@ import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
 import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-node';
 import { resourceFromAttributes } from '@opentelemetry/resources';
+import { HostMetrics } from '@opentelemetry/host-metrics';
 import {
   ATTR_SERVICE_NAME,
   ATTR_SERVICE_VERSION,
@@ -28,6 +29,7 @@ const SERVICE_NAME = 'model-router';
 const SERVICE_VERSION = '0.1.0';
 
 let sdk: NodeSDK | null = null;
+let hostMetrics: HostMetrics | null = null;
 let enabled = false;
 
 /**
@@ -62,9 +64,17 @@ export function initTelemetry(): boolean {
   });
 
   sdk.start();
+
+  // ── Host metrics: CPU, memory, network, disk ──────────────
+  hostMetrics = new HostMetrics({
+    name: `${SERVICE_NAME}-host`,
+    meterProvider: metrics.getMeterProvider(),
+  });
+  hostMetrics.start();
+
   enabled = true;
 
-  console.log(`[Telemetry] OpenTelemetry enabled → ${endpoint}`);
+  console.log(`[Telemetry] OpenTelemetry enabled → ${endpoint} (traces + metrics + host)`);
   return true;
 }
 
