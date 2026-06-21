@@ -20,6 +20,50 @@ import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../co
 import type { ApiKey, User, ChatCompletionRequest, ProviderName } from '../types.js';
 import { RateLimitError, BadRequestError } from 'openai';
 import { getHeader } from 'openai/core';
+
+/**
+ * Extract upstream error details for persistence in usage_log.
+ *
+ * Captures the provider's HTTP status code, response headers, and error body
+ * so failed requests can be diagnosed without needing container logs.
+ *
+ * Returns { errorBody, errorHeaders } suitable for UsageRecord.
+ * errorBody is truncated to 4KB to prevent unbounded log bloat.
+ */
+function extractErrorDetail(err: unknown): { errorBody?: string; errorHeaders?: string } {
+  const raw: Record<string, unknown> = {};
+
+  // Capture the error message (available on all Error instances)
+  const message = err instanceof Error ? err.message : String(err);
+  raw.message = message;
+
+  // Capture upstream HTTP status if present (OpenAI SDK errors)
+  const status = (err as Record<string, unknown>).status;
+  if (status !== undefined) {
+    raw.upstream_status = status;
+  }
+
+  // Capture error code (e.g. 'context_length_exceeded', 'rate_limit_exceeded')
+  const code = (err as Record<string, unknown>).code;
+  if (code !== undefined) {
+    raw.code = code;
+  }
+
+  // Capture type information for diagnostics
+  if (err instanceof RateLimitError) raw.type = 'rate_limit';
+  else if (err instanceof BadRequestError) raw.type = 'bad_request';
+  else if (err instanceof Error) raw.type = err.constructor.name;
+
+  const errorBody = JSON.stringify(raw).slice(0, 4096); // 4KB max
+
+  // Capture response headers (available on OpenAI SDK errors)
+  const headers = (err as Record<string, unknown>).headers;
+  const errorHeaders = headers && typeof headers === 'object'
+    ? JSON.stringify(headers).slice(0, 4096)
+    : undefined;
+
+  return { errorBody, errorHeaders };
+}
 import { ContextLengthExceededError } from '../providers/bedrock.js';
 import type { StripeService } from '../billing/stripe.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
@@ -326,6 +370,7 @@ async function handleNonStreaming(
       deps.router.recordFailure(decision.provider, decision.model);
       fullRefundReservation(deps, reservedCents, user);
       console.error(`[chat] Pinned model failed (${decision.provider}/${decision.model}) — no fallback:`, err);
+      const { errorBody, errorHeaders } = extractErrorDetail(err);
 
       deps.logger.log({
         keyId,
@@ -338,6 +383,8 @@ async function handleNonStreaming(
         latencyMs: Date.now() - startTime,
         streaming: false,
         statusCode: 502,
+        errorBody,
+        errorHeaders,
         ...autoLogFields(decision),
       });
 
@@ -360,6 +407,9 @@ async function handleNonStreaming(
 
     const primaryIsRateLimit = err instanceof RateLimitError;
     const primaryIsContextExceeded = isContextLengthError(err);
+
+    // Track the last meaningful provider error for usage_log (skip rate limits and context exceeded)
+    let lastProviderError: unknown = primaryIsRateLimit || primaryIsContextExceeded ? undefined : err;
 
     if (primaryIsRateLimit) {
       console.warn(`[chat] Primary provider rate limited (${decision.provider}/${decision.model}): 429`);
@@ -467,6 +517,7 @@ async function handleNonStreaming(
           console.error(`[chat] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
           deps.router.recordFailure(fallback.provider, fallback.model);
           allRateLimited = false;
+          lastProviderError = fallbackErr;
         }
         failedSet.add(`${fallback.provider}/${fallback.model}`);
         // Continue to next candidate
@@ -485,6 +536,7 @@ async function handleNonStreaming(
     const finalStatus = allRateLimited && !fallbackSucceeded ? 429 : 502;
 
     // All providers failed
+    const { errorBody: allFailedBody, errorHeaders: allFailedHeaders } = extractErrorDetail(lastProviderError ?? err);
     deps.logger.log({
       keyId,
       provider: decision.provider,
@@ -496,6 +548,8 @@ async function handleNonStreaming(
       latencyMs: Date.now() - startTime,
       streaming: false,
       statusCode: finalStatus,
+      errorBody: allFailedBody,
+      errorHeaders: allFailedHeaders,
       ...autoLogFields(decision),
     });
 
@@ -575,6 +629,7 @@ async function handleStreaming(
 
   let completion: StreamingCompletion | null = null;
   let activeDecision: RouteDecision = decision;
+  let lastStreamError: unknown;  // Track the last meaningful error for usage_log
 
   // Try primary provider
   let streamAllRateLimited = false;
@@ -599,6 +654,7 @@ async function handleStreaming(
         console.error(`[chat/stream] Primary provider failed (${decision.provider}/${decision.model}):`, primaryErr);
         deps.router.recordFailure(decision.provider, decision.model);
         streamAllRateLimited = false;
+        lastStreamError = primaryErr;
       }
     }
   }
@@ -620,6 +676,7 @@ async function handleStreaming(
         streaming: true,
       });
 
+      const { errorBody: streamPinnedBody, errorHeaders: streamPinnedHeaders } = extractErrorDetail(lastStreamError);
       deps.logger.log({
         keyId,
         provider: decision.provider,
@@ -631,6 +688,8 @@ async function handleStreaming(
         latencyMs: Date.now() - startTime,
         streaming: true,
         statusCode: 502,
+        errorBody: streamPinnedBody,
+        errorHeaders: streamPinnedHeaders,
         ...autoLogFields(decision),
       });
 
@@ -670,6 +729,7 @@ async function handleStreaming(
           console.error(`[chat/stream] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
           deps.router.recordFailure(fallback.provider, fallback.model);
           streamAllRateLimited = false;
+          lastStreamError = fallbackErr;
         }
         streamFailedSet.add(`${fallback.provider}/${fallback.model}`);
         // Continue to next candidate
@@ -689,6 +749,7 @@ async function handleStreaming(
       latencyMs: Date.now() - startTime,
       streaming: true,
     });
+    const { errorBody: streamAllFailedBody, errorHeaders: streamAllFailedHeaders } = extractErrorDetail(lastStreamError);
     deps.logger.log({
       keyId,
       provider: decision.provider,
@@ -700,6 +761,8 @@ async function handleStreaming(
       latencyMs: Date.now() - startTime,
       streaming: true,
       statusCode: streamFinalStatus,
+      errorBody: streamAllFailedBody,
+      errorHeaders: streamAllFailedHeaders,
       ...autoLogFields(activeDecision),
     });
     if (streamFinalStatus === 429) {
@@ -792,7 +855,7 @@ async function handleStreaming(
           streaming: true,
           ...(activeDecision !== decision ? { failoverFrom: decision.provider } : {}),
         });
-      } catch {
+      } catch (finalizeErr) {
         // finalize() failed — we don't know actual cost, refund the full reservation
         fullRefundReservation(deps, reservedCents, user);
         telemetrySpan?.end({
@@ -803,6 +866,7 @@ async function handleStreaming(
           latencyMs: Date.now() - startTime,
           streaming: true,
         });
+        const { errorBody: finalizeBody, errorHeaders: finalizeHeaders } = extractErrorDetail(finalizeErr);
         deps.logger.log({
           keyId,
           provider: activeDecision.provider,
@@ -814,6 +878,8 @@ async function handleStreaming(
           latencyMs: Date.now() - startTime,
           streaming: true,
           statusCode: 200,
+          errorBody: finalizeBody,
+          errorHeaders: finalizeHeaders,
       ...autoLogFields(activeDecision),
         });
       }
@@ -835,6 +901,7 @@ async function handleStreaming(
       await stream.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
       await stream.write('data: [DONE]\n\n');
 
+      const { errorBody: midStreamBody, errorHeaders: midStreamHeaders } = extractErrorDetail(err);
       deps.logger.log({
         keyId,
         provider: activeDecision.provider,
@@ -846,6 +913,8 @@ async function handleStreaming(
         latencyMs: Date.now() - startTime,
         streaming: true,
         statusCode: 502,
+        errorBody: midStreamBody,
+        errorHeaders: midStreamHeaders,
       ...autoLogFields(activeDecision),
       });
     }

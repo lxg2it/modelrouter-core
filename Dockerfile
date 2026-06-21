@@ -41,6 +41,9 @@ ENV DEFAULT_OUTPUT_RATIO=0.33
 RUN mkdir -p /data
 ENV DB_PATH=/data/modelrouter.db
 
+# Log directory for persistent logs
+RUN mkdir -p /var/log/modelrouter
+
 EXPOSE 3003
 
 # Health check

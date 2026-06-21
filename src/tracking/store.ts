@@ -23,8 +23,10 @@ export class UsageStore {
         key_id, provider, model, tier,
         prompt_tokens, completion_tokens, total_tokens,
         cost_cents, latency_ms, streaming, status_code,
-        auto_score, auto_tier, auto_signals, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        auto_score, auto_tier, auto_signals,
+        error_body, error_headers,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `);
   }
 
@@ -43,6 +45,8 @@ export class UsageStore {
         latency_ms INTEGER NOT NULL DEFAULT 0,
         streaming INTEGER NOT NULL DEFAULT 0,
         status_code INTEGER NOT NULL DEFAULT 200,
+        error_body TEXT,
+        error_headers TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
 
@@ -63,6 +67,19 @@ export class UsageStore {
         this.db.exec(`ALTER TABLE usage_log ADD COLUMN ${col} ${type}`);
       } catch {
         // Column already exists — expected on non-first run
+      }
+    }
+
+    // ── Migration: add error detail columns ──
+    const errorColumns = [
+      ['error_body', 'TEXT'],
+      ['error_headers', 'TEXT'],
+    ] as const;
+    for (const [col, type] of errorColumns) {
+      try {
+        this.db.exec(`ALTER TABLE usage_log ADD COLUMN ${col} ${type}`);
+      } catch {
+        // Column already exists
       }
     }
   }
@@ -86,6 +103,8 @@ export class UsageStore {
       usage.autoScore ?? null,
       usage.autoTier ?? null,
       usage.autoSignals ?? null,
+      usage.errorBody ?? null,
+      usage.errorHeaders ?? null,
     );
   }
 

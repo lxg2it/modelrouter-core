@@ -15,7 +15,13 @@ services:
       - DB_PATH=/data/modelrouter.db
     volumes:
       - modelrouter-data:/data
+      - modelrouter-logs:/var/log/modelrouter
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:3003/health"]
       interval: 30s
@@ -27,3 +33,5 @@ volumes:
   modelrouter-data:
     external: true
     name: modelrouter-data
+  modelrouter-logs:
+    name: modelrouter-logs

@@ -21,6 +21,7 @@ import type { SessionEnv } from '../auth/middleware.js';
 import type { UserStore } from '../auth/users.js';
 import type { StripeService } from '../billing/stripe.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
+import { recordBillingEvent } from '../telemetry-instruments.js';
 
 // Minimum top-up: $5.00
 const MIN_TOP_UP_CENTS = 500;
@@ -166,6 +167,13 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<SessionEnv> {
 
     const pm = await stripe.attachPaymentMethod(user.stripeCustomerId, paymentMethodId);
 
+    recordBillingEvent({
+      eventType: 'card_saved',
+      amountCents: 0,
+      status: 'succeeded',
+      source: 'manual',
+    });
+
     return c.json({
       success: true,
       paymentMethod: pm,
@@ -243,6 +251,13 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<SessionEnv> {
 
     const pm = await stripe.attachPaymentMethod(stripeCustomerId, body.paymentMethodId);
 
+    recordBillingEvent({
+      eventType: 'card_saved',
+      amountCents: 0,
+      status: 'succeeded',
+      source: 'manual',
+    });
+
     return c.json({
       success: true,
       paymentMethod: pm,
@@ -314,13 +329,21 @@ export function createBillingRouter(deps: BillingRouterDeps): Hono<SessionEnv> {
     }
 
     // Record transaction for billing history
+    const txStatus = result.status as 'succeeded' | 'requires_action' | 'failed';
     billingTxStore.record({
       userId: user.id,
       keyId: null,
       paymentIntentId: result.paymentIntentId,
       amountChargedCents: result.amountCents,
       creditsAddedCents: result.status === 'succeeded' ? creditsToAdd : 0,
-      status: result.status as 'succeeded' | 'requires_action' | 'failed',
+      status: txStatus,
+      source: 'manual',
+    });
+
+    recordBillingEvent({
+      eventType: 'top_up',
+      amountCents: result.amountCents,
+      status: txStatus,
       source: 'manual',
     });
 

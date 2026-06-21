@@ -25,6 +25,7 @@ import type { EmailSender } from '../auth/email.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
 import { isDisposableEmail } from '../auth/email-filter.js';
 import type { RateLimiter } from '../ratelimit/token-bucket.js';
+import { recordSignup, recordCodeRequest } from '../telemetry-instruments.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -91,7 +92,10 @@ export function createAuthRouter(deps: AuthRouterDeps): Hono {
       }, 400);
     }
 
+    const emailDomain = emailAddr.split('@')[1] ?? 'unknown';
+
     if (isDisposableEmail(emailAddr)) {
+      recordCodeRequest(emailDomain, false);
       return c.json({
         error: {
           message: 'Disposable email addresses are not accepted. Please use a permanent email address.',
@@ -100,6 +104,7 @@ export function createAuthRouter(deps: AuthRouterDeps): Hono {
       }, 400);
     }
 
+    recordCodeRequest(emailDomain, true);
     const code = userStore.requestLoginCode(emailAddr);
 
     // Send email asynchronously — don't let email failures block the response.
@@ -170,6 +175,8 @@ export function createAuthRouter(deps: AuthRouterDeps): Hono {
       },
     };
 
+    const emailDomain = emailAddr.split('@')[1] ?? 'unknown';
+
     // For new accounts, generate and return the first API key.
     // The full key is shown only once — the user must save it.
     if (isNewAccount) {
@@ -187,6 +194,7 @@ export function createAuthRouter(deps: AuthRouterDeps): Hono {
       };
 
       // Grant signup bonus credit if configured and daily cap not yet reached.
+      let bonusGranted = false;
       if (signupBonusCents > 0) {
         const capReached =
           signupBonusDailyLimitCents > 0 &&
@@ -204,8 +212,11 @@ export function createAuthRouter(deps: AuthRouterDeps): Hono {
             source: 'promotional',
           });
           (response.account as Record<string, unknown>).creditBalanceCents = newBalance;
+          bonusGranted = true;
         }
       }
+
+      recordSignup(emailDomain, bonusGranted, bonusGranted ? signupBonusCents : 0, false);
     }
 
     return c.json(response, isNewAccount ? 201 : 200);
