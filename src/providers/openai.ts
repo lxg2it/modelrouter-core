@@ -39,12 +39,15 @@ export class OpenAIAdapter implements ProviderAdapter {
     if (!this.client) throw new Error('OpenAI adapter not configured');
 
     const requestOptions = timeoutMs !== undefined ? { timeout: timeoutMs } : undefined;
+    const isOSeries = model.startsWith('o') && (model === 'o1' || model === 'o1-pro' || model === 'o3' || model.startsWith('o4'));
     const response = await this.client.chat.completions.create({
       model,
       messages: request.messages as OpenAI.ChatCompletionMessageParam[],
-      max_tokens: request.max_tokens,
-      temperature: request.temperature,
-      top_p: request.top_p,
+      ...(isOSeries
+        ? { max_completion_tokens: request.max_tokens ?? 4096 }
+        : { max_tokens: request.max_tokens }),
+      temperature: isOSeries ? undefined : request.temperature,
+      top_p: isOSeries ? undefined : request.top_p,
       stop: request.stop,
       tools: request.tools as OpenAI.ChatCompletionTool[] | undefined,
       tool_choice: request.tool_choice as OpenAI.ChatCompletionToolChoiceOption | undefined,
@@ -91,12 +94,15 @@ export class OpenAIAdapter implements ProviderAdapter {
     if (!this.client) throw new Error('OpenAI adapter not configured');
 
     const requestOptions = timeoutMs !== undefined ? { timeout: timeoutMs } : undefined;
+    const isOSeries = model.startsWith('o') && (model === 'o1' || model === 'o1-pro' || model === 'o3' || model.startsWith('o4'));
     const openaiStream = await this.client.chat.completions.create({
       model,
       messages: request.messages as OpenAI.ChatCompletionMessageParam[],
-      max_tokens: request.max_tokens,
-      temperature: request.temperature,
-      top_p: request.top_p,
+      ...(isOSeries
+        ? { max_completion_tokens: request.max_tokens ?? 4096 }
+        : { max_tokens: request.max_tokens }),
+      temperature: isOSeries ? undefined : request.temperature,
+      top_p: isOSeries ? undefined : request.top_p,
       stop: request.stop,
       tools: request.tools as OpenAI.ChatCompletionTool[] | undefined,
       tool_choice: request.tool_choice as OpenAI.ChatCompletionToolChoiceOption | undefined,

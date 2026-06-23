@@ -211,8 +211,8 @@ export const TIERS: Record<string, TierConfig> = {
       // isFreeProvider: true means these are routed to zero-balance users and are never billed.
       // Quality/latency estimates are approximate; inputPer1M/outputPer1M are 0 (free to us).
       // Groq: permanent free tier, 30 RPM / 14,400 RPD. Wafer-scale silicon — very fast inference.
-      { provider: 'groq',     model: 'llama-3.3-70b-versatile',   quality: 0.63, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 200,  maxContextTokens: 128_000,   isFreeProvider: true,  priceSource: 'manual' },
-      { provider: 'groq',     model: 'meta-llama/llama-4-scout-17b-16e-instruct', quality: 0.58, inputPer1M: 0, outputPer1M: 0, latencyMs: 180, maxContextTokens: 131_072, isFreeProvider: true, priceSource: 'manual' },
+      { provider: 'groq',     model: 'llama-3.3-70b-versatile',   quality: 0.63, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 200,  maxContextTokens: 128_000,   maxOutputTokens: 32768,  isFreeProvider: true,  priceSource: 'manual' },
+      { provider: 'groq',     model: 'meta-llama/llama-4-scout-17b-16e-instruct', quality: 0.58, inputPer1M: 0, outputPer1M: 0, latencyMs: 180, maxContextTokens: 131_072, maxOutputTokens: 8192, isFreeProvider: true, priceSource: 'manual' },
       // Cerebras: permanent free tier, 30 RPM / 14,400 RPD. Wafer-scale silicon — fastest inference.
       { provider: 'cerebras', model: 'gpt-oss-120b',             quality: 0.50, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 150,  maxContextTokens: 128_000,   isFreeProvider: true,  priceSource: 'manual', dedupKey: 'gpt-oss-120b' },
       { provider: 'cerebras', model: 'zai-glm-4.7',               quality: 0.90, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 200,  maxContextTokens: 202_752,   isFreeProvider: true,  priceSource: 'manual', dedupKey: 'glm-4.7' },

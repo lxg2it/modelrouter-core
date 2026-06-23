@@ -296,7 +296,8 @@ async function handleNonStreaming(
   try {
     const resolvedModelConfig = findModelConfig(decision.provider, decision.model, decision.tier);
     const resolvedApiTypeForCall = resolvedModelConfig?.apiType ?? 'chat';
-    const effectiveRequest = applyThinkingTokenFloor(request, decision);
+    const thinkingRequest = applyThinkingTokenFloor(request, decision);
+    const effectiveRequest = normalizeRequest(thinkingRequest, decision);
     const result = resolvedApiTypeForCall === 'responses' && adapter.completeResponses
       ? await adapter.completeResponses(decision.model, effectiveRequest, timeoutMs)
       : await adapter.complete(decision.model, effectiveRequest, timeoutMs);
@@ -427,9 +428,17 @@ async function handleNonStreaming(
     // Token-aware fallback: when context is exceeded, prefer models with larger context windows
     // (searched across all tiers). Otherwise use standard same-tier cost-optimised fallback.
     const failedSet = new Set([`${decision.provider}/${decision.model}`]);
-    const fallbackCandidates = primaryIsContextExceeded
+    const rawFallbackCandidates = primaryIsContextExceeded
       ? deps.router.selectContextFallbackCandidates(failedSet, request.messages, blockedProviders, freeProvidersOnly)
       : deps.router.selectFallbackCandidates(failedSet, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
+
+    // ── Filter Bedrock from fallback when request has tools ──────
+    // Bedrock (Anthropic-native format) is stricter about tool result blocks.
+    // Skipping Bedrock fallback avoids "Expected toolResult blocks" ValidationException.
+    const hasTools = requestHasTools(request);
+    const fallbackCandidates = hasTools
+      ? rawFallbackCandidates.filter((f) => f.provider !== 'bedrock')
+      : rawFallbackCandidates;
 
     // Track whether all failures were rate limits (to return 429 vs 502 at the end).
     // retryAfterSecs keeps the first non-null value seen across primary + fallbacks.
@@ -445,7 +454,8 @@ async function handleNonStreaming(
       if (!fallbackAdapter) continue;
 
       try {
-        const effectiveFallbackRequest = applyThinkingTokenFloor(request, fallback);
+        const thinkingFallbackRequest = applyThinkingTokenFloor(request, fallback);
+        const effectiveFallbackRequest = normalizeRequest(thinkingFallbackRequest, fallback);
         const result = await fallbackAdapter.complete(fallback.model, effectiveFallbackRequest, timeoutMs);
         deps.router.recordSuccess(fallback.provider, fallback.model);
 
@@ -640,7 +650,8 @@ async function handleStreaming(
   const primaryAdapter = deps.providers.get(decision.provider);
   if (primaryAdapter) {
     try {
-      const primaryRequest = applyThinkingTokenFloor(request, decision);
+      const thinkingPrimaryRequest = applyThinkingTokenFloor(request, decision);
+      const primaryRequest = normalizeRequest(thinkingPrimaryRequest, decision);
       completion = await primaryAdapter.stream(decision.model, primaryRequest, user?.fallbackTimeoutMs);
     } catch (primaryErr) {
       if (primaryErr instanceof RateLimitError) {
@@ -703,9 +714,14 @@ async function handleStreaming(
     }
 
     const streamFailedSet = new Set([`${decision.provider}/${decision.model}`]);
-    const streamFallbackCandidates = streamPrimaryIsContextExceeded
+    const rawStreamFallbackCandidates = streamPrimaryIsContextExceeded
       ? deps.router.selectContextFallbackCandidates(streamFailedSet, request.messages, blockedProviders, freeProvidersOnly)
       : deps.router.selectFallbackCandidates(streamFailedSet, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
+
+    const streamHasTools = requestHasTools(request);
+    const streamFallbackCandidates = streamHasTools
+      ? rawStreamFallbackCandidates.filter((f) => f.provider !== 'bedrock')
+      : rawStreamFallbackCandidates;
 
     for (const fallback of streamFallbackCandidates) {
       console.info(`[chat/stream] Attempting fallback: ${fallback.provider}/${fallback.model}`);
@@ -713,7 +729,8 @@ async function handleStreaming(
       if (!fallbackAdapter) continue;
 
       try {
-        const fallbackRequest = applyThinkingTokenFloor(request, fallback);
+        const thinkingFallbackStreamRequest = applyThinkingTokenFloor(request, fallback);
+        const fallbackRequest = normalizeRequest(thinkingFallbackStreamRequest, fallback);
         completion = await fallbackAdapter.stream(fallback.model, fallbackRequest, user?.fallbackTimeoutMs);
         activeDecision = fallback;
         break; // Success — stop trying further candidates
@@ -1154,6 +1171,45 @@ function applyThinkingTokenFloor(
     `Set max_tokens >= ${MIN_THINKING_OUTPUT_TOKENS} to silence this warning.`,
   );
   return { ...request, max_tokens: MIN_THINKING_OUTPUT_TOKENS };
+}
+
+/**
+ * Normalize request parameters for the target provider/model.
+ *
+ * Handles:
+ * 1. Capping max_tokens to the model's maxOutputTokens limit
+ *    (e.g. Groq llama-4-scout caps at 8192, llama-3.3-70b at 32768).
+ *    OpenAI o-series models handle this in the adapter (max_completion_tokens).
+ *
+ * Returns the (possibly modified) request. Only creates a new object when changes are needed.
+ */
+function normalizeRequest(
+  request: ChatCompletionRequest,
+  decision: RouteDecision,
+): ChatCompletionRequest {
+  const modelConfig = findModelConfig(decision.provider, decision.model, decision.tier);
+  const maxOutputTokens = modelConfig?.maxOutputTokens;
+
+  if (maxOutputTokens && request.max_tokens && request.max_tokens > maxOutputTokens) {
+    console.warn(
+      `[Router] max_tokens=${request.max_tokens} exceeds model limit ${maxOutputTokens} for ` +
+      `${decision.provider}/${decision.model}. Capping to ${maxOutputTokens}.`,
+    );
+    return { ...request, max_tokens: maxOutputTokens };
+  }
+
+  return request;
+}
+
+/**
+ * Check whether a request contains tool definitions that would break Bedrock fallback.
+ *
+ * Bedrock (Anthropic-native under the hood) is stricter about tool result blocks
+ * in conversation history. When the request has tools, skipping Bedrock fallback
+ * candidates avoids the "Expected toolResult blocks" ValidationException.
+ */
+function requestHasTools(request: ChatCompletionRequest): boolean {
+  return (request.tools?.length ?? 0) > 0;
 }
 
 
