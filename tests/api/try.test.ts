@@ -442,8 +442,9 @@ describe('POST /try/run — credit billing', () => {
     expect(refundCents).toBe(200); // Full standard ceiling returned
   });
 
-  it('does not reserve credits for free-provider models', async () => {
-    // Route to groq (isFreeProvider: true) by using a free-only engine + user with zero balance
+  // Free-provider models removed (862080d). This coverage was for groq/cerebras
+  // free models which have been retired. When free models return, restore this test.
+  it.skip('does not reserve credits for free-provider models', async () => {
     const groqEngine = new RoutingEngine({
       availableProviders: new Set(['groq']),
       defaultTier: 'economy',
@@ -460,7 +461,6 @@ describe('POST /try/run — credit billing', () => {
     const res = await runRequest(app, minimalRequest);
 
     expect(res.status).toBe(200);
-    // No credit reservation for a free provider
     expect(mockUserStore.tryReserveCredits).not.toHaveBeenCalled();
     expect(mockUserStore.refundCredits).not.toHaveBeenCalled();
   });
@@ -580,9 +580,12 @@ describe('POST /try/run — auto-recharge', () => {
 });
 
 // ─── Tests: POST /try/run — free-tier notification ───────────────────────────
+// Free-provider models removed (862080d). Notification logic still exists in
+// try.ts but is unreachable while no free models are in the catalog.
+// When free models return, remove .skip from these two tests.
 
 describe('POST /try/run — free-tier notification', () => {
-  it('sends a free-tier notification email when user qualifies', async () => {
+  it.skip('sends a free-tier notification email when user qualifies', async () => {
     const groqEngine = new RoutingEngine({
       availableProviders: new Set(['groq']),
       defaultTier: 'economy',
@@ -606,7 +609,7 @@ describe('POST /try/run — free-tier notification', () => {
     expect(mockEmail.sendFreeTierNotification).toHaveBeenCalledWith(fakeUser.email);
   });
 
-  it('does not send a notification when the cooldown has not elapsed', async () => {
+  it.skip('does not send a notification when the cooldown has not elapsed', async () => {
     const groqEngine = new RoutingEngine({
       availableProviders: new Set(['groq']),
       defaultTier: 'economy',
@@ -679,26 +682,24 @@ describe('POST /try/run — success response shape', () => {
     expect(body.prefer).toBe('balanced');
   });
 
-  it('sets isFree: true for free-provider models', async () => {
-    const groqEngine = new RoutingEngine({
-      availableProviders: new Set(['groq']),
-      defaultTier: 'economy',
-      defaultOutputRatio: 0.33,
-    });
+  // Free-provider models removed (862080d). Replaced with test for
+  // the normal paid path: isFree is false since no models are free.
+  it('sets isFree: false for paid provider models', async () => {
+    const engine = makeStandardEngine();
     const providers = new Map<ProviderName, ProviderAdapter>([
-      ['groq', makeSuccessAdapter('groq', 'Free!')],
+      ['google', makeSuccessAdapter('google', 'Paid response')],
     ]);
-    const zeroBalanceUser: User = { ...fakeUser, creditBalanceCents: 0 };
+    const paidUser: User = { ...fakeUser, creditBalanceCents: 500 };
     const mockUserStore = makeMockUserStore({
-      validateSession: vi.fn().mockReturnValue(zeroBalanceUser),
+      validateSession: vi.fn().mockReturnValue(paidUser),
     });
-    const app = makeApp(groqEngine, providers, mockUserStore);
+    const app = makeApp(engine, providers, mockUserStore);
 
     const res = await runRequest(app, minimalRequest);
 
     expect(res.status).toBe(200);
     const body = await res.json() as any;
-    expect(body.isFree).toBe(true);
+    expect(body.isFree).toBe(false);
   });
 
   it('records a usage log entry on success', async () => {

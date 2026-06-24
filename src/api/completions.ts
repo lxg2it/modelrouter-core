@@ -41,6 +41,17 @@ export function createCompletionsRouter(deps: ChatDeps): Hono<AuthEnv> {
     const decision = deps.router.selectModelForCompletion(body, userBlockedProviders, routeToFreeTierOnly);
 
     if (!decision) {
+      // Explicit model name that didn't resolve — invalid request.
+      const modelParam = body.model?.trim();
+      if (modelParam && modelParam !== 'auto') {
+        return c.json({
+          error: {
+            message: `Unknown model: "${modelParam}". Check available models at https://api.lxg2it.com/v1/models or use a tier name (economy, standard, premium, auto).`,
+            type: 'invalid_request_error',
+            code: 'unknown_model',
+          },
+        }, 400);
+      }
       if (routeToFreeTierOnly) {
         return c.json({
           error: {

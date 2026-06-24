@@ -159,11 +159,11 @@ describe('POST /v1/completions', () => {
     const deps = makeDeps(new Map([['openai', adapter]]));
     const app = mountWithAuth(createCompletionsRouter(deps));
 
-    // 'claude-sonnet-4' is a chat model — should be rejected on /v1/completions
+    // 'gpt-4.1' is a chat model — should be rejected on /v1/completions
     const res = await app.request('http://test/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: 'hello', model: 'claude-sonnet-4' }),
+      body: JSON.stringify({ prompt: 'hello', model: 'gpt-4.1' }),
     });
 
     expect(res.status).toBe(400);
