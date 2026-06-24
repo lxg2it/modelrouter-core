@@ -18,6 +18,9 @@ let tokenCounter;
 let costCounter;
 let latencyHistogram;
 let tokenHistogram;
+let signupCounter;
+let billingCounter;
+let httpResponseCounter;
 function ensureMetrics() {
     if (metricsInit)
         return;
@@ -41,6 +44,18 @@ function ensureMetrics() {
     tokenHistogram = meter.createHistogram('model_router.token_count', {
         description: 'Token count per request (input + output)',
         unit: '{token}',
+    });
+    signupCounter = meter.createCounter('model_router.signups', {
+        description: 'Total user sign-ups',
+        unit: '{signup}',
+    });
+    billingCounter = meter.createCounter('model_router.billing_transactions', {
+        description: 'Total billing transactions (top-ups, bonus credits)',
+        unit: '{transaction}',
+    });
+    httpResponseCounter = meter.createCounter('model_router.http_responses', {
+        description: 'Total HTTP responses by method, path group, and status',
+        unit: '{response}',
     });
     metricsInit = true;
 }
@@ -133,6 +148,128 @@ export function startRequestSpan(decision, keyId, headers, requestId) {
             });
         },
     };
+}
+// ─── Sign-up tracking ───────────────────────────────────
+/**
+ * Record a user sign-up (new account created during email verification).
+ *
+ * Emits a counter and a short-lived span so sign-up events are visible both
+ * as Honeycomb traces and as aggregate metrics.
+ *
+ * @param emailDomain — the domain part of the email (e.g. "gmail.com")
+ * @param receivedBonus — whether the signup bonus was actually granted
+ * @param bonusCents — the bonus amount in cents (0 if none/capped)
+ * @param disposable — whether the email was rejected as disposable
+ */
+export function recordSignup(emailDomain, receivedBonus, bonusCents, disposable) {
+    ensureMetrics();
+    const tracer = getTracer();
+    const attrs = {
+        email_domain: emailDomain,
+        received_bonus: String(receivedBonus),
+        bonus_cents: bonusCents,
+        disposable: String(disposable),
+    };
+    signupCounter.add(1, attrs);
+    const span = tracer.startSpan('auth.signup', { attributes: attrs });
+    span.setStatus({ code: SpanStatusCode.OK });
+    span.end();
+}
+/**
+ * Record a login code request (before verification).
+ * Separate from signup so we can track the drop-off between request and completion.
+ *
+ * @param emailDomain — the domain part of the email
+ * @param accepted — whether the request was accepted (false = disposable/rate-limited)
+ */
+export function recordCodeRequest(emailDomain, accepted) {
+    ensureMetrics();
+    const tracer = getTracer();
+    const attrs = {
+        email_domain: emailDomain,
+        accepted: String(accepted),
+    };
+    const span = tracer.startSpan('auth.code_request', { attributes: attrs });
+    span.setStatus({ code: accepted ? SpanStatusCode.OK : SpanStatusCode.ERROR });
+    span.end();
+}
+/**
+ * Record a billing event as a counter and a span.
+ *
+ * Covers top-ups (Stripe), signup bonuses, auto-recharge, and card-save
+ * events. Each appears in Honeycomb with the billing.${eventType} span name.
+ */
+export function recordBillingEvent(params) {
+    ensureMetrics();
+    const tracer = getTracer();
+    const attrs = {
+        billing_event_type: params.eventType,
+        billing_amount_cents: params.amountCents,
+        billing_status: params.status,
+        billing_source: params.source,
+        ...(params.autoRecharge ? { billing_auto_recharge: 'true' } : {}),
+    };
+    billingCounter.add(1, attrs);
+    const span = tracer.startSpan(`billing.${params.eventType}`, { attributes: attrs });
+    span.setStatus({
+        code: params.status === 'succeeded' ? SpanStatusCode.OK : SpanStatusCode.ERROR,
+    });
+    span.end();
+}
+// ─── HTTP response tracking ──────────────────────────────
+/**
+ * Record an HTTP response for aggregate visibility across all endpoints.
+ *
+ * Intended to be called from global middleware. Uses a coarse path group
+ * (e.g. "/v1/chat/*", "/v1/auth/*") to keep cardinality manageable while
+ * still surfacing which route groups generate which status codes.
+ *
+ * No-op when OTEL is unconfigured.
+ */
+export function recordHttpResponse(method, pathGroup, statusCode) {
+    ensureMetrics();
+    httpResponseCounter.add(1, {
+        http_method: method,
+        path_group: pathGroup,
+        status_code: String(statusCode),
+        status_class: `${Math.floor(statusCode / 100)}xx`,
+    });
+}
+/** Classify a request path into a coarse group for OTEL attributes. */
+export function classifyPathGroup(path) {
+    if (path === '/health')
+        return '/health';
+    if (path.startsWith('/v1/chat'))
+        return '/v1/chat/*';
+    if (path.startsWith('/v1/completions'))
+        return '/v1/completions';
+    if (path.startsWith('/v1/messages'))
+        return '/v1/messages/*';
+    if (path.startsWith('/v1/embeddings'))
+        return '/v1/embeddings/*';
+    if (path.startsWith('/v1/models'))
+        return '/v1/models/*';
+    if (path.startsWith('/v1/usage'))
+        return '/v1/usage/*';
+    if (path.startsWith('/v1/auth'))
+        return '/v1/auth/*';
+    if (path.startsWith('/v1/billing'))
+        return '/v1/billing/*';
+    if (path.startsWith('/v1/keys'))
+        return '/v1/keys/*';
+    if (path.startsWith('/v1/account'))
+        return '/v1/account/*';
+    if (path.startsWith('/admin'))
+        return '/admin/*';
+    if (path.startsWith('/dashboard'))
+        return '/dashboard/*';
+    if (path.startsWith('/profile'))
+        return '/profile/*';
+    if (path.startsWith('/docs'))
+        return '/docs/*';
+    if (path.startsWith('/try'))
+        return '/try/*';
+    return '/other';
 }
 // ─── Circuit breaker events ──────────────────────────────
 /**

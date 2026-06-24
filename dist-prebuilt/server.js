@@ -7,6 +7,7 @@ import { logger as honoLogger } from 'hono/logger';
 import Database from 'better-sqlite3';
 import { loadConfig } from './config.js';
 import { isTelemetryEnabled } from './telemetry.js';
+import { recordHttpResponse, classifyPathGroup } from './telemetry-instruments.js';
 import { KeyStore } from './auth/keys.js';
 import { UserStore } from './auth/users.js';
 import { authMiddleware, sessionMiddleware } from './auth/middleware.js';
@@ -161,6 +162,17 @@ export function createApp() {
     if (config.logLevel === 'debug') {
         app.use('*', honoLogger());
     }
+    // OTEL HTTP response tracking — records status codes across all routes.
+    // Must run BEFORE page view middleware so responses are always counted.
+    app.use('*', async (c, next) => {
+        await next();
+        try {
+            recordHttpResponse(c.req.method, classifyPathGroup(c.req.path), c.res.status);
+        }
+        catch {
+            // Never let telemetry break a response
+        }
+    });
     // Page view tracking — counts non-API GET requests as UI page views
     app.use('*', async (c, next) => {
         await next();

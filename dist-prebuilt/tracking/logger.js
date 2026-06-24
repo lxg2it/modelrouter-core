@@ -31,6 +31,8 @@ export class UsageLogger {
                 autoScore: params.autoScore,
                 autoTier: params.autoTier,
                 autoSignals: params.autoSignals,
+                errorBody: params.errorBody,
+                errorHeaders: params.errorHeaders,
             });
         }
         catch (err) {

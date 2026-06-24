@@ -15,12 +15,13 @@
  *   GET  /v1/billing/history           — Past top-up transactions
  */
 import { Hono } from 'hono';
+import { recordBillingEvent } from '../telemetry-instruments.js';
 // Minimum top-up: $5.00
 const MIN_TOP_UP_CENTS = 500;
 // Maximum top-up per request: $500.00 (prevents runaway charges)
 const MAX_TOP_UP_CENTS = 50_000;
-// Platform fee: 4% of each top-up.
-// A $10.00 charge gives the user $9.60 in credits.
+import { creditsAfterFee } from '../billing/platform-fee.js';
+// Platform fee: 4% of each top-up (minimum $0.80).
 // Provider costs are passed through at exact rates — no per-request markup.
 const PLATFORM_FEE_RATE = 0.04;
 export function createBillingRouter(deps) {
@@ -117,6 +118,12 @@ export function createBillingRouter(deps) {
             }, 400);
         }
         const pm = await stripe.attachPaymentMethod(user.stripeCustomerId, paymentMethodId);
+        recordBillingEvent({
+            eventType: 'card_saved',
+            amountCents: 0,
+            status: 'succeeded',
+            source: 'manual',
+        });
         return c.json({
             success: true,
             paymentMethod: pm,
@@ -184,6 +191,12 @@ export function createBillingRouter(deps) {
             userStore.setStripeCustomerId(user.id, stripeCustomerId);
         }
         const pm = await stripe.attachPaymentMethod(stripeCustomerId, body.paymentMethodId);
+        recordBillingEvent({
+            eventType: 'card_saved',
+            amountCents: 0,
+            status: 'succeeded',
+            source: 'manual',
+        });
         return c.json({
             success: true,
             paymentMethod: pm,
@@ -196,7 +209,7 @@ export function createBillingRouter(deps) {
     // Body: { amountCents: number }   (e.g. 1000 = $10.00)
     //
     // Credits are shared across all of the user's API keys.
-    // Platform fee of 4% is applied: a $10.00 charge gives $9.60 in credits.
+    // Platform fee (4%, min $0.80) is applied: a $10.00 charge gives $9.20 in credits.
     //
     router.post('/top-up', async (c) => {
         const user = c.get('user');
@@ -239,20 +252,27 @@ export function createBillingRouter(deps) {
         }
         const description = `Model Router credits — ${formatUsd(amountCents)} for account ${user.email}`;
         const result = await stripe.charge(user.stripeCustomerId, amountCents, description);
-        // Apply the 4% platform fee: user is credited 96% of the charge amount.
-        const creditsToAdd = Math.floor(amountCents * (1 - PLATFORM_FEE_RATE));
+        // Apply platform fee (with minimum): user receives credits after fee.
+        const creditsToAdd = creditsAfterFee(amountCents);
         let newBalance = user.creditBalanceCents;
         if (result.status === 'succeeded') {
             newBalance = userStore.addCredits(user.id, creditsToAdd);
         }
         // Record transaction for billing history
+        const txStatus = result.status;
         billingTxStore.record({
             userId: user.id,
             keyId: null,
             paymentIntentId: result.paymentIntentId,
             amountChargedCents: result.amountCents,
             creditsAddedCents: result.status === 'succeeded' ? creditsToAdd : 0,
-            status: result.status,
+            status: txStatus,
+            source: 'manual',
+        });
+        recordBillingEvent({
+            eventType: 'top_up',
+            amountCents: result.amountCents,
+            status: txStatus,
             source: 'manual',
         });
         return c.json({

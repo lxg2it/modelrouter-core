@@ -288,7 +288,7 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
           <div id="billingCardList" class="hidden mb-3"></div>
 
           <div id="billingTopupSection" class="hidden">
-            <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">Select amount to add</div>
+            <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">Select amount to add <span style="color:var(--accent);">· 4% fee (min $0.80)</span></div>
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
               <button class="btn btn-secondary btn-sm billing-amount-btn" data-cents="500" onclick="setBillingAmount(500)">$5</button>
               <button class="btn btn-secondary btn-sm billing-amount-btn" data-cents="1000" onclick="setBillingAmount(1000)">$10</button>

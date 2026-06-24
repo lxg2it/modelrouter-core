@@ -111,7 +111,7 @@ export function createTryRouter(deps) {
         // ── Credit reservation ─────────────────────────────────────────────────
         const isFreeTierModel = isFreeProvider(decision);
         let reservedCents = 0;
-        if (!isFreeTierModel && user.stripeCustomerId && deps.chatDeps.userStore) {
+        if (!isFreeTierModel && deps.chatDeps.userStore) {
             // Daily spend cap check
             const systemDefault = deps.chatDeps.maxDailySpendCents ?? 3000;
             const userLimit = user.dailySpendLimitCents ?? 0;
@@ -257,7 +257,7 @@ export function createTryRouter(deps) {
                 statusCode: 200,
             });
             // Settle credits — return unused portion of reservation, or deduct directly if no reservation
-            if (deps.chatDeps.userStore && user.stripeCustomerId) {
+            if (deps.chatDeps.userStore) {
                 if (reservedCents > 0) {
                     const refund = reservedCents - costCents;
                     if (refund > 0)

@@ -328,6 +328,10 @@ export interface UsageRecord {
     autoTier?: string;
     /** Present when auto-routing was used. JSON-serialised signal breakdown. */
     autoSignals?: string;
+    /** Upstream error message/body when the request failed. null when successful. */
+    errorBody?: string;
+    /** Upstream response headers when the request failed. JSON-serialised. */
+    errorHeaders?: string;
 }
 export interface AnthropicMessagesRequest {
     model: string;

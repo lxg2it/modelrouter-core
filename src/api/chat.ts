@@ -413,7 +413,10 @@ async function handleNonStreaming(
     // Track the last meaningful provider error for usage_log (skip rate limits and context exceeded)
     let lastProviderError: unknown = primaryIsRateLimit || primaryIsContextExceeded ? undefined : err;
 
-    if (primaryIsRateLimit) {
+    if (isHardQuotaErr(err)) {
+      console.warn(`[chat] Primary provider daily quota exhausted (${decision.provider}/${decision.model}): 413 — circuit-breaking`);
+      deps.router.recordFailure(decision.provider, decision.model);
+    } else if (primaryIsRateLimit) {
       console.warn(`[chat] Primary provider rate limited (${decision.provider}/${decision.model}): 429`);
       // Don't record a circuit-breaker failure — the provider is healthy, just rate limited
     } else if (primaryIsContextExceeded) {
@@ -516,7 +519,13 @@ async function handleNonStreaming(
       } catch (fallbackErr) {
         const fallbackIsRateLimit = isRateLimitErr(fallbackErr);
         const fallbackIsContextExceeded = isContextLengthError(fallbackErr);
-        if (fallbackIsRateLimit) {
+        if (isHardQuotaErr(fallbackErr)) {
+          console.warn(`[chat] Fallback provider daily quota exhausted (${fallback.provider}/${fallback.model}): 413 — circuit-breaking`);
+          deps.router.recordFailure(fallback.provider, fallback.model);
+          if (retryAfterSecs === undefined) {
+            retryAfterSecs = extractRetryAfter(fallbackErr as APIError);
+          }
+        } else if (fallbackIsRateLimit) {
           console.warn(`[chat] Fallback provider rate limited (${fallback.provider}/${fallback.model}): 429`);
           if (retryAfterSecs === undefined) {
             retryAfterSecs = extractRetryAfter(fallbackErr as RateLimitError | APIError);
@@ -654,7 +663,12 @@ async function handleStreaming(
       const primaryRequest = normalizeRequest(thinkingPrimaryRequest, decision);
       completion = await primaryAdapter.stream(decision.model, primaryRequest, user?.fallbackTimeoutMs);
     } catch (primaryErr) {
-      if (isRateLimitErr(primaryErr)) {
+      if (isHardQuotaErr(primaryErr)) {
+        console.warn(`[chat/stream] Primary provider daily quota exhausted (${decision.provider}/${decision.model}): 413 — circuit-breaking`);
+        deps.router.recordFailure(decision.provider, decision.model);
+        streamAllRateLimited = true;
+        streamRetryAfterSecs = extractRetryAfter(primaryErr as APIError);
+      } else if (isRateLimitErr(primaryErr)) {
         console.warn(`[chat/stream] Primary provider rate limited (${decision.provider}/${decision.model}): 429`);
         streamAllRateLimited = true;
         streamRetryAfterSecs = extractRetryAfter(primaryErr as RateLimitError | APIError);
@@ -735,7 +749,13 @@ async function handleStreaming(
         activeDecision = fallback;
         break; // Success — stop trying further candidates
       } catch (fallbackErr) {
-        if (isRateLimitErr(fallbackErr)) {
+        if (isHardQuotaErr(fallbackErr)) {
+          console.warn(`[chat/stream] Fallback provider daily quota exhausted (${fallback.provider}/${fallback.model}): 413 — circuit-breaking`);
+          deps.router.recordFailure(fallback.provider, fallback.model);
+          if (streamRetryAfterSecs === undefined) {
+            streamRetryAfterSecs = extractRetryAfter(fallbackErr as APIError);
+          }
+        } else if (isRateLimitErr(fallbackErr)) {
           console.warn(`[chat/stream] Fallback provider rate limited (${fallback.provider}/${fallback.model}): 429`);
           if (streamRetryAfterSecs === undefined) {
             streamRetryAfterSecs = extractRetryAfter(fallbackErr as RateLimitError | APIError);
@@ -1117,11 +1137,17 @@ export function settleStripeCredits(
  * AND Groq's 413 "Request too large" (TPM/TPD limits), which the SDK
  * surfaces as a plain APIError with status 413.
  */
+/** True for any rate-limiting error: 429 (RateLimitError) or 413 (Groq quota). */
 function isRateLimitErr(err: unknown): boolean {
   if (err instanceof RateLimitError) return true;
-  // Groq returns 413 when hitting free-tier TPM/TPD caps
   if (err instanceof APIError && err.status === 413) return true;
   return false;
+}
+
+/** True for hard quota exhaustion (413) — provider is useless until daily reset. */
+function isHardQuotaErr(err: unknown): boolean {
+  if (err instanceof RateLimitError) return false;
+  return err instanceof APIError && err.status === 413;
 }
 
 /**

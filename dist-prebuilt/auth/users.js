@@ -544,8 +544,7 @@ export class UserStore {
      * No-op if amountCents <= 0.
      */
     deductCredits(userId, amountCents) {
-        const amount = Math.round(amountCents);
-        if (amount <= 0) {
+        if (amountCents <= 0) {
             const row = this.db.prepare(`SELECT credit_balance_cents FROM users WHERE id = ?`).get(userId);
             return row?.credit_balance_cents ?? 0;
         }
@@ -603,14 +602,13 @@ export class UserStore {
      * No-op if refundCents <= 0.
      */
     refundCredits(userId, refundCents) {
-        const amount = Math.round(refundCents);
-        if (amount <= 0)
+        if (refundCents <= 0)
             return;
         this.db.prepare(`
       UPDATE users
       SET credit_balance_cents = credit_balance_cents + ?
       WHERE id = ?
-    `).run(amount, userId);
+    `).run(refundCents, userId);
     }
     // ─── Private helpers ──────────────────────────────────
     createSession(userId) {

@@ -40,6 +40,13 @@ export const BENCHMARK_DATA = {
         mmluPro: 78.8,
         simpleBench: 48.2,
     },
+    'gemini-3.1-flash-lite': {
+        arenaElo: 1432, // Source: Google blog / arena.ai leaderboard
+        gpqaDiamond: 86.9, // Source: Google blog
+        sweBench: 50.0, // Not published by Google; estimated (LiveCodeBench 72.0 suggests ~2.5 Flash parity)
+        mmluPro: 76.8, // Source: Google blog
+        simpleBench: 46.0, // Not published by Google; estimated (lite model, slightly below 2.5 Flash 48.2)
+    },
     'gpt-4.1-mini': {
         arenaElo: 1305,
         gpqaDiamond: 65.2,
@@ -147,6 +154,14 @@ export const BENCHMARK_DATA = {
         mmluPro: 90.0,
         simpleBench: 45.0,
     },
+    // Alias for Cerebras free-provider model ID
+    'gpt-oss-120b': {
+        arenaElo: 1354,
+        gpqaDiamond: 80.9,
+        sweBench: 62.4,
+        mmluPro: 90.0,
+        simpleBench: 45.0,
+    },
     // Free-provider models — hosted by Groq and Cerebras at no cost.
     // Benchmarks for base Llama 3.3 70B (published by Meta / Chatbot Arena).
     // Llama 4 Scout and Cerebras's Llama share the same base model weights.
@@ -187,6 +202,14 @@ export const BENCHMARK_DATA = {
     },
     // ── Bedrock Standard ──────────────────────────────────
     'zai.glm-4.7': {
+        arenaElo: 1445,
+        gpqaDiamond: 85.7,
+        sweBench: 73.8,
+        mmluPro: 84.3,
+        simpleBench: 60.0,
+    },
+    // Alias for Cerebras free-provider model ID (uses hyphen, not dot)
+    'zai-glm-4.7': {
         arenaElo: 1445,
         gpqaDiamond: 85.7,
         sweBench: 73.8,
@@ -350,6 +373,24 @@ export const BENCHMARK_DATA = {
         sweBench: 57.7,
         mmluPro: 88.5,
         simpleBench: 66.0,
+    },
+    // Claude Opus 4.8: May 28 2026, Anthropic's incremental upgrade to Opus 4.7
+    // SWE-bench and GPQA confirmed from Anthropic self-report; arena/mmlu/simple estimated
+    'claude-opus-4-8': {
+        arenaElo: 1460, // estimated (step up from 4.7's 1415)
+        gpqaDiamond: 93.6, // confirmed (Anthropic, May 2026)
+        sweBench: 88.6, // confirmed (Anthropic, May 2026)
+        mmluPro: 89.5, // estimated (bump from 4.7's 89.0)
+        simpleBench: 70.0, // estimated (bump from 4.7's 69.0)
+    },
+    // GPT-5.5 "Spud": April 23 2026, first fully retrained base since GPT-4.5
+    // SWE-bench confirmed from OpenAI via TokenMix; GPQA from lmcouncil; arena/mmlu/simple estimated
+    'gpt-5.5': {
+        arenaElo: 1500, // estimated (step up from gpt-5.4's 1438)
+        gpqaDiamond: 94.0, // lmcouncil (xhigh setting, Jun 2026)
+        sweBench: 88.7, // confirmed (OpenAI, Apr 2026)
+        mmluPro: 91.0, // estimated (bump from gpt-5.4's 88.5)
+        simpleBench: 68.0, // estimated (bump from gpt-5.4's 66.0)
     },
 };
 // ─── Scoring Weights ────────────────────────────────────

@@ -19,6 +19,7 @@
  */
 import { Hono } from 'hono';
 import { isDisposableEmail } from '../auth/email-filter.js';
+import { recordSignup, recordCodeRequest } from '../telemetry-instruments.js';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function createAuthRouter(deps) {
     const { userStore, keyStore, email, billingTxStore, signupBonusCents, signupBonusDailyLimitCents, ipRateLimiter, } = deps;
@@ -59,7 +60,9 @@ export function createAuthRouter(deps) {
                 error: { message: 'A valid email address is required.', code: 'invalid_email' },
             }, 400);
         }
+        const emailDomain = emailAddr.split('@')[1] ?? 'unknown';
         if (isDisposableEmail(emailAddr)) {
+            recordCodeRequest(emailDomain, false);
             return c.json({
                 error: {
                     message: 'Disposable email addresses are not accepted. Please use a permanent email address.',
@@ -67,6 +70,7 @@ export function createAuthRouter(deps) {
                 },
             }, 400);
         }
+        recordCodeRequest(emailDomain, true);
         const code = userStore.requestLoginCode(emailAddr);
         // Send email asynchronously — don't let email failures block the response.
         // Errors are logged but not returned to the caller (prevents enumeration).
@@ -128,6 +132,7 @@ export function createAuthRouter(deps) {
                 creditBalanceCents: user.creditBalanceCents,
             },
         };
+        const emailDomain = emailAddr.split('@')[1] ?? 'unknown';
         // For new accounts, generate and return the first API key.
         // The full key is shown only once — the user must save it.
         if (isNewAccount) {
@@ -140,6 +145,7 @@ export function createAuthRouter(deps) {
                 message: 'Save your API key — it will not be shown again.',
             };
             // Grant signup bonus credit if configured and daily cap not yet reached.
+            let bonusGranted = false;
             if (signupBonusCents > 0) {
                 const capReached = signupBonusDailyLimitCents > 0 &&
                     billingTxStore.dailySignupBonusTotal() + signupBonusCents > signupBonusDailyLimitCents;
@@ -155,8 +161,10 @@ export function createAuthRouter(deps) {
                         source: 'promotional',
                     });
                     response.account.creditBalanceCents = newBalance;
+                    bonusGranted = true;
                 }
             }
+            recordSignup(emailDomain, bonusGranted, bonusGranted ? signupBonusCents : 0, false);
         }
         return c.json(response, isNewAccount ? 201 : 200);
     });

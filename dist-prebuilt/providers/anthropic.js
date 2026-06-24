@@ -19,7 +19,9 @@ export class AnthropicAdapter {
     client = null;
     constructor(apiKey) {
         if (apiKey) {
-            this.client = new Anthropic({ apiKey });
+            // Pass native fetch to bypass node-fetch v2's broken gzip decompression on Node 22+
+            // (node-fetch 2.7.0 triggers ERR_STREAM_PREMATURE_CLOSE in Docker on small instances)
+            this.client = new Anthropic({ apiKey, fetch: globalThis.fetch });
         }
     }
     isConfigured() {

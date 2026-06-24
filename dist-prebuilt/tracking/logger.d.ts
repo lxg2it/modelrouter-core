@@ -24,6 +24,10 @@ export interface LogParams {
     autoTier?: string;
     /** JSON-serialised signal breakdown. Present when auto-routing was used. */
     autoSignals?: string;
+    /** Upstream error message/body when the request failed. */
+    errorBody?: string;
+    /** Upstream response headers when the request failed. JSON-serialised. */
+    errorHeaders?: string;
 }
 export declare class UsageLogger {
     private store;

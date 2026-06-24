@@ -146,7 +146,7 @@ const ENTRIES = [
         tag: 'feature',
         title: 'Stripe billing — credit top-ups',
         body: `<p>Credit-based billing via Stripe. Add credits to your account and they are
-    deducted at cost as you make requests. A 4% platform fee applies to each top-up.</p>`,
+    deducted at cost as you make requests. A 4% platform fee (minimum $0.80) applies to each top-up.</p>`,
     },
     {
         date: '2026-03-01',

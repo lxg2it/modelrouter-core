@@ -18,8 +18,10 @@ export class UsageStore {
         key_id, provider, model, tier,
         prompt_tokens, completion_tokens, total_tokens,
         cost_cents, latency_ms, streaming, status_code,
-        auto_score, auto_tier, auto_signals, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        auto_score, auto_tier, auto_signals,
+        error_body, error_headers,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `);
     }
     initSchema() {
@@ -37,6 +39,8 @@ export class UsageStore {
         latency_ms INTEGER NOT NULL DEFAULT 0,
         streaming INTEGER NOT NULL DEFAULT 0,
         status_code INTEGER NOT NULL DEFAULT 200,
+        error_body TEXT,
+        error_headers TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
 
@@ -59,12 +63,25 @@ export class UsageStore {
                 // Column already exists — expected on non-first run
             }
         }
+        // ── Migration: add error detail columns ──
+        const errorColumns = [
+            ['error_body', 'TEXT'],
+            ['error_headers', 'TEXT'],
+        ];
+        for (const [col, type] of errorColumns) {
+            try {
+                this.db.exec(`ALTER TABLE usage_log ADD COLUMN ${col} ${type}`);
+            }
+            catch {
+                // Column already exists
+            }
+        }
     }
     /**
      * Record a completed request.
      */
     record(usage) {
-        this.insertStmt.run(usage.keyId, usage.provider, usage.model, usage.tier, usage.promptTokens, usage.completionTokens, usage.totalTokens, usage.costCents, usage.latencyMs, usage.streaming ? 1 : 0, usage.statusCode, usage.autoScore ?? null, usage.autoTier ?? null, usage.autoSignals ?? null);
+        this.insertStmt.run(usage.keyId, usage.provider, usage.model, usage.tier, usage.promptTokens, usage.completionTokens, usage.totalTokens, usage.costCents, usage.latencyMs, usage.streaming ? 1 : 0, usage.statusCode, usage.autoScore ?? null, usage.autoTier ?? null, usage.autoSignals ?? null, usage.errorBody ?? null, usage.errorHeaders ?? null);
     }
     /**
      * Get usage summary for an API key over a time period.

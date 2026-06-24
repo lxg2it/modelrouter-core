@@ -10,7 +10,9 @@ export class OpenAIAdapter {
     client = null;
     constructor(apiKey, baseURL) {
         if (apiKey) {
-            this.client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+            // Pass native fetch to bypass node-fetch v2's broken gzip decompression on Node 22+
+            // (node-fetch 2.7.0 triggers ERR_STREAM_PREMATURE_CLOSE in Docker on small instances)
+            this.client = new OpenAI({ apiKey, fetch: globalThis.fetch, ...(baseURL ? { baseURL } : {}) });
         }
     }
     isConfigured() {
@@ -20,12 +22,15 @@ export class OpenAIAdapter {
         if (!this.client)
             throw new Error('OpenAI adapter not configured');
         const requestOptions = timeoutMs !== undefined ? { timeout: timeoutMs } : undefined;
+        const isOSeries = model.startsWith('o') && (model === 'o1' || model === 'o1-pro' || model === 'o3' || model.startsWith('o4'));
         const response = await this.client.chat.completions.create({
             model,
             messages: request.messages,
-            max_tokens: request.max_tokens,
-            temperature: request.temperature,
-            top_p: request.top_p,
+            ...(isOSeries
+                ? { max_completion_tokens: request.max_tokens ?? 4096 }
+                : { max_tokens: request.max_tokens }),
+            temperature: isOSeries ? undefined : request.temperature,
+            top_p: isOSeries ? undefined : request.top_p,
             stop: request.stop,
             tools: request.tools,
             tool_choice: request.tool_choice,
@@ -65,12 +70,15 @@ export class OpenAIAdapter {
         if (!this.client)
             throw new Error('OpenAI adapter not configured');
         const requestOptions = timeoutMs !== undefined ? { timeout: timeoutMs } : undefined;
+        const isOSeries = model.startsWith('o') && (model === 'o1' || model === 'o1-pro' || model === 'o3' || model.startsWith('o4'));
         const openaiStream = await this.client.chat.completions.create({
             model,
             messages: request.messages,
-            max_tokens: request.max_tokens,
-            temperature: request.temperature,
-            top_p: request.top_p,
+            ...(isOSeries
+                ? { max_completion_tokens: request.max_tokens ?? 4096 }
+                : { max_tokens: request.max_tokens }),
+            temperature: isOSeries ? undefined : request.temperature,
+            top_p: isOSeries ? undefined : request.top_p,
             stop: request.stop,
             tools: request.tools,
             tool_choice: request.tool_choice,

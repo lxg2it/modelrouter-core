@@ -8,8 +8,48 @@ import { Hono } from 'hono';
 import { stream as honoStream } from 'hono/streaming';
 import { UsageLogger as UsageLoggerClass } from '../tracking/logger.js';
 import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../config.js';
-import { RateLimitError, BadRequestError } from 'openai';
+import { creditsAfterFee } from '../billing/platform-fee.js';
+import { RateLimitError, BadRequestError, APIError } from 'openai';
 import { getHeader } from 'openai/core';
+/**
+ * Extract upstream error details for persistence in usage_log.
+ *
+ * Captures the provider's HTTP status code, response headers, and error body
+ * so failed requests can be diagnosed without needing container logs.
+ *
+ * Returns { errorBody, errorHeaders } suitable for UsageRecord.
+ * errorBody is truncated to 4KB to prevent unbounded log bloat.
+ */
+function extractErrorDetail(err) {
+    const raw = {};
+    // Capture the error message (available on all Error instances)
+    const message = err instanceof Error ? err.message : String(err);
+    raw.message = message;
+    // Capture upstream HTTP status if present (OpenAI SDK errors)
+    const status = err.status;
+    if (status !== undefined) {
+        raw.upstream_status = status;
+    }
+    // Capture error code (e.g. 'context_length_exceeded', 'rate_limit_exceeded')
+    const code = err.code;
+    if (code !== undefined) {
+        raw.code = code;
+    }
+    // Capture type information for diagnostics
+    if (err instanceof RateLimitError)
+        raw.type = 'rate_limit';
+    else if (err instanceof BadRequestError)
+        raw.type = 'bad_request';
+    else if (err instanceof Error)
+        raw.type = err.constructor.name;
+    const errorBody = JSON.stringify(raw).slice(0, 4096); // 4KB max
+    // Capture response headers (available on OpenAI SDK errors)
+    const headers = err.headers;
+    const errorHeaders = headers && typeof headers === 'object'
+        ? JSON.stringify(headers).slice(0, 4096)
+        : undefined;
+    return { errorBody, errorHeaders };
+}
 import { ContextLengthExceededError } from '../providers/bedrock.js';
 import { startRequestSpan } from '../telemetry-instruments.js';
 import { exportUserSpan, parseOtelHeaders } from '../telemetry-user.js';
@@ -168,7 +208,8 @@ async function handleNonStreaming(c, request, decision, deps, apiKey, startTime,
     try {
         const resolvedModelConfig = findModelConfig(decision.provider, decision.model, decision.tier);
         const resolvedApiTypeForCall = resolvedModelConfig?.apiType ?? 'chat';
-        const effectiveRequest = applyThinkingTokenFloor(request, decision);
+        const thinkingRequest = applyThinkingTokenFloor(request, decision);
+        const effectiveRequest = normalizeRequest(thinkingRequest, decision);
         const result = resolvedApiTypeForCall === 'responses' && adapter.completeResponses
             ? await adapter.completeResponses(decision.model, effectiveRequest, timeoutMs)
             : await adapter.complete(decision.model, effectiveRequest, timeoutMs);
@@ -223,8 +264,49 @@ async function handleNonStreaming(c, request, decision, deps, apiKey, startTime,
         return c.json(result.response);
     }
     catch (err) {
-        const primaryIsRateLimit = err instanceof RateLimitError;
+        // ── Pinned model: no fallback ───────────────────────────
+        // When the user explicitly pinned a specific model ID (not a tier alias,
+        // not 'auto'), silently falling back to a different model is worse than
+        // returning a clear error. The user chose this model for a reason.
+        if (decision.pinned) {
+            deps.router.recordFailure(decision.provider, decision.model);
+            fullRefundReservation(deps, reservedCents, user);
+            console.error(`[chat] Pinned model failed (${decision.provider}/${decision.model}) — no fallback:`, err);
+            const { errorBody, errorHeaders } = extractErrorDetail(err);
+            deps.logger.log({
+                keyId,
+                provider: decision.provider,
+                model: decision.model,
+                tier: decision.tier,
+                promptTokens: 0,
+                completionTokens: 0,
+                costCents: 0,
+                latencyMs: Date.now() - startTime,
+                streaming: false,
+                statusCode: 502,
+                errorBody,
+                errorHeaders,
+                ...autoLogFields(decision),
+            });
+            telemetrySpan?.end({
+                statusCode: 502,
+                promptTokens: 0,
+                completionTokens: 0,
+                costCents: 0,
+                latencyMs: Date.now() - startTime,
+                streaming: false,
+            });
+            return c.json({
+                error: {
+                    message: `Provider call failed for '${decision.model}'. Try again or choose a different model.`,
+                    type: 'server_error',
+                },
+            }, 502);
+        }
+        const primaryIsRateLimit = isRateLimitErr(err);
         const primaryIsContextExceeded = isContextLengthError(err);
+        // Track the last meaningful provider error for usage_log (skip rate limits and context exceeded)
+        let lastProviderError = primaryIsRateLimit || primaryIsContextExceeded ? undefined : err;
         if (primaryIsRateLimit) {
             console.warn(`[chat] Primary provider rate limited (${decision.provider}/${decision.model}): 429`);
             // Don't record a circuit-breaker failure — the provider is healthy, just rate limited
@@ -241,9 +323,16 @@ async function handleNonStreaming(c, request, decision, deps, apiKey, startTime,
         // Token-aware fallback: when context is exceeded, prefer models with larger context windows
         // (searched across all tiers). Otherwise use standard same-tier cost-optimised fallback.
         const failedSet = new Set([`${decision.provider}/${decision.model}`]);
-        const fallbackCandidates = primaryIsContextExceeded
+        const rawFallbackCandidates = primaryIsContextExceeded
             ? deps.router.selectContextFallbackCandidates(failedSet, request.messages, blockedProviders, freeProvidersOnly)
             : deps.router.selectFallbackCandidates(failedSet, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
+        // ── Filter Bedrock from fallback when request has tools ──────
+        // Bedrock (Anthropic-native format) is stricter about tool result blocks.
+        // Skipping Bedrock fallback avoids "Expected toolResult blocks" ValidationException.
+        const hasTools = requestHasTools(request);
+        const fallbackCandidates = hasTools
+            ? rawFallbackCandidates.filter((f) => f.provider !== 'bedrock')
+            : rawFallbackCandidates;
         // Track whether all failures were rate limits (to return 429 vs 502 at the end).
         // retryAfterSecs keeps the first non-null value seen across primary + fallbacks.
         let allRateLimited = primaryIsRateLimit;
@@ -257,7 +346,8 @@ async function handleNonStreaming(c, request, decision, deps, apiKey, startTime,
             if (!fallbackAdapter)
                 continue;
             try {
-                const effectiveFallbackRequest = applyThinkingTokenFloor(request, fallback);
+                const thinkingFallbackRequest = applyThinkingTokenFloor(request, fallback);
+                const effectiveFallbackRequest = normalizeRequest(thinkingFallbackRequest, fallback);
                 const result = await fallbackAdapter.complete(fallback.model, effectiveFallbackRequest, timeoutMs);
                 deps.router.recordSuccess(fallback.provider, fallback.model);
                 const modelConfig = findModelConfig(fallback.provider, fallback.model, fallback.tier);
@@ -305,7 +395,7 @@ async function handleNonStreaming(c, request, decision, deps, apiKey, startTime,
                 return c.json(result.response);
             }
             catch (fallbackErr) {
-                const fallbackIsRateLimit = fallbackErr instanceof RateLimitError;
+                const fallbackIsRateLimit = isRateLimitErr(fallbackErr);
                 const fallbackIsContextExceeded = isContextLengthError(fallbackErr);
                 if (fallbackIsRateLimit) {
                     console.warn(`[chat] Fallback provider rate limited (${fallback.provider}/${fallback.model}): 429`);
@@ -321,6 +411,7 @@ async function handleNonStreaming(c, request, decision, deps, apiKey, startTime,
                     console.error(`[chat] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
                     deps.router.recordFailure(fallback.provider, fallback.model);
                     allRateLimited = false;
+                    lastProviderError = fallbackErr;
                 }
                 failedSet.add(`${fallback.provider}/${fallback.model}`);
                 // Continue to next candidate
@@ -336,6 +427,7 @@ async function handleNonStreaming(c, request, decision, deps, apiKey, startTime,
         // Determine final status: 429 if all failures were rate limits, 502 otherwise
         const finalStatus = allRateLimited && !fallbackSucceeded ? 429 : 502;
         // All providers failed
+        const { errorBody: allFailedBody, errorHeaders: allFailedHeaders } = extractErrorDetail(lastProviderError ?? err);
         deps.logger.log({
             keyId,
             provider: decision.provider,
@@ -347,6 +439,8 @@ async function handleNonStreaming(c, request, decision, deps, apiKey, startTime,
             latencyMs: Date.now() - startTime,
             streaming: false,
             statusCode: finalStatus,
+            errorBody: allFailedBody,
+            errorHeaders: allFailedHeaders,
             ...autoLogFields(decision),
         });
         telemetrySpan?.end({
@@ -405,6 +499,7 @@ async function handleStreaming(c, request, decision, deps, apiKey, startTime, sa
     // error event instead.
     let completion = null;
     let activeDecision = decision;
+    let lastStreamError; // Track the last meaningful error for usage_log
     // Try primary provider
     let streamAllRateLimited = false;
     let streamRetryAfterSecs;
@@ -412,11 +507,12 @@ async function handleStreaming(c, request, decision, deps, apiKey, startTime, sa
     const primaryAdapter = deps.providers.get(decision.provider);
     if (primaryAdapter) {
         try {
-            const primaryRequest = applyThinkingTokenFloor(request, decision);
+            const thinkingPrimaryRequest = applyThinkingTokenFloor(request, decision);
+            const primaryRequest = normalizeRequest(thinkingPrimaryRequest, decision);
             completion = await primaryAdapter.stream(decision.model, primaryRequest, user?.fallbackTimeoutMs);
         }
         catch (primaryErr) {
-            if (primaryErr instanceof RateLimitError) {
+            if (isRateLimitErr(primaryErr)) {
                 console.warn(`[chat/stream] Primary provider rate limited (${decision.provider}/${decision.model}): 429`);
                 streamAllRateLimited = true;
                 streamRetryAfterSecs = extractRetryAfter(primaryErr);
@@ -430,29 +526,70 @@ async function handleStreaming(c, request, decision, deps, apiKey, startTime, sa
                 console.error(`[chat/stream] Primary provider failed (${decision.provider}/${decision.model}):`, primaryErr);
                 deps.router.recordFailure(decision.provider, decision.model);
                 streamAllRateLimited = false;
+                lastStreamError = primaryErr;
             }
         }
     }
     // If primary failed, iterate through all fallback candidates until one succeeds.
     // Token-aware fallback: when context is exceeded, prefer models with larger context windows.
     if (!completion) {
+        // ── Pinned model: no fallback ───────────────────────────
+        if (decision.pinned) {
+            fullRefundReservation(deps, reservedCents, user);
+            console.error(`[chat/stream] Pinned model failed (${decision.provider}/${decision.model}) — no fallback`);
+            telemetrySpan?.end({
+                statusCode: 502,
+                promptTokens: 0,
+                completionTokens: 0,
+                costCents: 0,
+                latencyMs: Date.now() - startTime,
+                streaming: true,
+            });
+            const { errorBody: streamPinnedBody, errorHeaders: streamPinnedHeaders } = extractErrorDetail(lastStreamError);
+            deps.logger.log({
+                keyId,
+                provider: decision.provider,
+                model: decision.model,
+                tier: decision.tier,
+                promptTokens: 0,
+                completionTokens: 0,
+                costCents: 0,
+                latencyMs: Date.now() - startTime,
+                streaming: true,
+                statusCode: 502,
+                errorBody: streamPinnedBody,
+                errorHeaders: streamPinnedHeaders,
+                ...autoLogFields(decision),
+            });
+            return c.json({
+                error: {
+                    message: `Provider call failed for '${decision.model}'. Try again or choose a different model.`,
+                    type: 'server_error',
+                },
+            }, 502);
+        }
         const streamFailedSet = new Set([`${decision.provider}/${decision.model}`]);
-        const streamFallbackCandidates = streamPrimaryIsContextExceeded
+        const rawStreamFallbackCandidates = streamPrimaryIsContextExceeded
             ? deps.router.selectContextFallbackCandidates(streamFailedSet, request.messages, blockedProviders, freeProvidersOnly)
             : deps.router.selectFallbackCandidates(streamFailedSet, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
+        const streamHasTools = requestHasTools(request);
+        const streamFallbackCandidates = streamHasTools
+            ? rawStreamFallbackCandidates.filter((f) => f.provider !== 'bedrock')
+            : rawStreamFallbackCandidates;
         for (const fallback of streamFallbackCandidates) {
             console.info(`[chat/stream] Attempting fallback: ${fallback.provider}/${fallback.model}`);
             const fallbackAdapter = deps.providers.get(fallback.provider);
             if (!fallbackAdapter)
                 continue;
             try {
-                const fallbackRequest = applyThinkingTokenFloor(request, fallback);
+                const thinkingFallbackStreamRequest = applyThinkingTokenFloor(request, fallback);
+                const fallbackRequest = normalizeRequest(thinkingFallbackStreamRequest, fallback);
                 completion = await fallbackAdapter.stream(fallback.model, fallbackRequest, user?.fallbackTimeoutMs);
                 activeDecision = fallback;
                 break; // Success — stop trying further candidates
             }
             catch (fallbackErr) {
-                if (fallbackErr instanceof RateLimitError) {
+                if (isRateLimitErr(fallbackErr)) {
                     console.warn(`[chat/stream] Fallback provider rate limited (${fallback.provider}/${fallback.model}): 429`);
                     if (streamRetryAfterSecs === undefined) {
                         streamRetryAfterSecs = extractRetryAfter(fallbackErr);
@@ -466,6 +603,7 @@ async function handleStreaming(c, request, decision, deps, apiKey, startTime, sa
                     console.error(`[chat/stream] Fallback provider also failed (${fallback.provider}/${fallback.model}):`, fallbackErr);
                     deps.router.recordFailure(fallback.provider, fallback.model);
                     streamAllRateLimited = false;
+                    lastStreamError = fallbackErr;
                 }
                 streamFailedSet.add(`${fallback.provider}/${fallback.model}`);
                 // Continue to next candidate
@@ -484,6 +622,7 @@ async function handleStreaming(c, request, decision, deps, apiKey, startTime, sa
             latencyMs: Date.now() - startTime,
             streaming: true,
         });
+        const { errorBody: streamAllFailedBody, errorHeaders: streamAllFailedHeaders } = extractErrorDetail(lastStreamError);
         deps.logger.log({
             keyId,
             provider: decision.provider,
@@ -495,6 +634,8 @@ async function handleStreaming(c, request, decision, deps, apiKey, startTime, sa
             latencyMs: Date.now() - startTime,
             streaming: true,
             statusCode: streamFinalStatus,
+            errorBody: streamAllFailedBody,
+            errorHeaders: streamAllFailedHeaders,
             ...autoLogFields(activeDecision),
         });
         if (streamFinalStatus === 429) {
@@ -575,7 +716,7 @@ async function handleStreaming(c, request, decision, deps, apiKey, startTime, sa
                     ...(activeDecision !== decision ? { failoverFrom: decision.provider } : {}),
                 });
             }
-            catch {
+            catch (finalizeErr) {
                 // finalize() failed — we don't know actual cost, refund the full reservation
                 fullRefundReservation(deps, reservedCents, user);
                 telemetrySpan?.end({
@@ -586,6 +727,7 @@ async function handleStreaming(c, request, decision, deps, apiKey, startTime, sa
                     latencyMs: Date.now() - startTime,
                     streaming: true,
                 });
+                const { errorBody: finalizeBody, errorHeaders: finalizeHeaders } = extractErrorDetail(finalizeErr);
                 deps.logger.log({
                     keyId,
                     provider: activeDecision.provider,
@@ -597,6 +739,8 @@ async function handleStreaming(c, request, decision, deps, apiKey, startTime, sa
                     latencyMs: Date.now() - startTime,
                     streaming: true,
                     statusCode: 200,
+                    errorBody: finalizeBody,
+                    errorHeaders: finalizeHeaders,
                     ...autoLogFields(activeDecision),
                 });
             }
@@ -617,6 +761,7 @@ async function handleStreaming(c, request, decision, deps, apiKey, startTime, sa
             };
             await stream.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
             await stream.write('data: [DONE]\n\n');
+            const { errorBody: midStreamBody, errorHeaders: midStreamHeaders } = extractErrorDetail(err);
             deps.logger.log({
                 keyId,
                 provider: activeDecision.provider,
@@ -628,6 +773,8 @@ async function handleStreaming(c, request, decision, deps, apiKey, startTime, sa
                 latencyMs: Date.now() - startTime,
                 streaming: true,
                 statusCode: 502,
+                errorBody: midStreamBody,
+                errorHeaders: midStreamHeaders,
                 ...autoLogFields(activeDecision),
             });
         }
@@ -699,8 +846,8 @@ export async function reserveCreditsForRequest(c, deps, tier, user) {
                     const description = `Auto-recharge for ${freshUser.email}`;
                     const result = await deps.stripe.charge(freshUser.stripeCustomerId, rechargeAmount, description);
                     if (result.status === 'succeeded') {
-                        // Apply 4% fee and credit the account
-                        const creditsToAdd = Math.floor(rechargeAmount * 0.96);
+                        // Apply platform fee (with minimum) and credit the account
+                        const creditsToAdd = creditsAfterFee(rechargeAmount);
                         deps.userStore.addCredits(user.id, creditsToAdd);
                         deps.billingTxStore.record({
                             userId: user.id,
@@ -792,7 +939,21 @@ export function settleStripeCredits(deps, apiKey, reservedCents, actualCents, us
  * Called when all providers fail or finalize() throws.
  */
 /**
- * Extract retry-after seconds from an OpenAI SDK RateLimitError.
+ * Detect rate-limiting errors. Covers OpenAI SDK RateLimitError (429)
+ * AND Groq's 413 "Request too large" (TPM/TPD limits), which the SDK
+ * surfaces as a plain APIError with status 413.
+ */
+function isRateLimitErr(err) {
+    if (err instanceof RateLimitError)
+        return true;
+    // Groq returns 413 when hitting free-tier TPM/TPD caps
+    if (err instanceof APIError && err.status === 413)
+        return true;
+    return false;
+}
+/**
+ * Extract retry-after seconds from a rate-limiting error.
+ * Accepts RateLimitError (429) or APIError (413 from Groq).
  * Cerebras and other providers include x-ratelimit-reset-requests-day (seconds until reset).
  * Falls back to the standard Retry-After header, then undefined.
  */
@@ -844,6 +1005,36 @@ function applyThinkingTokenFloor(request, decision) {
         `${decision.model} (${decision.provider}). Bumping to ${MIN_THINKING_OUTPUT_TOKENS}. ` +
         `Set max_tokens >= ${MIN_THINKING_OUTPUT_TOKENS} to silence this warning.`);
     return { ...request, max_tokens: MIN_THINKING_OUTPUT_TOKENS };
+}
+/**
+ * Normalize request parameters for the target provider/model.
+ *
+ * Handles:
+ * 1. Capping max_tokens to the model's maxOutputTokens limit
+ *    (e.g. Groq llama-4-scout caps at 8192, llama-3.3-70b at 32768).
+ *    OpenAI o-series models handle this in the adapter (max_completion_tokens).
+ *
+ * Returns the (possibly modified) request. Only creates a new object when changes are needed.
+ */
+function normalizeRequest(request, decision) {
+    const modelConfig = findModelConfig(decision.provider, decision.model, decision.tier);
+    const maxOutputTokens = modelConfig?.maxOutputTokens;
+    if (maxOutputTokens && request.max_tokens && request.max_tokens > maxOutputTokens) {
+        console.warn(`[Router] max_tokens=${request.max_tokens} exceeds model limit ${maxOutputTokens} for ` +
+            `${decision.provider}/${decision.model}. Capping to ${maxOutputTokens}.`);
+        return { ...request, max_tokens: maxOutputTokens };
+    }
+    return request;
+}
+/**
+ * Check whether a request contains tool definitions that would break Bedrock fallback.
+ *
+ * Bedrock (Anthropic-native under the hood) is stricter about tool result blocks
+ * in conversation history. When the request has tools, skipping Bedrock fallback
+ * candidates avoids the "Expected toolResult blocks" ValidationException.
+ */
+function requestHasTools(request) {
+    return (request.tools?.length ?? 0) > 0;
 }
 /**
  * Extract auto-routing fields from a route decision for usage logging.
