@@ -245,8 +245,9 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       <a href="/profile" class="sign-in">sign in →</a>
     </div>
     <p class="subtitle">
-      Access cheap and premium models through a single OpenAI-compatible endpoint.<br>
-      Smart routing across ${providerSubtitle()} — no model names to track.
+      One endpoint, zero model decisions.<br>
+      Routes across ${providerSubtitle()} — picks the best model for your request,
+      handles failover transparently, and adapts as models improve or fail.
     </p>
     <div class="status">
       <span class="dot" id="statusDot"></span>
@@ -266,10 +267,11 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
 
   <!-- Pitch -->
   <p class="pitch">
-    You pick what matters — the capability tier and the optimisation direction.
-    The router picks the model. When a cheaper option launches or a provider
-    goes down, your requests adapt automatically. <strong>No model names to track.
-    No code to change.</strong>
+    Provider APIs are chaos — models launch and deprecate, quotas exhaust,
+    latency spikes, prices shift. You don't need a model catalog.
+    You need requests that <strong>just complete, reliably, at the right capability level.</strong>
+    We handle the routing, failover, and cost optimisation.
+    Your code stays the same through all of it.
   </p>
 
   <!-- Two parameters -->
@@ -315,28 +317,16 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
 
   <hr class="hr">
 
-  <!-- Feature: $1 trial -->
-  <div class="section-head">$1 trial credit</div>
-  <p class="feature-body">
-    Every new account starts with $1 in free credits — enough for millions of tokens
-    on economy models like GPT-4.1 Mini and Gemini 2.5 Flash.
-    Add a payment method when you need more.
-  </p>
-
-  <hr class="hr">
-
-  <!-- Feature: Pricing -->
-  <div class="section-head">Transparent pricing</div>
-  <p class="feature-body">
-    A 4% fee (minimum $0.80) on credit deposits. Requests are billed at actual provider market rates —
-    you pay what the model costs, nothing more.
-    Every response includes <code>X-Model-Router-Model</code> and <code>X-Model-Router-Provider</code>
-    headers so you always know exactly what ran and what it cost.
-  </p>
-
-  <hr class="hr">
-
   <!-- Feature: Resilience -->
+  <div class="section-head">Automatic failover</div>
+  <p class="feature-body">
+    Circuit breakers detect provider outages and reroute requests in real time.
+    Context-window guards ensure requests never go to a model that can't handle them.
+    Your code doesn't change — routing adapts automatically.
+  </p>
+
+  <hr class="hr">
+
   <!-- Feature: Auto-routing -->
   <div class="section-head">Auto-routing</div>
   <p class="feature-body">
@@ -350,22 +340,33 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
 
   <hr class="hr">
 
-
-  <div class="section-head">Automatic failover</div>
-  <p class="feature-body">
-    Circuit breakers detect provider outages and reroute requests in real time.
-    Context-window guards ensure requests never go to a model that can't handle them.
-    Your code doesn't change — routing adapts automatically.
-  </p>
-
-  <hr class="hr">
-
   <!-- Feature: Control -->
   <div class="section-head">You stay in control</div>
   <p class="feature-body">
     Block providers you don't want to fund. Set daily spend limits.
     Enable auto-recharge so you never hit a wall mid-project.
     Export request traces to any OTLP backend — Axiom, Grafana, Honeycomb, Datadog.
+  </p>
+
+  <hr class="hr">
+
+  <!-- Feature: Trial -->
+  <div class="section-head">$1 trial credit</div>
+  <p class="feature-body">
+    Every new account starts with $1 in credits — enough for millions of tokens
+    on economy models like GPT-4.1 Mini and Gemini 2.5 Flash.
+    Add a payment method when you need more.
+  </p>
+
+  <hr class="hr">
+
+  <!-- Feature: Pricing -->
+  <div class="section-head">Transparent pricing</div>
+  <p class="feature-body">
+    A 4% fee (minimum $0.80) on credit deposits. Requests are billed at actual provider market rates —
+    you pay what the model costs, nothing more.
+    Every response includes <code>X-Model-Router-Model</code> and <code>X-Model-Router-Provider</code>
+    headers so you always know exactly what ran and what it cost.
   </p>
 
   <hr class="hr">
