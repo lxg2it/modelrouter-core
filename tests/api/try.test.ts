@@ -442,29 +442,6 @@ describe('POST /try/run — credit billing', () => {
     expect(refundCents).toBe(200); // Full standard ceiling returned
   });
 
-  // Free-provider models removed (862080d). This coverage was for groq/cerebras
-  // free models which have been retired. When free models return, restore this test.
-  it.skip('does not reserve credits for free-provider models', async () => {
-    const groqEngine = new RoutingEngine({
-      availableProviders: new Set(['groq']),
-      defaultTier: 'economy',
-      defaultOutputRatio: 0.33,
-    });
-    const groqAdapter = makeSuccessAdapter('groq', 'Free response');
-    const providers = new Map<ProviderName, ProviderAdapter>([['groq', groqAdapter]]);
-    const zeroBalanceUser: User = { ...fakeUser, creditBalanceCents: 0 };
-    const mockUserStore = makeMockUserStore({
-      validateSession: vi.fn().mockReturnValue(zeroBalanceUser),
-    });
-    const app = makeApp(groqEngine, providers, mockUserStore);
-
-    const res = await runRequest(app, minimalRequest);
-
-    expect(res.status).toBe(200);
-    expect(mockUserStore.tryReserveCredits).not.toHaveBeenCalled();
-    expect(mockUserStore.refundCredits).not.toHaveBeenCalled();
-  });
-
   it('bills users without stripeCustomerId for non-free models', async () => {
     const googleAdapter = makeSuccessAdapter('google', 'Hello!');
     const providers = new Map<ProviderName, ProviderAdapter>([['google', googleAdapter]]);
@@ -576,60 +553,6 @@ describe('POST /try/run — auto-recharge', () => {
     expect(res.status).toBe(402);
     // Stripe should NOT have been charged
     expect(mockStripe.charge).not.toHaveBeenCalled();
-  });
-});
-
-// ─── Tests: POST /try/run — free-tier notification ───────────────────────────
-// Free-provider models removed (862080d). Notification logic still exists in
-// try.ts but is unreachable while no free models are in the catalog.
-// When free models return, remove .skip from these two tests.
-
-describe('POST /try/run — free-tier notification', () => {
-  it.skip('sends a free-tier notification email when user qualifies', async () => {
-    const groqEngine = new RoutingEngine({
-      availableProviders: new Set(['groq']),
-      defaultTier: 'economy',
-      defaultOutputRatio: 0.33,
-    });
-    const groqAdapter = makeSuccessAdapter('groq', 'Free response');
-    const providers = new Map<ProviderName, ProviderAdapter>([['groq', groqAdapter]]);
-    const zeroBalanceUser: User = { ...fakeUser, creditBalanceCents: 0 };
-    const mockUserStore = makeMockUserStore({
-      validateSession: vi.fn().mockReturnValue(zeroBalanceUser),
-      shouldSendFreeTierNotification: vi.fn().mockReturnValue(true), // Due for a notification
-    });
-    const mockEmail = makeMockEmailSender();
-    const app = makeApp(groqEngine, providers, mockUserStore, { emailSender: mockEmail });
-
-    const res = await runRequest(app, minimalRequest);
-
-    expect(res.status).toBe(200);
-    // Notification was recorded and email queued
-    expect(mockUserStore.recordFreeTierNotification).toHaveBeenCalledWith(fakeUser.id);
-    expect(mockEmail.sendFreeTierNotification).toHaveBeenCalledWith(fakeUser.email);
-  });
-
-  it.skip('does not send a notification when the cooldown has not elapsed', async () => {
-    const groqEngine = new RoutingEngine({
-      availableProviders: new Set(['groq']),
-      defaultTier: 'economy',
-      defaultOutputRatio: 0.33,
-    });
-    const groqAdapter = makeSuccessAdapter('groq', 'Free response');
-    const providers = new Map<ProviderName, ProviderAdapter>([['groq', groqAdapter]]);
-    const zeroBalanceUser: User = { ...fakeUser, creditBalanceCents: 0 };
-    const mockUserStore = makeMockUserStore({
-      validateSession: vi.fn().mockReturnValue(zeroBalanceUser),
-      shouldSendFreeTierNotification: vi.fn().mockReturnValue(false), // Still in cooldown
-    });
-    const mockEmail = makeMockEmailSender();
-    const app = makeApp(groqEngine, providers, mockUserStore, { emailSender: mockEmail });
-
-    const res = await runRequest(app, minimalRequest);
-
-    expect(res.status).toBe(200);
-    expect(mockUserStore.recordFreeTierNotification).not.toHaveBeenCalled();
-    expect(mockEmail.sendFreeTierNotification).not.toHaveBeenCalled();
   });
 });
 

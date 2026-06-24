@@ -154,6 +154,23 @@ describe('POST /v1/completions', () => {
     expect(data.error.param).toBe('prompt');
   });
 
+  it('returns 400 with unknown_model for a bogus model name', async () => {
+    const adapter = makeChatAdapter('openai');
+    const deps = makeDeps(new Map([['openai', adapter]]));
+    const app = mountWithAuth(createCompletionsRouter(deps));
+
+    const res = await app.request('http://test/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'hello', model: 'banana-9000' }),
+    });
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error.code).toBe('unknown_model');
+    expect(data.error.message).toContain('banana-9000');
+  });
+
   it('returns 400 when a chat-type model is requested', async () => {
     const adapter = makeChatAdapter('openai');
     const deps = makeDeps(new Map([['openai', adapter]]));
