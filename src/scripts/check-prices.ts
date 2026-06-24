@@ -34,6 +34,9 @@ const MODEL_LOOKUP: Record<string, string[]> = {
   // OpenAI direct
   'openai/gpt-4.1':        ['gpt-4.1'],
   'openai/gpt-4.1-mini':   ['gpt-4.1-mini'],
+  'openai/gpt-5.4-nano':    ['gpt-5.4-nano'],
+  'openai/gpt-5.4-mini':    ['gpt-5.4-mini'],
+  'openai/gpt-5.1-codex-mini': ['gpt-5.1-codex-mini'],
   'openai/o3':             ['o3'],
   'openai/o4-mini':        ['o4-mini'],
 
@@ -41,6 +44,7 @@ const MODEL_LOOKUP: Record<string, string[]> = {
   'google/gemini-2.5-flash': ['gemini/gemini-2.5-flash', 'gemini-2.5-flash'],
   'google/gemini-3.1-flash-lite': ['gemini/gemini-3.1-flash-lite', 'gemini-3.1-flash-lite'],
   'google/gemini-2.5-pro':   ['gemini/gemini-2.5-pro',   'gemini-2.5-pro'],
+  'google/gemini-3.5-flash': ['gemini/gemini-3.5-flash', 'gemini-3.5-flash'],
 
   // Grok direct
   'grok/grok-3-beta':      ['xai/grok-3-beta'],
@@ -52,6 +56,7 @@ const MODEL_LOOKUP: Record<string, string[]> = {
   'bedrock/deepseek.v3.2':              ['bedrock/us-west-2/deepseek.v3.2'],
   'bedrock/minimax.minimax-m2.1':       ['bedrock/us-west-2/minimax.minimax-m2.1'],
   'bedrock/moonshotai.kimi-k2.5':       ['bedrock/us-west-2/moonshotai.kimi-k2.5'],
+  'bedrock/moonshotai.kimi-k2-thinking': ['bedrock/us-west-2/moonshotai.kimi-k2-thinking'],
   'bedrock/openai.gpt-oss-120b-1:0':    ['bedrock_mantle/openai.gpt-oss-120b'],
   'bedrock/openai.gpt-oss-safeguard-120b': ['bedrock_mantle/openai.gpt-oss-safeguard-120b'],
   'bedrock/qwen.qwen3-235b-a22b-2507':  ['bedrock/us-west-2/qwen.qwen3-235b-a22b'],

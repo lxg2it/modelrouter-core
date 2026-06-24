@@ -198,6 +198,8 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'google',    model: 'gemini-2.5-flash',          quality: 0.67, inputPer1M: 0.30,  outputPer1M: 2.50,  latencyMs: 280,  maxContextTokens: 1_048_576, isThinkingModel: true,  priceSource: 'litellm' },
       { provider: 'google',    model: 'gemini-3.1-flash-lite',     quality: 0.40, inputPer1M: 0.25,  outputPer1M: 1.50,  latencyMs: 200,  maxContextTokens: 65_536,                          priceSource: 'litellm' },
       { provider: 'openai',    model: 'gpt-4.1-mini',              quality: 0.58, inputPer1M: 0.40,  outputPer1M: 1.60,  latencyMs: 380,  maxContextTokens: 1_047_576,                         priceSource: 'litellm' },
+      { provider: 'openai',    model: 'gpt-5.4-nano',             quality: 0.42, inputPer1M: 0.20,  outputPer1M: 1.25,  latencyMs: 250,  maxContextTokens: 131_072,                          priceSource: 'litellm' },
+      { provider: 'openai',    model: 'gpt-5.4-mini',             quality: 0.65, inputPer1M: 0.75,  outputPer1M: 4.50,  latencyMs: 380,  maxContextTokens: 262_144,                          priceSource: 'litellm' },
       { provider: 'openai',    model: 'o4-mini',                   quality: 0.74, inputPer1M: 1.10,  outputPer1M: 4.40,  latencyMs: 2500, maxContextTokens: 200_000,   isThinkingModel: true,  priceSource: 'litellm' },
       { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', quality: 0.60, inputPer1M: 1.00,  outputPer1M: 5.00,  latencyMs: 320,  maxContextTokens: 200_000,                          priceSource: 'litellm' },
       { provider: 'grok',      model: 'grok-3-mini-beta',          quality: 0.50, inputPer1M: 0.30,  outputPer1M: 0.50,  latencyMs: 250,  maxContextTokens: 131_072,   isThinkingModel: true,  priceSource: 'litellm' },
@@ -213,10 +215,11 @@ export const TIERS: Record<string, TierConfig> = {
   standard: {
     models: [
       { provider: 'google',    model: 'gemini-2.5-pro',      quality: 0.87, inputPer1M: 1.25,  outputPer1M: 10.00, latencyMs: 600,  maxContextTokens: 1_048_576, isThinkingModel: true,  priceSource: 'litellm' },
+      { provider: 'google',    model: 'gemini-3.5-flash',    quality: 0.84, inputPer1M: 1.50,  outputPer1M: 9.00,  latencyMs: 450,  maxContextTokens: 1_048_576, isThinkingModel: true,  priceSource: 'litellm' },
       { provider: 'openai',    model: 'gpt-4.1',             quality: 0.79, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 750,  maxContextTokens: 1_047_576,                         priceSource: 'litellm' },
       { provider: 'openai',    model: 'gpt-5.3-chat-latest', quality: 0.88, inputPer1M: 1.75,  outputPer1M: 14.00, latencyMs: 600,  maxContextTokens: 1_047_576,                         priceSource: 'manual'  },
       { provider: 'openai',    model: 'gpt-5.3-codex',       quality: 0.91, inputPer1M: 1.75,  outputPer1M: 14.00, latencyMs: 800,  maxContextTokens: 400_000, apiType: 'responses',   priceSource: 'manual'  },
-      { provider: 'openai',    model: 'gpt-5.1-codex-mini',  quality: 0.80, inputPer1M: 1.50,  outputPer1M: 6.00,  latencyMs: 600,  maxContextTokens: 100_000, apiType: 'completions', priceSource: 'manual'  },
+      { provider: 'openai',    model: 'gpt-5.1-codex-mini',  quality: 0.80, inputPer1M: 0.25,  outputPer1M: 2.00,  latencyMs: 600,  maxContextTokens: 100_000, apiType: 'completions', priceSource: 'litellm'  },
       { provider: 'openai',    model: 'o3',                  quality: 0.85, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 3500, maxContextTokens: 200_000,   isThinkingModel: true,  priceSource: 'litellm' },
       { provider: 'anthropic', model: 'claude-sonnet-4-6',   quality: 0.85, inputPer1M: 3.00,  outputPer1M: 15.00, latencyMs: 650,  maxContextTokens: 1_000_000,                        priceSource: 'litellm' },
       { provider: 'grok',      model: 'grok-3-beta',         quality: 0.74, inputPer1M: 3.00,  outputPer1M: 15.00, latencyMs: 580,  maxContextTokens: 131_072,                          priceSource: 'litellm' },
@@ -226,6 +229,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'bedrock',   model: 'qwen.qwen3-235b-a22b-2507-v1:0', quality: 0.83, inputPer1M: 0.23, outputPer1M: 0.91,  latencyMs: 500,  maxContextTokens: 131_072,                     priceSource: 'manual', dedupKey: 'qwen3-235b' },
       { provider: 'bedrock',   model: 'mistral.mistral-large-3-675b-instruct', quality: 0.80, inputPer1M: 0.52, outputPer1M: 1.55, latencyMs: 600, maxContextTokens: 131_072,              priceSource: 'litellm' },
       { provider: 'bedrock',   model: 'moonshotai.kimi-k2.5',       quality: 0.88, inputPer1M: 0.62, outputPer1M: 3.09,  latencyMs: 600,  maxContextTokens: 131_072,                         priceSource: 'litellm' },
+      { provider: 'bedrock',   model: 'moonshotai.kimi-k2-thinking', quality: 0.82, inputPer1M: 0.60, outputPer1M: 2.50,  latencyMs: 500,  maxContextTokens: 262_144,   isThinkingModel: true,  priceSource: 'litellm' },
       { provider: 'bedrock',   model: 'minimax.minimax-m2.1',       quality: 0.72, inputPer1M: 0.30, outputPer1M: 1.20,  latencyMs: 500,  maxContextTokens: 1_000_000,                        priceSource: 'litellm' },
       { provider: 'bedrock',   model: 'qwen.qwen3-next-80b-a3b',         quality: 0.75, inputPer1M: 0.15, outputPer1M: 1.24, latencyMs: 450, maxContextTokens: 131_072,                   priceSource: 'manual'  },
       { provider: 'bedrock',   model: 'us.meta.llama4-maverick-17b-instruct-v1:0', quality: 0.84, inputPer1M: 0.24, outputPer1M: 0.97, latencyMs: 450, maxContextTokens: 1_000_000,          priceSource: 'manual'  },
@@ -310,6 +314,8 @@ export const MODEL_ALIASES: Record<string, string> = {
   // Economy tier aliases
   'gpt-4o-mini': 'economy',
   'gpt-4.1-mini': 'economy',
+  'gpt-5.4-nano': 'economy',
+  'gpt-5.4-mini': 'economy',
   'claude-haiku': 'economy',
   'claude-3-haiku': 'economy',
   'claude-3.5-haiku': 'economy',
@@ -332,6 +338,7 @@ export const MODEL_ALIASES: Record<string, string> = {
   'gemini-pro': 'standard',
   'gemini-1.5-pro': 'standard',
   'gemini-2.5-pro': 'standard',
+  'gemini-3.5-flash': 'standard',
 
   // Premium tier aliases
   'gpt-4.5': 'premium',
@@ -370,6 +377,7 @@ export const MODEL_ALIASES: Record<string, string> = {
   // Kimi/Moonshot aliases
   'kimi': 'standard',
   'kimi-k2.5': 'standard',
+  'kimi-k2': 'standard',
   'moonshot': 'standard',
 
   // Mistral aliases (via Bedrock)
