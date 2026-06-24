@@ -19,7 +19,7 @@ import type { EmailSender } from '../auth/email.js';
 import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../config.js';
 import { creditsAfterFee } from '../billing/platform-fee.js';
 import type { ApiKey, User, ChatCompletionRequest, ProviderName } from '../types.js';
-import { RateLimitError, BadRequestError } from 'openai';
+import { RateLimitError, BadRequestError, APIError } from 'openai';
 import { getHeader } from 'openai/core';
 
 /**
@@ -407,7 +407,7 @@ async function handleNonStreaming(
       }, 502);
     }
 
-    const primaryIsRateLimit = err instanceof RateLimitError;
+    const primaryIsRateLimit = isRateLimitErr(err);
     const primaryIsContextExceeded = isContextLengthError(err);
 
     // Track the last meaningful provider error for usage_log (skip rate limits and context exceeded)
@@ -444,7 +444,7 @@ async function handleNonStreaming(
     // retryAfterSecs keeps the first non-null value seen across primary + fallbacks.
     let allRateLimited = primaryIsRateLimit;
     let retryAfterSecs: number | undefined = primaryIsRateLimit
-      ? extractRetryAfter(err as RateLimitError)
+      ? extractRetryAfter(err as RateLimitError | APIError)
       : undefined;
 
     let fallbackSucceeded = false;
@@ -514,12 +514,12 @@ async function handleNonStreaming(
         fallbackSucceeded = true;
         return c.json(result.response);
       } catch (fallbackErr) {
-        const fallbackIsRateLimit = fallbackErr instanceof RateLimitError;
+        const fallbackIsRateLimit = isRateLimitErr(fallbackErr);
         const fallbackIsContextExceeded = isContextLengthError(fallbackErr);
         if (fallbackIsRateLimit) {
           console.warn(`[chat] Fallback provider rate limited (${fallback.provider}/${fallback.model}): 429`);
           if (retryAfterSecs === undefined) {
-            retryAfterSecs = extractRetryAfter(fallbackErr as RateLimitError);
+            retryAfterSecs = extractRetryAfter(fallbackErr as RateLimitError | APIError);
           }
         } else if (fallbackIsContextExceeded) {
           console.warn(`[chat] Fallback provider context also exceeded (${fallback.provider}/${fallback.model}) — trying next`);
@@ -654,10 +654,10 @@ async function handleStreaming(
       const primaryRequest = normalizeRequest(thinkingPrimaryRequest, decision);
       completion = await primaryAdapter.stream(decision.model, primaryRequest, user?.fallbackTimeoutMs);
     } catch (primaryErr) {
-      if (primaryErr instanceof RateLimitError) {
+      if (isRateLimitErr(primaryErr)) {
         console.warn(`[chat/stream] Primary provider rate limited (${decision.provider}/${decision.model}): 429`);
         streamAllRateLimited = true;
-        streamRetryAfterSecs = extractRetryAfter(primaryErr);
+        streamRetryAfterSecs = extractRetryAfter(primaryErr as RateLimitError | APIError);
       } else if (isContextLengthError(primaryErr)) {
         console.warn(`[chat/stream] Primary provider context exceeded (${decision.provider}/${decision.model}) — using token-aware fallback`);
         streamPrimaryIsContextExceeded = true;
@@ -735,10 +735,10 @@ async function handleStreaming(
         activeDecision = fallback;
         break; // Success — stop trying further candidates
       } catch (fallbackErr) {
-        if (fallbackErr instanceof RateLimitError) {
+        if (isRateLimitErr(fallbackErr)) {
           console.warn(`[chat/stream] Fallback provider rate limited (${fallback.provider}/${fallback.model}): 429`);
           if (streamRetryAfterSecs === undefined) {
-            streamRetryAfterSecs = extractRetryAfter(fallbackErr as RateLimitError);
+            streamRetryAfterSecs = extractRetryAfter(fallbackErr as RateLimitError | APIError);
           }
         } else if (isContextLengthError(fallbackErr)) {
           console.warn(`[chat/stream] Fallback provider context also exceeded (${fallback.provider}/${fallback.model}) — trying next`);
@@ -1113,12 +1113,25 @@ export function settleStripeCredits(
  * Called when all providers fail or finalize() throws.
  */
 /**
- * Extract retry-after seconds from an OpenAI SDK RateLimitError.
+ * Detect rate-limiting errors. Covers OpenAI SDK RateLimitError (429)
+ * AND Groq's 413 "Request too large" (TPM/TPD limits), which the SDK
+ * surfaces as a plain APIError with status 413.
+ */
+function isRateLimitErr(err: unknown): boolean {
+  if (err instanceof RateLimitError) return true;
+  // Groq returns 413 when hitting free-tier TPM/TPD caps
+  if (err instanceof APIError && err.status === 413) return true;
+  return false;
+}
+
+/**
+ * Extract retry-after seconds from a rate-limiting error.
+ * Accepts RateLimitError (429) or APIError (413 from Groq).
  * Cerebras and other providers include x-ratelimit-reset-requests-day (seconds until reset).
  * Falls back to the standard Retry-After header, then undefined.
  */
-function extractRetryAfter(err: RateLimitError): number | undefined {
-  const headers = err.headers;
+function extractRetryAfter(err: RateLimitError | APIError): number | undefined {
+  const headers = (err as any).headers;
   if (!headers) return undefined;
   const resetDay = getHeader(headers, 'x-ratelimit-reset-requests-day');
   if (resetDay !== undefined) {

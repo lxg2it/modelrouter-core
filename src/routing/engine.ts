@@ -132,7 +132,14 @@ export class RoutingEngine {
           }
           return [];
         })()
-      : getModelsForTier(tier, this.config.availableProviders);
+      : (() => {
+          // Paying users: prefer paid models. Free providers (Cerebras, Groq)
+          // are rate-limited and unreliable as primaries. Only include them
+          // when no paid models are available for the provider configuration.
+          const allModels = getModelsForTier(tier, this.config.availableProviders);
+          const paidOnly = allModels.filter((m) => !m.isFreeProvider);
+          return paidOnly.length > 0 ? paidOnly : allModels;
+        })();
 
     const candidates = this.filterByContext(
       // Exclude non-chat models from auto-routing — completions/responses models
