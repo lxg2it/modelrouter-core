@@ -59,6 +59,13 @@ export interface ChatCompletionRequest {
    * Has no effect on non-thinking models. Default: false.
    */
   include_reasoning?: boolean;
+  /**
+   * User-defined fallback chain. Each entry is a specific model ID (e.g. "claude-sonnet-4-6")
+   * or a tier name (e.g. "standard"). The router tries each in order — first failure
+   * moves to the next. When present, this replaces the default tier-internal fallback.
+   * Works with pinned models too: `{model: "gpt-4.1", fallback: ["claude-sonnet-4-6", "standard"]}`.
+   */
+  fallback?: string[];
 }
 
 

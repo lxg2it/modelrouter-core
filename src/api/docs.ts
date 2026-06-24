@@ -343,7 +343,15 @@ const API_HTML = `${docsHead('API Reference')}
           <td>string</td>
           <td>Optimisation direction within the tier: <code>cheap</code> (lowest cost),
           <code>fast</code> (lowest latency), <code>balanced</code> (default),
-          <code>quality</code> (highest quality score).</td>
+          <code>quality</code> (highest quality score), <code>coding</code> (SWE-bench optimised).</td>
+        </tr>
+        <tr>
+          <td><code>fallback</code></td>
+          <td>string[]</td>
+          <td>Ordered fallback chain. Each entry is a model ID or tier name.
+          Tried in order after the primary model fails. Replaces the default
+          tier-internal fallback. Overrides the no-fallback behaviour of pinned
+          models. See <a href="#fallback-chains">Fallback chains</a>.</td>
         </tr>
         <tr>
           <td><code>stream</code></td>
@@ -577,8 +585,52 @@ curl https://api.lxg2it.com/v1/chat/completions \\
 }</div>
 
     <p>When pinning, the <code class="inline-code">prefer</code> parameter is ignored.
-    If the pinned model&rsquo;s provider is unavailable, the request fails rather
-    than falling back to another model.</p>
+    If the pinned model&rsquo;s provider is unavailable, the request fails with
+    <code class="inline-code">502</code> rather than falling back to another model.</p>
+
+    <p>Pinning to a model ID that doesn&rsquo;t exist in the catalog returns
+    <code class="inline-code">400</code> with <code class="inline-code">code: "unknown_model"</code>.
+    The error message points to <a href="/v1/models">/v1/models</a> for the available list.</p>
+
+    <p>To allow fallback from a pinned model, add a
+    <a href="#fallback-chains">fallback chain</a> — the chain is honoured even when pinning.</p>
+
+    <!-- Fallback chains -->
+    <div class="section-head" id="fallback-chains">Fallback chains</div>
+
+    <p>
+      By default, the router silently falls back to other models in the same tier when
+      the primary model fails. You can override this with a <code class="inline-code">fallback</code>
+      chain — an ordered list of model IDs and/or tier names to try instead.
+    </p>
+
+    <div class="code-block"><span class="c"># Try GPT-4.1 first, then Claude Sonnet, then any standard-tier model</span>
+{
+  <span class="n">"model"</span>: <span class="s">"gpt-4.1"</span>,
+  <span class="n">"fallback"</span>: [<span class="s">"claude-sonnet-4-6"</span>, <span class="s">"standard"</span>],
+  <span class="n">"messages"</span>: [...]
+}</div>
+
+    <p>Each entry in the chain is resolved:</p>
+    <ul>
+      <li><strong>Model ID</strong> — resolves to that exact model (same as pinning)</li>
+      <li><strong>Tier name</strong> — expands to all available models in that tier,
+        ordered by cost. Circuit-broken and context-incompatible models are excluded</li>
+    </ul>
+
+    <p>The chain is tried in order. If every entry fails, the request returns
+    <code class="inline-code">503</code>. The <code class="inline-code">prefer</code>
+    parameter only affects the primary model — fallback steps always use balanced
+    (cost-optimised) ranking within their tier.</p>
+
+    <p>When <code class="inline-code">fallback</code> is provided:</p>
+    <ul>
+      <li>It replaces the default tier-internal fallback entirely</li>
+      <li>It works even when pinning a specific model (normally pinning disables fallback)</li>
+      <li>Unknown entries are silently skipped</li>
+      <li>Context-exceeded errors still use the user&rsquo;s chain rather than the
+        default cross-tier fallback</li>
+    </ul>
 
     <!-- Prefer -->
     <div class="section-head">Prefer parameter</div>
@@ -1071,7 +1123,7 @@ curl https://api.lxg2it.com/v1/chat/completions \\
         <tr><th>Status</th><th>Meaning</th></tr>
       </thead>
       <tbody>
-        <tr><td><code>400</code></td><td>Bad request &mdash; missing or invalid parameters.</td></tr>
+        <tr><td><code>400</code></td><td>Bad request &mdash; missing or invalid parameters, or unknown model ID (code: <code>unknown_model</code>).</td></tr>
         <tr><td><code>401</code></td><td>Unauthorised &mdash; missing or invalid API key.</td></tr>
         <tr><td><code>402</code></td><td>Insufficient credits.</td></tr>
         <tr><td><code>429</code></td><td>Rate limited.</td></tr>

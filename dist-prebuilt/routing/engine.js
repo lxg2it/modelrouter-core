@@ -45,6 +45,7 @@ export class RoutingEngine {
      */
     selectModel(request, blockedProviders, freeProvidersOnly) {
         const prefer = request.prefer ?? 'balanced';
+        const fallbackChain = request.fallback;
         const estimatedTokens = this.estimateInputTokens(request.messages);
         // ── model pinning: exact catalog model ID bypasses tier routing ──
         // If the client passes a model ID that exists in our catalog (e.g. "gpt-4.1",
@@ -54,7 +55,7 @@ export class RoutingEngine {
             const pinned = findModelById(request.model, this.config.availableProviders);
             if (pinned) {
                 return {
-                    ...this.toDecision(pinned.config, pinned.tier, undefined, prefer),
+                    ...this.toDecision(pinned.config, pinned.tier, undefined, prefer, undefined, fallbackChain),
                     pinned: true,
                 };
             }
@@ -118,14 +119,14 @@ export class RoutingEngine {
         if (available.length === 0) {
             // All context-compatible models in tier are circuit-broken.
             // Return the first candidate anyway — circuit breaker will allow a test request if cooldown has passed.
-            return this.toDecision(candidates[0], tier, undefined, prefer, autoResult);
+            return this.toDecision(candidates[0], tier, undefined, prefer, autoResult, fallbackChain);
         }
         const ratio = this.config.defaultOutputRatio;
         if (prefer === 'quality') {
             // Maximize quality score within tier; break ties by cost (ascending)
             const sorted = [...available].sort((a, b) => b.quality - a.quality
                 || (a.inputPer1M + a.outputPer1M * ratio) - (b.inputPer1M + b.outputPer1M * ratio));
-            return this.toDecision(sorted[0], tier, undefined, prefer, autoResult);
+            return this.toDecision(sorted[0], tier, undefined, prefer, autoResult, fallbackChain);
         }
         if (prefer === 'coding') {
             // Rank by coding-weighted composite score (SWE-bench 60%, GPQA 20%, Arena 20%).
@@ -139,12 +140,12 @@ export class RoutingEngine {
                 return scoreB - scoreA
                     || (a.inputPer1M + a.outputPer1M * ratio) - (b.inputPer1M + b.outputPer1M * ratio);
             });
-            return this.toDecision(sorted[0], tier, undefined, prefer, autoResult);
+            return this.toDecision(sorted[0], tier, undefined, prefer, autoResult, fallbackChain);
         }
         if (prefer === 'fast') {
             // Sort by latency (ascending), break ties by quality (descending)
             const sorted = [...available].sort((a, b) => a.latencyMs - b.latencyMs || b.quality - a.quality);
-            return this.toDecision(sorted[0], tier, undefined, prefer, autoResult);
+            return this.toDecision(sorted[0], tier, undefined, prefer, autoResult, fallbackChain);
         }
         // cheap / balanced: cheapest in tier, break ties by quality (descending)
         const scored = available.map((m) => ({
@@ -152,7 +153,7 @@ export class RoutingEngine {
             estimatedCost: m.inputPer1M + m.outputPer1M * ratio,
         }));
         scored.sort((a, b) => a.estimatedCost - b.estimatedCost || b.config.quality - a.config.quality);
-        return this.toDecision(scored[0].config, tier, scored[0].estimatedCost, prefer, autoResult);
+        return this.toDecision(scored[0].config, tier, scored[0].estimatedCost, prefer, autoResult, fallbackChain);
     }
     /**
      * Get the next fallback model after a failure.
@@ -340,7 +341,57 @@ export class RoutingEngine {
         };
         return this.selectModel(adapted, blockedProviders, freeProvidersOnly);
     }
-    toDecision(config, tier, estimatedCost, prefer = 'balanced', autoTier) {
+    /**
+     * Resolve a user-defined fallback chain into ordered RouteDecision candidates.
+     *
+     * Each entry is either:
+     *  - A specific model ID (resolved via findModelById)
+     *  - A tier name (resolved via getModelsForTier, with the engine's default prefer)
+     *
+     * Entries that don't match anything are silently skipped. Tier entries expand
+     * to all available (non-circuit-broken) models in that tier, ordered by cost.
+     */
+    resolveUserFallbackChain(chain, messages = [], blockedProviders, freeProvidersOnly) {
+        const estimatedTokens = this.estimateInputTokens(messages);
+        const results = [];
+        const seen = new Set();
+        for (const entry of chain) {
+            const trimmed = entry.trim();
+            if (!trimmed)
+                continue;
+            // Try as a specific model ID first
+            const pinned = findModelById(trimmed, this.config.availableProviders);
+            if (pinned) {
+                const key = `${pinned.config.provider}/${pinned.config.model}`;
+                if (!seen.has(key) && this.circuitBreaker.isAvailable(pinned.config.provider, pinned.config.model)) {
+                    seen.add(key);
+                    results.push(this.toDecision(pinned.config, pinned.tier));
+                }
+                continue;
+            }
+            // Try as a tier name
+            const tier = trimmed;
+            if (tier === 'economy' || tier === 'standard' || tier === 'premium') {
+                const tierModels = freeProvidersOnly
+                    ? getModelsForTier(tier, this.config.availableProviders).filter((m) => m.isFreeProvider)
+                    : getModelsForTier(tier, this.config.availableProviders);
+                const candidates = this.filterByContext(this.filterBlocked(tierModels, blockedProviders).filter((m) => (m.apiType ?? 'chat') === 'chat'), estimatedTokens).filter((m) => this.circuitBreaker.isAvailable(m.provider, m.model));
+                // Sort by cost within tier
+                const ratio = this.config.defaultOutputRatio;
+                candidates.sort((a, b) => (a.inputPer1M + a.outputPer1M * ratio) - (b.inputPer1M + b.outputPer1M * ratio));
+                for (const m of candidates) {
+                    const key = `${m.provider}/${m.model}`;
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        results.push(this.toDecision(m, tier));
+                    }
+                }
+            }
+            // Unknown entries: silently skip
+        }
+        return results;
+    }
+    toDecision(config, tier, estimatedCost, prefer = 'balanced', autoTier, fallbackChain) {
         const ratio = this.config.defaultOutputRatio;
         return {
             provider: config.provider,
@@ -350,6 +401,7 @@ export class RoutingEngine {
             prefer,
             isThinkingModel: config.isThinkingModel ?? false,
             ...(autoTier ? { autoTier } : {}),
+            ...(fallbackChain ? { fallbackChain } : {}),
         };
     }
 }

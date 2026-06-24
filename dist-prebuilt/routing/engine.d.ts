@@ -24,6 +24,8 @@ export interface RouteDecision {
     pinned?: boolean;
     /** Present when auto-routing was used. Contains the classification result for transparency. */
     autoTier?: AutoTierResult;
+    /** User-defined fallback chain to try after the primary model fails. */
+    fallbackChain?: string[];
 }
 export interface RoutingEngineConfig {
     availableProviders: Set<ProviderName>;
@@ -132,6 +134,17 @@ export declare class RoutingEngine {
      * shape the routing engine needs (no messages — token estimation uses prompt length).
      */
     selectModelForCompletion(request: TextCompletionRequest, blockedProviders?: Set<string>, freeProvidersOnly?: boolean): RouteDecision | null;
+    /**
+     * Resolve a user-defined fallback chain into ordered RouteDecision candidates.
+     *
+     * Each entry is either:
+     *  - A specific model ID (resolved via findModelById)
+     *  - A tier name (resolved via getModelsForTier, with the engine's default prefer)
+     *
+     * Entries that don't match anything are silently skipped. Tier entries expand
+     * to all available (non-circuit-broken) models in that tier, ordered by cost.
+     */
+    resolveUserFallbackChain(chain: string[], messages?: ChatMessage[], blockedProviders?: Set<string>, freeProvidersOnly?: boolean): RouteDecision[];
     private toDecision;
 }
 //# sourceMappingURL=engine.d.ts.map

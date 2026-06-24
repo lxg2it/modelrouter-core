@@ -275,11 +275,13 @@ async function handleNonStreaming(c, request, decision, deps, apiKey, startTime,
         return c.json(result.response);
     }
     catch (err) {
-        // ── Pinned model: no fallback ───────────────────────────
+        // ── Pinned model: no fallback (unless user provided a chain) ──
         // When the user explicitly pinned a specific model ID (not a tier alias,
         // not 'auto'), silently falling back to a different model is worse than
         // returning a clear error. The user chose this model for a reason.
-        if (decision.pinned) {
+        // Exception: if they also provided a `fallback` chain, they explicitly
+        // want fallback — honour it.
+        if (decision.pinned && !decision.fallbackChain?.length) {
             deps.router.recordFailure(decision.provider, decision.model);
             fullRefundReservation(deps, reservedCents, user);
             console.error(`[chat] Pinned model failed (${decision.provider}/${decision.model}) — no fallback:`, err);
@@ -337,10 +339,13 @@ async function handleNonStreaming(c, request, decision, deps, apiKey, startTime,
         // Try failover — iterate through all ranked candidates until one succeeds.
         // Token-aware fallback: when context is exceeded, prefer models with larger context windows
         // (searched across all tiers). Otherwise use standard same-tier cost-optimised fallback.
+        // User-defined chain: when `fallback` is provided, use it directly (even on context-exceeded).
         const failedSet = new Set([`${decision.provider}/${decision.model}`]);
-        const rawFallbackCandidates = primaryIsContextExceeded
-            ? deps.router.selectContextFallbackCandidates(failedSet, request.messages, blockedProviders, freeProvidersOnly)
-            : deps.router.selectFallbackCandidates(failedSet, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
+        const rawFallbackCandidates = decision.fallbackChain?.length
+            ? deps.router.resolveUserFallbackChain(decision.fallbackChain, request.messages, blockedProviders, freeProvidersOnly)
+            : primaryIsContextExceeded
+                ? deps.router.selectContextFallbackCandidates(failedSet, request.messages, blockedProviders, freeProvidersOnly)
+                : deps.router.selectFallbackCandidates(failedSet, decision.tier, request.messages, blockedProviders, freeProvidersOnly);
         // ── Filter Bedrock from fallback when request has tools ──────
         // Bedrock (Anthropic-native format) is stricter about tool result blocks.
         // Skipping Bedrock fallback avoids "Expected toolResult blocks" ValidationException.
