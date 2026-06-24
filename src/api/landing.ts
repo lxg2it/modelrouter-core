@@ -90,7 +90,6 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     .title { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: -0.5px; }
     .sign-in { font-size: 13px; color: var(--accent); font-family: var(--mono); }
     .sign-in:hover { opacity: 0.8; }
-    .subtitle { font-size: 15px; color: var(--text); margin-bottom: 16px; max-width: 480px; }
     .status { display: flex; align-items: center; gap: 8px; }
     .dot {
       width: 7px; height: 7px; border-radius: 50%; background: var(--muted);
@@ -312,7 +311,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
     Circuit breakers reroute around provider outages automatically.
   </p>
   <p style="font-size:13px; color:var(--muted); margin-top:10px;">
-    <a href="/v1/models">Available models →</a>
+    <a href="/v1/models">See the full tier × prefer routing grid →</a>
   </p>
 
   <hr class="hr">

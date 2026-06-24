@@ -63,7 +63,7 @@ export const SHARED_CSS = /* css */ `
   .title a:hover { color: var(--accent); text-decoration: none; }
   .nav-link { font-size: 13px; color: var(--accent); font-family: var(--mono); }
   .nav-link:hover { opacity: 0.8; text-decoration: none; }
-  .subtitle { font-size: 15px; color: var(--muted); margin-bottom: 16px; max-width: 480px; }
+  .subtitle { font-size: 15px; color: var(--text); margin-bottom: 16px; max-width: 480px; }
 
   /* ── Section headings ── */
   .section-head {
