@@ -87,14 +87,15 @@ describe('RoutingEngine', () => {
       expect(decision!.tier).toBe('standard');
     });
 
-    it('falls back to engine default tier when nothing else resolves', () => {
+    it('falls back to engine default tier when no model is specified', () => {
       const engine = new RoutingEngine({
         availableProviders: new Set(['anthropic', 'openai']),
         defaultTier: 'premium',
         defaultOutputRatio: 0.33,
       });
 
-      const decision = engine.selectModel(req({ model: 'llama-3-70b' }));
+      // No model specified → engine default tier
+      const decision = engine.selectModel(req());
       expect(decision!.tier).toBe('premium');
     });
   });
@@ -828,10 +829,11 @@ describe('model pinning', () => {
     expect(decision!.tier).toBe('standard');
   });
 
-  it('falls through to normal routing for an unknown model ID', () => {
+  it('returns null for an unknown model ID (invalid pin)', () => {
+    // Previously unknown models fell through to default tier. Now they return
+    // null so the chat handler can respond with 400 'Unknown model'.
     const decision = engine.selectModel(req({ model: 'llama-3-70b' }));
-    expect(decision).not.toBeNull();
-    expect(decision!.pinned).toBeUndefined();
+    expect(decision).toBeNull();
   });
 
   it('returns null when pinned model provider is not available', () => {
@@ -845,5 +847,234 @@ describe('model pinning', () => {
     expect(decision).not.toBeNull();
     expect(decision!.pinned).toBeUndefined(); // fell through to normal routing
     expect(decision!.provider).not.toBe('openai');
+  });
+});
+
+describe('unknown model → 400', () => {
+  it('returns null for a completely bogus model name', () => {
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['anthropic', 'openai', 'google', 'grok']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    expect(engine.selectModel(req({ model: 'banana-9000' }))).toBeNull();
+  });
+
+  it('returns null for a typo of a known model', () => {
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['anthropic', 'openai', 'google', 'grok']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    // "gbt-4.1" — typo of "gpt-4.1"
+    expect(engine.selectModel(req({ model: 'gbt-4.1' }))).toBeNull();
+  });
+
+  it('returns null for an empty string model', () => {
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['anthropic', 'openai', 'google', 'grok']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    // empty string should still default (not treated as unknown)
+    const decision = engine.selectModel(req({ model: '' }));
+    expect(decision).not.toBeNull();
+  });
+
+  it('returns null for a whitespace-only model name', () => {
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['anthropic', 'openai', 'google', 'grok']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const decision = engine.selectModel(req({ model: '   ' }));
+    expect(decision).not.toBeNull();
+  });
+
+  it('still routes normally when model is "auto"', () => {
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['anthropic', 'openai', 'google', 'grok']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const decision = engine.selectModel(req({ model: 'auto' }));
+    expect(decision).not.toBeNull();
+    expect(decision!.pinned).toBeUndefined();
+  });
+
+  it('still routes normally for tier aliases (not treated as unknown)', () => {
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['anthropic', 'openai', 'google', 'grok']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    // "gpt-4o" resolves to standard tier
+    const decision = engine.selectModel(req({ model: 'gpt-4o' }));
+    expect(decision).not.toBeNull();
+    expect(decision!.tier).toBe('standard');
+  });
+
+  it('explicit tier overrides unknown model (tier takes priority)', () => {
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['anthropic', 'openai', 'google', 'grok']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    // When tier is explicitly set, the model field is ignored — tier routing wins.
+    // Unknown model name alone would return null, but tier provides the routing hint.
+    const decision = engine.selectModel(req({ model: 'nonexistent', tier: 'premium' }));
+    expect(decision).not.toBeNull();
+    expect(decision!.tier).toBe('premium');
+  });
+});
+
+describe('user-defined fallback chain', () => {
+  const allProviders = new Set(['anthropic', 'openai', 'google', 'grok'] as const);
+
+  describe('resolveUserFallbackChain', () => {
+    it('resolves specific model IDs in order', () => {
+      const engine = new RoutingEngine({
+        availableProviders: allProviders,
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+      });
+      const chain = ['claude-sonnet-4-6', 'gpt-4.1', 'gemini-2.5-pro'];
+      const results = engine.resolveUserFallbackChain(chain);
+      expect(results).toHaveLength(3);
+      expect(results[0].model).toBe('claude-sonnet-4-6');
+      expect(results[1].model).toBe('gpt-4.1');
+      expect(results[2].model).toBe('gemini-2.5-pro');
+    });
+
+    it('resolves tier names to all models in that tier', () => {
+      const engine = new RoutingEngine({
+        availableProviders: allProviders,
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+      });
+      const results = engine.resolveUserFallbackChain(['standard']);
+      expect(results.length).toBeGreaterThan(1);
+      // All results should be in the standard tier
+      for (const r of results) {
+        expect(r.tier).toBe('standard');
+      }
+    });
+
+    it('deduplicates entries that appear more than once', () => {
+      const engine = new RoutingEngine({
+        availableProviders: allProviders,
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+      });
+      // Same model appears twice in chain
+      const chain = ['claude-sonnet-4-6', 'claude-sonnet-4-6', 'gpt-4.1'];
+      const results = engine.resolveUserFallbackChain(chain);
+      // Should have 2 entries, not 3
+      const sonnetCount = results.filter((r) => r.model === 'claude-sonnet-4-6').length;
+      expect(sonnetCount).toBe(1);
+    });
+
+    it('mixes model IDs and tier names', () => {
+      const engine = new RoutingEngine({
+        availableProviders: allProviders,
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+      });
+      const chain = ['gpt-4.1', 'standard'];
+      const results = engine.resolveUserFallbackChain(chain);
+      expect(results.length).toBeGreaterThan(1);
+      expect(results[0].model).toBe('gpt-4.1');
+      // The remaining entries are all standard tier models
+      const tierEntries = results.slice(1);
+      for (const r of tierEntries) {
+        expect(r.tier).toBe('standard');
+      }
+    });
+
+    it('silently ignores unknown entries', () => {
+      const engine = new RoutingEngine({
+        availableProviders: allProviders,
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+      });
+      const chain = ['gpt-4.1', 'banana-9000', 'claude-sonnet-4-6'];
+      const results = engine.resolveUserFallbackChain(chain);
+      expect(results).toHaveLength(2);
+      expect(results[0].model).toBe('gpt-4.1');
+      expect(results[1].model).toBe('claude-sonnet-4-6');
+    });
+
+    it('skips circuit-broken models in the chain', () => {
+      const engine = new RoutingEngine({
+        availableProviders: allProviders,
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+      });
+      // Trip claude-sonnet-4-6's circuit
+      for (let i = 0; i < 3; i++) {
+        engine.recordFailure('anthropic', 'claude-sonnet-4-6');
+      }
+      const chain = ['claude-sonnet-4-6', 'gpt-4.1'];
+      const results = engine.resolveUserFallbackChain(chain);
+      // claude-sonnet-4-6 should be skipped due to tripped circuit
+      expect(results).toHaveLength(1);
+      expect(results[0].model).toBe('gpt-4.1');
+    });
+
+    it('returns empty array for an empty chain', () => {
+      const engine = new RoutingEngine({
+        availableProviders: allProviders,
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+      });
+      expect(engine.resolveUserFallbackChain([])).toEqual([]);
+    });
+
+    it('returns empty array when all entries are unknown', () => {
+      const engine = new RoutingEngine({
+        availableProviders: allProviders,
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+      });
+      expect(engine.resolveUserFallbackChain(['banana', 'llama-fake'])).toEqual([]);
+    });
+  });
+
+  describe('selectModel with fallback parameter', () => {
+    it('passes the fallback chain through to the decision', () => {
+      const engine = new RoutingEngine({
+        availableProviders: allProviders,
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+      });
+      const chain = ['claude-sonnet-4-6', 'standard'];
+      const decision = engine.selectModel(req({ fallback: chain }));
+      expect(decision).not.toBeNull();
+      expect(decision!.fallbackChain).toEqual(chain);
+    });
+
+    it('passes fallback chain on pinned models', () => {
+      const engine = new RoutingEngine({
+        availableProviders: allProviders,
+        defaultTier: 'economy',
+        defaultOutputRatio: 0.33,
+      });
+      const chain = ['claude-sonnet-4-6', 'standard'];
+      const decision = engine.selectModel(req({ model: 'gpt-4.1-mini', fallback: chain }));
+      expect(decision).not.toBeNull();
+      expect(decision!.pinned).toBe(true);
+      expect(decision!.fallbackChain).toEqual(chain);
+    });
+
+    it('attaches undefined fallbackChain when fallback is omitted', () => {
+      const engine = new RoutingEngine({
+        availableProviders: allProviders,
+        defaultTier: 'standard',
+        defaultOutputRatio: 0.33,
+      });
+      const decision = engine.selectModel(req());
+      expect(decision).not.toBeNull();
+      expect(decision!.fallbackChain).toBeUndefined();
+    });
   });
 });

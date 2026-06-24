@@ -1589,3 +1589,293 @@ describe('Thinking model token floor', () => {
   });
 });
 
+describe('unknown model — 400 response', () => {
+  it('returns 400 with unknown_model code for a bogus model name', async () => {
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['google', makeSuccessAdapter('google')],
+      ['openai', makeSuccessAdapter('openai')],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['google', 'openai']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...minimalRequest, model: 'banana-9000' }),
+    }));
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('unknown_model');
+    expect(body.error.type).toBe('invalid_request_error');
+    expect(body.error.message).toContain('banana-9000');
+  });
+
+  it('returns 400 for a typo of a known model', async () => {
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['openai', makeSuccessAdapter('openai')],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['openai']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...minimalRequest, model: 'gbt-4.1' }),
+    }));
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as any;
+    expect(body.error.code).toBe('unknown_model');
+  });
+
+  it('routes normally when model is omitted (default tier)', async () => {
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['google', makeSuccessAdapter('google', 'default response')],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['google']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(minimalRequest),
+    }));
+
+    expect(res.status).toBe(200);
+  });
+
+  it('routes normally for tier aliases', async () => {
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['google', makeSuccessAdapter('google', 'alias response')],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['google']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    // "gpt-4o" is a tier alias, not a specific model pin
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...minimalRequest, model: 'gpt-4o' }),
+    }));
+
+    expect(res.status).toBe(200);
+  });
+
+  it('routes normally when tier is explicit — model field ignored', async () => {
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['google', makeSuccessAdapter('google', 'premium route')],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['google']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    // When tier is explicitly set, the model field is irrelevant — tier routing wins
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...minimalRequest, model: 'banana', tier: 'premium' }),
+    }));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Model-Router-Tier')).toBe('premium');
+  });
+});
+
+describe('user-defined fallback chain — API', () => {
+  it('falls through to the first specified fallback model on primary failure', async () => {
+    const openaiAdapter = makeFailingStreamAdapter('openai');
+    const anthropicAdapter = makeSuccessAdapter('anthropic', 'fallback response');
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['openai', openaiAdapter],
+      ['anthropic', anthropicAdapter],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['openai', 'anthropic']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...minimalRequest,
+        model: 'gpt-4.1',
+        fallback: ['claude-sonnet-4-6'],
+      }),
+    }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.choices[0].message.content).toBe('fallback response');
+    expect(openaiAdapter.complete).toHaveBeenCalledOnce();
+    expect(anthropicAdapter.complete).toHaveBeenCalledOnce();
+  });
+
+  it('uses tier name in fallback chain as a pool of models', async () => {
+    const googleAdapter = makeFailingStreamAdapter('google');
+    const openaiAdapter = makeSuccessAdapter('openai', 'pool fallback response');
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['google', googleAdapter],
+      ['openai', openaiAdapter],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['google', 'openai']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    // Primary fails, fallback is "standard" tier (contains openai models)
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...minimalRequest,
+        model: 'gpt-4.1',
+        fallback: ['standard'],
+      }),
+    }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.choices[0].message.content).toBe('pool fallback response');
+  });
+
+  it('allows fallback on pinned models (normally pinned stops at 502)', async () => {
+    const openaiAdapter = makeFailingStreamAdapter('openai');
+    const anthropicAdapter = makeSuccessAdapter('anthropic', 'pinned fallback response');
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['openai', openaiAdapter],
+      ['anthropic', anthropicAdapter],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['openai', 'anthropic']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    // Pinned model with fallback chain → should fall through, not return 502
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...minimalRequest,
+        model: 'gpt-4.1',
+        fallback: ['claude-sonnet-4-6'],
+      }),
+    }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.choices[0].message.content).toBe('pinned fallback response');
+  });
+
+  it('returns 502 when pinned model fails and no fallback chain provided', async () => {
+    const openaiAdapter = makeFailingStreamAdapter('openai');
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['openai', openaiAdapter],
+      ['anthropic', makeSuccessAdapter('anthropic', 'should not be called')],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['openai', 'anthropic']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    // Pinned model with NO fallback chain → should return 502, not silently fallback
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...minimalRequest,
+        model: 'gpt-4.1',
+      }),
+    }));
+
+    expect(res.status).toBe(502);
+  });
+
+  it('iterates through multiple fallback entries until one succeeds', async () => {
+    const googleAdapter = makeFailingStreamAdapter('google');
+    const openaiAdapter = makeFailingStreamAdapter('openai');
+    const anthropicAdapter = makeSuccessAdapter('anthropic', 'third time lucky');
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['google', googleAdapter],
+      ['openai', openaiAdapter],
+      ['anthropic', anthropicAdapter],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['google', 'openai', 'anthropic']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    // Primary google fails, then openai fails, then anthropic succeeds
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...minimalRequest,
+        model: 'gpt-4.1',
+        fallback: ['claude-sonnet-4-6', 'gemini-2.5-pro'],
+      }),
+    }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.choices[0].message.content).toBe('third time lucky');
+  });
+
+  it('returns 502 when all entries in user fallback chain fail', async () => {
+    const openaiAdapter = makeFailingStreamAdapter('openai');
+    const anthropicAdapter = makeFailingStreamAdapter('anthropic');
+    const providers = new Map<ProviderName, ProviderAdapter>([
+      ['openai', openaiAdapter],
+      ['anthropic', anthropicAdapter],
+    ]);
+    const engine = new RoutingEngine({
+      availableProviders: new Set(['openai', 'anthropic']),
+      defaultTier: 'standard',
+      defaultOutputRatio: 0.33,
+    });
+    const app = makeTestApp(providers, engine, makeMockLogger());
+
+    const res = await app.fetch(new Request('http://test/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...minimalRequest,
+        model: 'gpt-4.1',
+        fallback: ['claude-sonnet-4-6'],
+      }),
+    }));
+
+    expect(res.status).toBe(502);
+  });
+});
+
