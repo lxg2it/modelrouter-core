@@ -207,15 +207,6 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'bedrock',   model: 'zai.glm-4.7-flash',          quality: 0.51, inputPer1M: 0.070, outputPer1M: 0.400, latencyMs: 350,  maxContextTokens: 202_752,                         priceSource: 'manual' },
       { provider: 'bedrock',   model: 'qwen.qwen3-32b-v1:0',        quality: 0.48, inputPer1M: 0.15,  outputPer1M: 0.62,  latencyMs: 300,  maxContextTokens: 131_072,                         priceSource: 'manual' },
       { provider: 'bedrock',   model: 'openai.gpt-oss-120b-1:0',    quality: 0.50, inputPer1M: 0.15,  outputPer1M: 0.60,  latencyMs: 450,  maxContextTokens: 128_000,                         priceSource: 'litellm', dedupKey: 'gpt-oss-120b' },
-      // Free-provider models — hosted by providers with permanent free tiers.
-      // isFreeProvider: true means these are routed to zero-balance users and are never billed.
-      // Quality/latency estimates are approximate; inputPer1M/outputPer1M are 0 (free to us).
-      // Groq: permanent free tier, 30 RPM / 14,400 RPD. Wafer-scale silicon — very fast inference.
-      { provider: 'groq',     model: 'llama-3.3-70b-versatile',   quality: 0.63, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 200,  maxContextTokens: 128_000,   maxOutputTokens: 32768,  isFreeProvider: true,  priceSource: 'manual' },
-      { provider: 'groq',     model: 'meta-llama/llama-4-scout-17b-16e-instruct', quality: 0.58, inputPer1M: 0, outputPer1M: 0, latencyMs: 180, maxContextTokens: 131_072, maxOutputTokens: 8192, isFreeProvider: true, priceSource: 'manual' },
-      // Cerebras: permanent free tier, 30 RPM / 14,400 RPD. Wafer-scale silicon — fastest inference.
-      { provider: 'cerebras', model: 'gpt-oss-120b',             quality: 0.50, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 150,  maxContextTokens: 128_000,   isFreeProvider: true,  priceSource: 'manual', dedupKey: 'gpt-oss-120b' },
-      { provider: 'cerebras', model: 'zai-glm-4.7',               quality: 0.90, inputPer1M: 0,     outputPer1M: 0,     latencyMs: 200,  maxContextTokens: 202_752,   isFreeProvider: true,  priceSource: 'manual', dedupKey: 'glm-4.7' },
     ],
     description: 'Fast and cheap. Good for classification, extraction, simple generation.',
   },
