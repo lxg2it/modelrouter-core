@@ -113,9 +113,13 @@ export class RoutingEngine {
       // Explicit auto-routing: classify from conversation context
       autoResult = classifyAutoTier(request.messages);
       tier = autoResult.tier;
+    } else if (request.model && request.model.trim() !== '') {
+      // Model explicitly specified but neither pinned to a catalog model nor
+      // resolved to a tier — it's an unknown/invalid model name. Return null
+      // so the caller can respond with 400.
+      return null;
     } else {
-      // No model specified, or model specified but didn't resolve —
-      // fall through to the engine default tier.
+      // No model specified — fall through to the engine default tier.
       tier = this.config.defaultTier;
     }
 

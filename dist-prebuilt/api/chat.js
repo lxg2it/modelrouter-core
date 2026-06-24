@@ -93,6 +93,17 @@ export function createChatRouter(deps) {
             : undefined;
         const decision = deps.router.selectModel(body, userBlockedProviders, routeToFreeTierOnly);
         if (!decision) {
+            // Explicit model name that didn't resolve — invalid request.
+            const modelParam = body.model?.trim();
+            if (modelParam && modelParam !== 'auto') {
+                return c.json({
+                    error: {
+                        message: `Unknown model: "${modelParam}". Check available models at https://api.lxg2it.com/v1/models or use a tier name (economy, standard, premium, auto).`,
+                        type: 'invalid_request_error',
+                        code: 'unknown_model',
+                    },
+                }, 400);
+            }
             // Free-tier routing found nothing — no free providers configured or available.
             // Return a descriptive error rather than a generic 503.
             if (routeToFreeTierOnly) {
