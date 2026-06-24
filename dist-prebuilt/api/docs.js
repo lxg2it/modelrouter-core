@@ -197,7 +197,7 @@ const OVERVIEW_HTML = `${docsHead('Documentation')}
     <div class="section-head">Quick start</div>
 
     <p><strong>1. Sign up</strong> — go to <a href="/profile">/profile</a>, enter your email, get a login code.
-    New accounts get $1 free credit.</p>
+    New accounts get $1 in trial credits.</p>
 
     <p><strong>2. Create an API key</strong> — on the profile page, generate a key
     (starts with <code class="inline-code">mr_sk_</code>).</p>
@@ -206,7 +206,7 @@ const OVERVIEW_HTML = `${docsHead('Documentation')}
 
     <p><strong>OpenAI-compatible</strong> — works with any OpenAI SDK or tool:</p>
 
-    <div class="code-block"><span class="c"># Free models — uses economy tier (Groq/Cerebras, no cost)</span>
+    <div class="code-block"><span class="c"># Economy tier — cheap models, burns trial credits</span>
 curl https://api.lxg2it.com/v1/chat/completions \\
   -H <span class="s">"Authorization: Bearer YOUR_API_KEY"</span> \\
   -H <span class="s">"Content-Type: application/json"</span> \\
@@ -216,9 +216,10 @@ curl https://api.lxg2it.com/v1/chat/completions \\
   }'</span></div>
 
     <p style="font-size:13px; color:var(--muted);">
-      <strong>economy</strong> routes to free models via Groq and Cerebras — no credits consumed. Your $1 sign-up credit
-      can also be used with <code class="inline-code">standard</code> or <code class="inline-code">premium</code>
-      tiers — or pin a specific model like <code class="inline-code">claude-sonnet-4-6</code>.
+      <strong>economy</strong> routes to the cheapest models in each tier. Your $1 trial credit covers
+      millions of tokens on economy, or fewer calls on
+      <code class="inline-code">standard</code> / <code class="inline-code">premium</code>.
+      Pin a specific model like <code class="inline-code">claude-sonnet-4-6</code>.
       See <a href="/docs/api#tiers">Tiers</a>.
     </p>
 
@@ -1101,7 +1102,7 @@ const INTEGRATIONS_HTML = `${docsHead('Integration Guides')}
     <ol>
       <li>Set <strong>API Key</strong> to your <code class="inline-code">mr_sk_...</code> key.</li>
       <li>Set <strong>Base URL</strong> to <code class="inline-code">https://api.lxg2it.com/v1</code>.</li>
-      <li>Add a model name — use <code class="inline-code">economy</code> (free) or any tier / model ID.</li>
+      <li>Add a model name — use <code class="inline-code">economy</code> (cheapest) or any tier / model ID.</li>
       <li>Select the model when starting a chat or using Cmd+K.</li>
     </ol>
 
@@ -1126,7 +1127,7 @@ const INTEGRATIONS_HTML = `${docsHead('Integration Guides')}
       <li>Set <strong>API Provider</strong> to <code class="inline-code">OpenAI Compatible</code>.</li>
       <li>Set <strong>Base URL</strong> to <code class="inline-code">https://api.lxg2it.com/v1</code>.</li>
       <li>Set <strong>API Key</strong> to your <code class="inline-code">mr_sk_...</code> key.</li>
-      <li>Set <strong>Model ID</strong> to <code class="inline-code">economy</code> (free) or any tier / model ID.</li>
+      <li>Set <strong>Model ID</strong> to <code class="inline-code">economy</code> (cheapest) or any tier / model ID.</li>
     </ol>
 
     <!-- OpenClaw -->
@@ -1140,7 +1141,7 @@ const INTEGRATIONS_HTML = `${docsHead('Integration Guides')}
     <div class="code-block"><span class="c"># Environment variables</span>
 export OPENAI_API_KEY=<span class="s">"mr_sk_..."</span>
 export OPENAI_BASE_URL=<span class="s">"https://api.lxg2it.com/v1"</span>
-export OPENAI_MODEL=<span class="s">"economy"</span>  <span class="c"># free models (Groq/Cerebras) — upgrade to standard/premium for GPT-4o, Claude, Gemini</span></div>
+export OPENAI_MODEL=<span class="s">"economy"</span>  <span class="c"># cheapest tier — upgrade to standard/premium for GPT-4.1, Claude, Gemini</span></div>
 
     <p>Or in your config file:</p>
 
@@ -1149,7 +1150,7 @@ provider:
   type: openai
   api_key: <span class="s">mr_sk_...</span>
   base_url: <span class="s">https://api.lxg2it.com/v1</span>
-  model: <span class="s">economy</span>  <span class="c"># free models — upgrade to standard/premium as needed</span></div>
+  model: <span class="s">economy</span>  <span class="c"># cheapest tier — upgrade to standard/premium as needed</span></div>
 
     <!-- Python SDK -->
     <div class="section-head">Python (OpenAI SDK)</div>
@@ -1162,7 +1163,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model=<span class="s">"economy"</span>,  <span class="c"># free models (no cost)</span>
+    model=<span class="s">"economy"</span>,  <span class="c"># cheapest tier</span>
     messages=[{<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"Hello!"</span>}],
 )
 print(response.choices[0].message.content)</div>
@@ -1178,7 +1179,7 @@ print(response.choices[0].message.content)</div>
 });
 
 <span class="k">const</span> response = <span class="k">await</span> client.chat.completions.create({
-  model: <span class="s">'economy'</span>,  <span class="c">// free models (no cost)</span>
+  model: <span class="s">'economy'</span>,  <span class="c">// cheapest tier</span>
   messages: [{ role: <span class="s">'user'</span>, content: <span class="s">'Hello!'</span> }],
 });
 console.log(response.choices[0].message.content);</div>

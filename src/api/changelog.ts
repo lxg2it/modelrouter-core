@@ -36,6 +36,19 @@ interface ChangelogEntry {
 
 const ENTRIES: ChangelogEntry[] = [
   {
+    date: '2026-06-24',
+    tag: 'feature',
+    title: 'Removed free provider routing — economy tier is now fully paid',
+    body: `<p>Groq and Cerebras free-tier models have been removed from the economy tier.
+    Free provider rate limits (39% failure rate on Cerebras) were causing cascading
+    502 errors as user volume grew beyond what free quotas could sustain.</p>
+    <p>Economy tier now routes to cheap paid models: GPT-4.1 Mini, Gemini 2.5 Flash,
+    Claude Haiku 4.5, Grok 3 Mini, and Bedrock models. New accounts still get $1 in
+    trial credits — enough for millions of tokens.</p>
+    <p>Zero-balance users receive a 402 Payment Required response with a link to
+    <a href="/billing">/billing</a>.</p>`,
+  },
+  {
     date: '2026-03-25',
     tag: 'fix',
     title: 'Replaced "free tier" with "free models" throughout',

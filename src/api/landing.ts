@@ -245,7 +245,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
       <a href="/profile" class="sign-in">sign in →</a>
     </div>
     <p class="subtitle">
-      Access free and premium models through a single OpenAI-compatible endpoint.<br>
+      Access cheap and premium models through a single OpenAI-compatible endpoint.<br>
       Smart routing across ${providerSubtitle()} — no model names to track.
     </p>
     <div class="status">
@@ -315,12 +315,12 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
 
   <hr class="hr">
 
-  <!-- Feature: Free models -->
-  <div class="section-head">Free models, no credit card</div>
+  <!-- Feature: $1 trial -->
+  <div class="section-head">$1 trial credit</div>
   <p class="feature-body">
-    Fast models via Groq and Cerebras are routed at no cost — no credits, no card required.
-    Sign up and start making requests immediately.
-    Add credits when you need the full range of premium models.
+    Every new account starts with $1 in free credits — enough for millions of tokens
+    on economy models like GPT-4.1 Mini and Gemini 2.5 Flash.
+    Add a payment method when you need more.
   </p>
 
   <hr class="hr">
@@ -397,7 +397,7 @@ const LANDING_HTML = /* html */ `<!DOCTYPE html>
   <div class="step">
     <div class="step-num">3</div>
     <div class="step-body">
-      That's it. Free models work immediately. Add credits for the full range.
+      That's it. Your $1 trial credit starts immediately. Add more credits when needed.
     </div>
   </div>
 

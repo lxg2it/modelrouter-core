@@ -60,14 +60,13 @@ export class ResendEmailSender implements EmailSender {
     const { error } = await this.resend.emails.send({
       from: this.welcomeFromEmail,
       to,
-      subject: 'Your Model Router balance hit $0 — routed to free models',
+      subject: 'Your Model Router credits ran out',
       html: `
         <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px; color: #111827;">
           <p>Hey,</p>
           <p>Your Model Router credit balance just hit <strong>$0</strong>.</p>
-          <p>To keep things running, we've automatically switched your requests to <strong>free models</strong>
-          (Llama 3.3 70B via Groq and Cerebras). These are fast and capable, but you won't have access
-          to GPT-4o, Claude, or Gemini Pro until you top up.</p>
+          <p>Your API requests will now return a 402 Payment Required. To resume access,
+          add credits — economy models start at $0.25 per million tokens.</p>
           <p>
             <a href="https://api.lxg2it.com/billing" style="display:inline-block; background:#1d4ed8; color:#fff; padding:10px 20px; border-radius:6px; text-decoration:none; font-weight:600;">
               Add Credits →
@@ -81,11 +80,11 @@ export class ResendEmailSender implements EmailSender {
           <p>Scott</p>
         </div>
       `,
-      text: `Hey,\n\nYour Model Router credit balance just hit $0.\n\nTo keep things running, we've switched your requests to free models (Llama 3.3 70B via Groq and Cerebras). You won't have access to GPT-4o, Claude, or Gemini Pro until you top up.\n\nAdd credits: https://api.lxg2it.com/billing\n\nNote: We won't send this every time — please monitor your balance at https://api.lxg2it.com/profile. If this keeps happening, you may receive a reminder after 7 days.\n\nScott`,
+      text: `Hey,\n\nYour Model Router credit balance just hit $0.\n\nYour API requests will now return a 402 Payment Required. To resume access, add credits — economy models start at $0.25 per million tokens.\n\nAdd credits: https://api.lxg2it.com/billing\n\nNote: We won't send this every time — please monitor your balance at https://api.lxg2it.com/profile. If this keeps happening, you may receive a reminder after 7 days.\n\nScott`,
     });
 
     if (error) {
-      throw new Error(`Free-tier notification email failed: ${error.message}`);
+      throw new Error(`Balance-exhausted notification email failed: ${error.message}`);
     }
   }
 
@@ -135,13 +134,12 @@ export class ResendEmailSender implements EmailSender {
           <p>No pressure to reply. If you've already moved on, that's useful signal too.</p>
           <p>Scott</p>
           <p style="color:#9ca3af; font-size:13px; margin-top:24px;">
-            P.S. If you're on a free plan and want to try paid routing,
-            there's a 14-day trial at
-            <a href="https://api.lxg2it.com/pricing" style="color:#1d4ed8;">api.lxg2it.com/pricing</a>.
+            P.S. Every new account starts with $1 in trial credits — enough for millions of economy tokens.
+            Add more at <a href="https://api.lxg2it.com/billing" style="color:#1d4ed8;">api.lxg2it.com/billing</a>.
           </p>
         </div>
       `,
-      text: `Hey,\n\nYou signed up for the Model Router a couple of weeks ago and made some calls. I wanted to check in directly.\n\nIs it doing what you need?\n\nIf something's not working — wrong model, slow routing, docs are confusing — I want to know. If it's working well, also good to know.\n\nOne question I'm specifically curious about: why the router? OpenRouter, direct provider APIs, and LiteLLM self-hosting are all options. What made you try this one?\n\nNo pressure to reply. If you've already moved on, that's useful signal too.\n\nScott\n\nP.S. If you're on a free plan and want to try paid routing, there's a 14-day trial at https://api.lxg2it.com/pricing`,
+      text: `Hey,\n\nYou signed up for the Model Router a couple of weeks ago and made some calls. I wanted to check in directly.\n\nIs it doing what you need?\n\nIf something's not working — wrong model, slow routing, docs are confusing — I want to know. If it's working well, also good to know.\n\nOne question I'm specifically curious about: why the router? OpenRouter, direct provider APIs, and LiteLLM self-hosting are all options. What made you try this one?\n\nNo pressure to reply. If you've already moved on, that's useful signal too.\n\nScott\n\nP.S. Every new account starts with $1 in trial credits — enough for millions of economy tokens. Add more at https://api.lxg2it.com/billing`,
     });
 
     if (error) {
@@ -194,7 +192,7 @@ export class ResendEmailSender implements EmailSender {
   -H "Content-Type: application/json" \\
   -d '{"model":"economy","messages":[{"role":"user","content":"hello"}]}'</div>
           <p>Find your API key at: <a href="https://api.lxg2it.com/profile" style="color: #1d4ed8;">api.lxg2it.com/profile</a></p>
-          <p><code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">"model": "economy"</code> routes to free models (Groq and Cerebras) — no credits consumed, no card required.</p>
+          <p><code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">"model": "economy"</code> is the cheapest tier — GPT-4.1 Mini, Gemini Flash, Claude Haiku. Your $1 trial credit covers millions of tokens.</p>
           <p>If you're connecting a coding assistant (Cursor, Windsurf, Roo Code), the base URL is
           <code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">https://api.lxg2it.com/v1</code>
           and your key goes in the API key field. There are
@@ -204,7 +202,7 @@ export class ResendEmailSender implements EmailSender {
           <p>Scott</p>
         </div>
       `,
-      text: `Hey,\n\nYou signed up for the Model Router a few days ago — I noticed you haven't made a first call yet and wanted to make it easy.\n\nThe quickest way is a single curl command:\n\ncurl https://api.lxg2it.com/v1/chat/completions \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"economy","messages":[{"role":"user","content":"hello"}]}'\n\nFind your API key at: https://api.lxg2it.com/profile\n\n"model": "economy" routes to free models (Groq and Cerebras) — no credits consumed, no card required.\n\nIf you're connecting a coding assistant (Cursor, Windsurf, Roo Code), the base URL is https://api.lxg2it.com/v1 and your key goes in the API key field. There are step-by-step integration guides at https://api.lxg2it.com/docs/integrations if that's easier.\n\nIf something's blocking you, just reply here.\n\nScott`,
+      text: `Hey,\n\nYou signed up for the Model Router a few days ago — I noticed you haven't made a first call yet and wanted to make it easy.\n\nThe quickest way is a single curl command:\n\ncurl https://api.lxg2it.com/v1/chat/completions \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"economy","messages":[{"role":"user","content":"hello"}]}'\n\nFind your API key at: https://api.lxg2it.com/profile\n\n"model": "economy" is the cheapest tier — GPT-4.1 Mini, Gemini Flash, Claude Haiku. Your $1 trial credit covers millions of tokens.\n\nIf you're connecting a coding assistant (Cursor, Windsurf, Roo Code), the base URL is https://api.lxg2it.com/v1 and your key goes in the API key field. There are step-by-step integration guides at https://api.lxg2it.com/docs/integrations if that's easier.\n\nIf something's blocking you, just reply here.\n\nScott`,
     });
 
     if (error) {
