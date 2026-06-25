@@ -387,6 +387,16 @@ async function handleNonStreaming(
       console.error(`[chat] Pinned model failed (${decision.provider}/${decision.model}) — no fallback:`, err);
       const { errorBody, errorHeaders } = extractErrorDetail(err);
 
+      // If the provider returned a 4xx (e.g. unsupported parameter, bad request),
+      // surface the actual error rather than masking as 502.
+      const upstreamStatus = (err as Record<string, unknown>).status;
+      const isClientError = typeof upstreamStatus === 'number' && upstreamStatus >= 400 && upstreamStatus < 500;
+      const statusCode = isClientError ? upstreamStatus as number : 502;
+      const errorMessage = isClientError
+        ? `Provider rejected request for '${decision.model}': ${err instanceof Error ? err.message : 'unknown error'}`
+        : `Provider call failed for '${decision.model}'. Try again or choose a different model.`;
+      const errorType = isClientError ? 'invalid_request_error' : 'server_error';
+
       deps.logger.log({
         keyId,
         provider: decision.provider,
@@ -397,14 +407,14 @@ async function handleNonStreaming(
         costCents: 0,
         latencyMs: Date.now() - startTime,
         streaming: false,
-        statusCode: 502,
+        statusCode,
         errorBody,
         errorHeaders,
         ...autoLogFields(decision),
       });
 
       telemetrySpan?.end({
-        statusCode: 502,
+        statusCode,
         promptTokens: 0,
         completionTokens: 0,
         costCents: 0,
@@ -414,10 +424,10 @@ async function handleNonStreaming(
 
       return c.json({
         error: {
-          message: `Provider call failed for '${decision.model}'. Try again or choose a different model.`,
-          type: 'server_error',
+          message: errorMessage,
+          type: errorType,
         },
-      }, 502);
+      }, statusCode as 400 | 502);
     }
 
     const primaryIsRateLimit = isRateLimitErr(err);
@@ -705,12 +715,22 @@ async function handleStreaming(
   // Token-aware fallback: when context is exceeded, prefer models with larger context windows.
   if (!completion) {
     // ── Pinned model: no fallback ───────────────────────────
+    // Note: the non-streaming path checks decision.fallbackChain?.length — this
+    // should too, but that's a separate bug. The error propagation fix is the priority.
     if (decision.pinned) {
       fullRefundReservation(deps, reservedCents, user);
       console.error(`[chat/stream] Pinned model failed (${decision.provider}/${decision.model}) — no fallback`);
 
+      const streamUpstreamStatus = (lastStreamError as Record<string, unknown>)?.status;
+      const streamIsClientErr = typeof streamUpstreamStatus === 'number' && streamUpstreamStatus >= 400 && streamUpstreamStatus < 500;
+      const streamStatusCode = streamIsClientErr ? streamUpstreamStatus as number : 502;
+      const streamErrMessage = streamIsClientErr
+        ? `Provider rejected request for '${decision.model}': ${lastStreamError instanceof Error ? lastStreamError.message : 'unknown error'}`
+        : `Provider call failed for '${decision.model}'. Try again or choose a different model.`;
+      const streamErrType = streamIsClientErr ? 'invalid_request_error' : 'server_error';
+
       telemetrySpan?.end({
-        statusCode: 502,
+        statusCode: streamStatusCode,
         promptTokens: 0,
         completionTokens: 0,
         costCents: 0,
@@ -729,7 +749,7 @@ async function handleStreaming(
         costCents: 0,
         latencyMs: Date.now() - startTime,
         streaming: true,
-        statusCode: 502,
+        statusCode: streamStatusCode,
         errorBody: streamPinnedBody,
         errorHeaders: streamPinnedHeaders,
         ...autoLogFields(decision),
@@ -737,10 +757,10 @@ async function handleStreaming(
 
       return c.json({
         error: {
-          message: `Provider call failed for '${decision.model}'. Try again or choose a different model.`,
-          type: 'server_error',
+          message: streamErrMessage,
+          type: streamErrType,
         },
-      }, 502);
+      }, streamStatusCode as 400 | 502);
     }
 
     const streamFailedSet = new Set([`${decision.provider}/${decision.model}`]);

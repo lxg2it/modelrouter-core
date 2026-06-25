@@ -18,19 +18,33 @@ export class OpenAIAdapter {
     isConfigured() {
         return this.client !== null;
     }
+    /**
+     * Detect models that require `max_completion_tokens` instead of `max_tokens`.
+     * OpenAI o-series and gpt-4.1+, gpt-5+ models reject the legacy parameter.
+     */
+    needsMaxCompletionTokens(model) {
+        if (model.startsWith('o') && (model === 'o1' || model === 'o1-pro' || model === 'o3' || model.startsWith('o4'))) {
+            return true;
+        }
+        // gpt-4.1+ and all gpt-5.x variants
+        if (model.startsWith('gpt-4.1') || model.startsWith('gpt-5')) {
+            return true;
+        }
+        return false;
+    }
     async complete(model, request, timeoutMs) {
         if (!this.client)
             throw new Error('OpenAI adapter not configured');
         const requestOptions = timeoutMs !== undefined ? { timeout: timeoutMs } : undefined;
-        const isOSeries = model.startsWith('o') && (model === 'o1' || model === 'o1-pro' || model === 'o3' || model.startsWith('o4'));
+        const needsMaxCompletion = this.needsMaxCompletionTokens(model);
         const response = await this.client.chat.completions.create({
             model,
             messages: request.messages,
-            ...(isOSeries
+            ...(needsMaxCompletion
                 ? { max_completion_tokens: request.max_tokens ?? 4096 }
                 : { max_tokens: request.max_tokens }),
-            temperature: isOSeries ? undefined : request.temperature,
-            top_p: isOSeries ? undefined : request.top_p,
+            temperature: needsMaxCompletion ? undefined : request.temperature,
+            top_p: needsMaxCompletion ? undefined : request.top_p,
             stop: request.stop,
             tools: request.tools,
             tool_choice: request.tool_choice,
@@ -70,15 +84,15 @@ export class OpenAIAdapter {
         if (!this.client)
             throw new Error('OpenAI adapter not configured');
         const requestOptions = timeoutMs !== undefined ? { timeout: timeoutMs } : undefined;
-        const isOSeries = model.startsWith('o') && (model === 'o1' || model === 'o1-pro' || model === 'o3' || model.startsWith('o4'));
+        const needsMaxCompletion = this.needsMaxCompletionTokens(model);
         const openaiStream = await this.client.chat.completions.create({
             model,
             messages: request.messages,
-            ...(isOSeries
+            ...(needsMaxCompletion
                 ? { max_completion_tokens: request.max_tokens ?? 4096 }
                 : { max_tokens: request.max_tokens }),
-            temperature: isOSeries ? undefined : request.temperature,
-            top_p: isOSeries ? undefined : request.top_p,
+            temperature: needsMaxCompletion ? undefined : request.temperature,
+            top_p: needsMaxCompletion ? undefined : request.top_p,
             stop: request.stop,
             tools: request.tools,
             tool_choice: request.tool_choice,

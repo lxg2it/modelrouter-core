@@ -11,6 +11,11 @@ export declare class OpenAIAdapter implements ProviderAdapter {
     private client;
     constructor(apiKey?: string, baseURL?: string);
     isConfigured(): boolean;
+    /**
+     * Detect models that require `max_completion_tokens` instead of `max_tokens`.
+     * OpenAI o-series and gpt-4.1+, gpt-5+ models reject the legacy parameter.
+     */
+    private needsMaxCompletionTokens;
     complete(model: string, request: ChatCompletionRequest, timeoutMs?: number): Promise<CompletionResult>;
     stream(model: string, request: ChatCompletionRequest, timeoutMs?: number): Promise<StreamingCompletion>;
     completeText(model: string, request: TextCompletionRequest, timeoutMs?: number): Promise<TextCompletionResult>;
