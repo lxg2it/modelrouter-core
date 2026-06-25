@@ -297,7 +297,9 @@ describe('POST /v1/chat/completions — non-streaming', () => {
     expect(res.status).toBe(200);
     const body = await res.json() as any;
     expect(body.choices[0].message.content).toBe('Fallback response');
-    expect(googleAdapter.complete).toHaveBeenCalledOnce();
+    // Standard tier now has two google models (gemini-3.5-flash + gemini-2.5-pro).
+    // Primary fails → first google fallback also fails → openai succeeds.
+    expect(googleAdapter.complete).toHaveBeenCalledTimes(2);
     expect(openaiAdapter.complete).toHaveBeenCalledOnce();
   });
 
@@ -617,8 +619,9 @@ describe('POST /v1/chat/completions — streaming', () => {
     const events = await collectSSE(res);
     expect(events.some((e) => e.includes('[DONE]'))).toBe(true);
 
-    // Both were tried (primary failed, fallback succeeded)
-    expect(googleAdapter.stream).toHaveBeenCalledOnce();
+    // There are now two google models in standard tier (gemini-3.5-flash + gemini-2.5-pro).
+    // Primary fails → first google fallback also fails → openai succeeds.
+    expect(googleAdapter.stream).toHaveBeenCalledTimes(2);
     expect(openaiAdapter.stream).toHaveBeenCalledOnce();
   });
 

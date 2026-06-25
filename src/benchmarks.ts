@@ -94,6 +94,20 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     mmluPro: 74.0,
     simpleBench: 38.0,
   },
+  'gpt-5.4-nano': {
+    arenaElo: 1280,    // estimated — fast/cheap, slightly below 4.1-mini
+    gpqaDiamond: 60.0,
+    sweBench: 38.0,
+    mmluPro: 72.0,
+    simpleBench: 36.0,
+  },
+  'gpt-5.4-mini': {
+    arenaElo: 1330,    // estimated — comparable to 4.1-mini
+    gpqaDiamond: 68.0,
+    sweBench: 48.0,
+    mmluPro: 78.0,
+    simpleBench: 45.0,
+  },
 
   // ── Standard ──────────────────────────────────────────
   'gemini-2.5-pro': {
@@ -130,6 +144,20 @@ export const BENCHMARK_DATA: Record<string, BenchmarkScores> = {
     sweBench: 48.5,
     mmluPro: 81.0,
     simpleBench: 52.0,
+  },
+  'gemini-3.5-flash': {
+    arenaElo: 1350,    // estimated — flash variant, slightly above 2.5-flash
+    gpqaDiamond: 75.0,
+    sweBench: 50.0,
+    mmluPro: 80.0,
+    simpleBench: 52.0,
+  },
+  'moonshotai.kimi-k2-thinking': {
+    arenaElo: 1360,    // estimated — thinking model from MoonshotAI
+    gpqaDiamond: 76.0,
+    sweBench: 52.0,
+    mmluPro: 82.0,
+    simpleBench: 54.0,
   },
 
   // ── Bedrock Economy ────────────────────────────────────
