@@ -116,6 +116,8 @@ const DISPOSABLE_DOMAINS = new Set([
   'wegwerfmail.net',
   'wegwerfmail.org',
   'yopmail.pp.ua',
+  // Test email services (inbox-based, commonly abused)
+  'testmail.app',
 ]);
 
 /**
