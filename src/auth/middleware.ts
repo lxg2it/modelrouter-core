@@ -70,6 +70,8 @@ export interface RateLimitTiers {
   elevatedPerMinute: number;
   /** RPM for everyone else. Default: 10. */
   basePerMinute: number;
+  /** RPM for paying users (have Stripe customer ID). Default: 600. */
+  paidPerMinute: number;
 }
 
 /**
@@ -139,13 +141,21 @@ export function authMiddleware(
     // track their consumption.
     if (rateLimiter) {
       // Determine effective RPM: per-key override takes absolute priority.
-      // Otherwise use balance-aware tiers if configured.
+      // Otherwise use the best applicable tier:
+      //   1. Paid tier — user has a Stripe customer ID (has made a deposit)
+      //   2. Elevated tier — balance >= threshold (default $10)
+      //   3. Base tier — everyone else
       let effectiveRpm: number | undefined = apiKey.rateLimitPerMinute;
       if (effectiveRpm === undefined && rateLimitTiers) {
-        const balanceCents = user?.creditBalanceCents ?? apiKey.creditBalanceCents ?? 0;
-        effectiveRpm = balanceCents >= rateLimitTiers.thresholdCents
-          ? rateLimitTiers.elevatedPerMinute
-          : rateLimitTiers.basePerMinute;
+        const isPaid = !!(user?.stripeCustomerId || apiKey.stripeCustomerId);
+        if (isPaid) {
+          effectiveRpm = rateLimitTiers.paidPerMinute;
+        } else {
+          const balanceCents = user?.creditBalanceCents ?? apiKey.creditBalanceCents ?? 0;
+          effectiveRpm = balanceCents >= rateLimitTiers.thresholdCents
+            ? rateLimitTiers.elevatedPerMinute
+            : rateLimitTiers.basePerMinute;
+        }
       }
 
       const rl = rateLimiter.consume(apiKey.id, effectiveRpm);

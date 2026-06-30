@@ -54,6 +54,17 @@ export interface Config {
    * Defaults to 10 RPM.
    */
   baseRateLimitPerMinute: number;
+  /**
+   * Rate limit (RPM) for users with a Stripe customer ID (i.e. have made a deposit).
+   * These are paying customers and get significantly higher limits.
+   * Defaults to 600 RPM.
+   */
+  paidRateLimitPerMinute: number;
+  /**
+   * Daily spend cap (cents) for users with a Stripe customer ID.
+   * Defaults to 30,000 cents ($300.00).
+   */
+  paidMaxDailySpendCents: number;
 
   // Router defaults
   defaultTier: 'economy' | 'standard' | 'premium';
@@ -133,6 +144,7 @@ export function loadConfig(): Config {
     elevatedRateLimitThresholdCents: parseInt(process.env.ELEVATED_RATE_LIMIT_THRESHOLD_CENTS ?? '1000', 10),
     elevatedRateLimitPerMinute: parseInt(process.env.ELEVATED_RATE_LIMIT_PER_MINUTE ?? '60', 10),
     baseRateLimitPerMinute: parseInt(process.env.BASE_RATE_LIMIT_PER_MINUTE ?? '10', 10),
+    paidRateLimitPerMinute: parseInt(process.env.PAID_RATE_LIMIT_PER_MINUTE ?? '600', 10),
 
     defaultTier: (env('DEFAULT_TIER', 'standard')) as Config['defaultTier'],
     defaultOutputRatio: parseFloat(env('DEFAULT_OUTPUT_RATIO', '0.33')),
@@ -164,6 +176,7 @@ export function loadConfig(): Config {
     signupBonusCents: parseInt(env('SIGNUP_BONUS_CENTS', '0'), 10),
     signupBonusDailyLimitCents: parseInt(process.env.SIGNUP_BONUS_DAILY_LIMIT_CENTS ?? '0', 10),
     maxDailySpendCents: parseInt(process.env.MAX_DAILY_SPEND_CENTS ?? '3000', 10),
+    paidMaxDailySpendCents: parseInt(process.env.PAID_MAX_DAILY_SPEND_CENTS ?? '30000', 10),
   };
 }
 

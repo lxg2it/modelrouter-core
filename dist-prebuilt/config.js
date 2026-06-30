@@ -45,6 +45,7 @@ export function loadConfig() {
         elevatedRateLimitThresholdCents: parseInt(process.env.ELEVATED_RATE_LIMIT_THRESHOLD_CENTS ?? '1000', 10),
         elevatedRateLimitPerMinute: parseInt(process.env.ELEVATED_RATE_LIMIT_PER_MINUTE ?? '60', 10),
         baseRateLimitPerMinute: parseInt(process.env.BASE_RATE_LIMIT_PER_MINUTE ?? '10', 10),
+        paidRateLimitPerMinute: parseInt(process.env.PAID_RATE_LIMIT_PER_MINUTE ?? '600', 10),
         defaultTier: (env('DEFAULT_TIER', 'standard')),
         defaultOutputRatio: parseFloat(env('DEFAULT_OUTPUT_RATIO', '0.33')),
         satbill: process.env.SATBILL_BASE_URL && process.env.SATBILL_API_SECRET
@@ -70,6 +71,7 @@ export function loadConfig() {
         signupBonusCents: parseInt(env('SIGNUP_BONUS_CENTS', '0'), 10),
         signupBonusDailyLimitCents: parseInt(process.env.SIGNUP_BONUS_DAILY_LIMIT_CENTS ?? '0', 10),
         maxDailySpendCents: parseInt(process.env.MAX_DAILY_SPEND_CENTS ?? '3000', 10),
+        paidMaxDailySpendCents: parseInt(process.env.PAID_MAX_DAILY_SPEND_CENTS ?? '30000', 10),
     };
 }
 // ─── Tier Definitions ──────────────────────────────────

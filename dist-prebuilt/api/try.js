@@ -112,8 +112,11 @@ export function createTryRouter(deps) {
         const isFreeTierModel = isFreeProvider(decision);
         let reservedCents = 0;
         if (!isFreeTierModel && deps.chatDeps.userStore) {
-            // Daily spend cap check
-            const systemDefault = deps.chatDeps.maxDailySpendCents ?? 3000;
+            // Daily spend cap check (user-configured > paid tier > standard default)
+            const isPaidUser = !!(user.stripeCustomerId);
+            const systemDefault = isPaidUser
+                ? (deps.chatDeps.paidMaxDailySpendCents ?? deps.chatDeps.maxDailySpendCents ?? 30000)
+                : (deps.chatDeps.maxDailySpendCents ?? 3000);
             const userLimit = user.dailySpendLimitCents ?? 0;
             const maxDaily = userLimit > 0 ? userLimit : systemDefault;
             if (maxDaily > 0) {

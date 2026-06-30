@@ -283,6 +283,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     thresholdCents: config.elevatedRateLimitThresholdCents,
     elevatedPerMinute: config.elevatedRateLimitPerMinute,
     basePerMinute: config.baseRateLimitPerMinute,
+    paidPerMinute: config.paidRateLimitPerMinute,
   };
   const apiAuth = authMiddleware(keyStore, userStore, billing, rateLimiter, rateLimitTiers);
 
@@ -296,6 +297,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     stripe: stripeService,
     billingTxStore: stripeService ? billingTxStore : undefined,
     maxDailySpendCents: config.maxDailySpendCents,
+    paidMaxDailySpendCents: config.paidMaxDailySpendCents,
     emailSender: emailSender ?? undefined,
   });
   app.use('/v1/chat/*', apiAuth);
@@ -311,6 +313,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     stripe: stripeService,
     billingTxStore: stripeService ? billingTxStore : undefined,
     maxDailySpendCents: config.maxDailySpendCents,
+    paidMaxDailySpendCents: config.paidMaxDailySpendCents,
     emailSender: emailSender ?? undefined,
   });
   app.use('/v1/completions', apiAuth);
@@ -328,6 +331,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     stripe: stripeService,
     billingTxStore: stripeService ? billingTxStore : undefined,
     maxDailySpendCents: config.maxDailySpendCents,
+    paidMaxDailySpendCents: config.paidMaxDailySpendCents,
     emailSender: emailSender ?? undefined,
   });
   app.use('/v1/messages/*', apiAuth);
@@ -411,6 +415,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
       stripe: stripeService,
       billingTxStore: stripeService ? billingTxStore : undefined,
       maxDailySpendCents: config.maxDailySpendCents,
+      paidMaxDailySpendCents: config.paidMaxDailySpendCents,
       emailSender: emailSender ?? undefined,
     },
     keyStore,

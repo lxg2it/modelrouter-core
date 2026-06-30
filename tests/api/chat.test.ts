@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
-import { createChatRouter } from '../../src/api/chat.js';
+import { createChatRouter, sanitizeProviderError } from '../../src/api/chat.js';
 import { RoutingEngine } from '../../src/routing/engine.js';
 import type { ProviderAdapter, StreamingCompletion } from '../../src/providers/types.js';
 import type { UsageLogger } from '../../src/tracking/logger.js';
@@ -1879,6 +1879,40 @@ describe('user-defined fallback chain — API', () => {
     }));
 
     expect(res.status).toBe(502);
+  });
+});
+
+// ── sanitizeProviderError ───────────────────────────────────────
+
+describe('sanitizeProviderError', () => {
+  it('strips Grok team ID and API key ID from safety-filter errors', () => {
+    const raw = 'Content violates usage guidelines. Team: bdfb4205-c4eb-4c1e-96aa-55dab95f910f, API key ID: 2e42a36d-0036-42b0-b1ae-851e0f21f8b4, Model: grok-4.3, Failed check: SAFETY_CHECK_TYPE_CSAM';
+    const result = sanitizeProviderError(raw, 'grok');
+    expect(result).toContain('Team: [redacted]');
+    expect(result).toContain('API key ID: [redacted]');
+    expect(result).not.toContain('bdfb4205');
+    expect(result).not.toContain('2e42a36d');
+    expect(result).toContain('SAFETY_CHECK_TYPE_CSAM'); // check type is preserved
+    expect(result).toContain('Model: grok-4.3');          // model info is preserved
+  });
+
+  it('passes through non-Grok errors unchanged', () => {
+    const raw = 'Rate limit exceeded. Please wait.';
+    expect(sanitizeProviderError(raw, 'openai')).toBe(raw);
+    expect(sanitizeProviderError(raw, 'google')).toBe(raw);
+    expect(sanitizeProviderError(raw, 'bedrock')).toBe(raw);
+  });
+
+  it('passes through Grok errors that do not match the pattern', () => {
+    const raw = 'Some other Grok error without credentials';
+    expect(sanitizeProviderError(raw, 'grok')).toBe(raw);
+  });
+
+  it('handles partial patterns gracefully', () => {
+    const partial = 'Content violates usage guidelines. Team: abc-123, Some text after';
+    const result = sanitizeProviderError(partial, 'grok');
+    expect(result).toContain('Team: [redacted]');
+    expect(result).not.toContain('abc-123');
   });
 });
 

@@ -517,7 +517,11 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       <!-- Daily spend limit -->
       <div style="border-top:1px solid var(--border); padding-top:16px;">
         <label style="font-size:13px; font-weight:600; color:var(--text); display:block; margin-bottom:4px;">Daily spend limit</label>
-        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">Personal cap on daily spend (resets UTC midnight). Leave blank for system default.</p>
+        <p style="font-size:13px; color:var(--muted); margin-bottom:12px;">
+          Personal cap on daily spend (resets UTC midnight). Leave blank for system default:
+          <span style="font-weight:600; color:var(--text);">$30/day</span> (standard) or
+          <span style="font-weight:600; color:var(--text);">$300/day</span> (paid — users with credits).
+        </p>
         <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
           <div style="display:flex; align-items:center; gap:6px;">
             <span style="font-size:13px; color:var(--muted);">$</span>
@@ -762,6 +766,9 @@ const PROFILE_HTML = /* html */ `<!DOCTYPE html>
       limitEl.value = p.dailySpendLimitCents > 0
         ? String(Math.round(p.dailySpendLimitCents / 100))
         : '';
+      // Placeholder shows the effective system default based on tier
+      const systemDefault = p.stripeEnabled ? '$300/day (paid)' : '$30/day (standard)';
+      limitEl.placeholder = p.dailySpendLimitCents > 0 ? '' : 'System: ' + systemDefault;
     }
 
     // Populate OTEL config

@@ -66,6 +66,8 @@ export interface RateLimitTiers {
     elevatedPerMinute: number;
     /** RPM for everyone else. Default: 10. */
     basePerMinute: number;
+    /** RPM for paying users (have Stripe customer ID). Default: 600. */
+    paidPerMinute: number;
 }
 /**
  * Create API key auth middleware.

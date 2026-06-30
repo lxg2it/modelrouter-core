@@ -115,6 +115,8 @@ const DISPOSABLE_DOMAINS = new Set([
     'wegwerfmail.net',
     'wegwerfmail.org',
     'yopmail.pp.ua',
+    // Test email services (inbox-based, commonly abused)
+    'testmail.app',
 ]);
 /**
  * Returns true if the email address uses a known disposable / throwaway domain.

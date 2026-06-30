@@ -9,6 +9,25 @@ import { stream as honoStream } from 'hono/streaming';
 import { UsageLogger as UsageLoggerClass } from '../tracking/logger.js';
 import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../config.js';
 import { creditsAfterFee } from '../billing/platform-fee.js';
+/**
+ * Strip provider-internal details (team IDs, API key IDs, etc.) from error
+ * messages before surfacing them to end users.  Provider error strings often
+ * include credentials or internal routing info that should never leave our
+ * infrastructure.
+ */
+export function sanitizeProviderError(rawMessage, provider) {
+    // Grok / xAI — safety-filter rejections leak team ID and API key ID
+    if (provider === 'grok') {
+        // "Content violates usage guidelines. Team: xxx, API key ID: yyy, Model: zzz, Failed check: ..."
+        const stripped = rawMessage
+            .replace(/\bTeam:\s*\S+/g, 'Team: [redacted]')
+            .replace(/\bAPI key ID:\s*\S+/g, 'API key ID: [redacted]');
+        if (stripped !== rawMessage)
+            return stripped;
+    }
+    // Future: add provider-specific redaction here
+    return rawMessage;
+}
 import { RateLimitError, BadRequestError, APIError } from 'openai';
 import { getHeader } from 'openai/core';
 /**
@@ -291,8 +310,9 @@ async function handleNonStreaming(c, request, decision, deps, apiKey, startTime,
             const upstreamStatus = err.status;
             const isClientError = typeof upstreamStatus === 'number' && upstreamStatus >= 400 && upstreamStatus < 500;
             const statusCode = isClientError ? upstreamStatus : 502;
+            const rawErrMsg = err instanceof Error ? err.message : 'unknown error';
             const errorMessage = isClientError
-                ? `Provider rejected request for '${decision.model}': ${err instanceof Error ? err.message : 'unknown error'}`
+                ? `Provider rejected request for '${decision.model}': ${sanitizeProviderError(rawErrMsg, decision.provider)}`
                 : `Provider call failed for '${decision.model}'. Try again or choose a different model.`;
             const errorType = isClientError ? 'invalid_request_error' : 'server_error';
             deps.logger.log({
@@ -584,8 +604,9 @@ async function handleStreaming(c, request, decision, deps, apiKey, startTime, sa
             const streamUpstreamStatus = lastStreamError?.status;
             const streamIsClientErr = typeof streamUpstreamStatus === 'number' && streamUpstreamStatus >= 400 && streamUpstreamStatus < 500;
             const streamStatusCode = streamIsClientErr ? streamUpstreamStatus : 502;
+            const streamRawErrMsg = lastStreamError instanceof Error ? lastStreamError.message : 'unknown error';
             const streamErrMessage = streamIsClientErr
-                ? `Provider rejected request for '${decision.model}': ${lastStreamError instanceof Error ? lastStreamError.message : 'unknown error'}`
+                ? `Provider rejected request for '${decision.model}': ${sanitizeProviderError(streamRawErrMsg, decision.provider)}`
                 : `Provider call failed for '${decision.model}'. Try again or choose a different model.`;
             const streamErrType = streamIsClientErr ? 'invalid_request_error' : 'server_error';
             telemetrySpan?.end({
@@ -862,10 +883,16 @@ export async function reserveCreditsForRequest(c, deps, tier, user) {
     // Reject requests that would push the user over their daily spend limit.
     // Checked before reservation so the error surfaces before touching their balance.
     //
-    // Priority: user-configured limit > system default.
+    // Priority: user-configured limit > paid tier > system default.
     // A user limit of 0 means "use system default". Users can set any positive
     // value to override the system default (higher or lower).
-    const systemDefaultSpend = deps.maxDailySpendCents ?? 3000;
+    // Paying users (Stripe customer ID) get a higher default cap.
+    const isPaidUser = !!(user.stripeCustomerId);
+    // Paid users get paidMaxDailySpendCents, falling back to maxDailySpendCents,
+    // then to the hardcoded defaults. Non-paid users just use maxDailySpendCents.
+    const systemDefaultSpend = isPaidUser
+        ? (deps.paidMaxDailySpendCents ?? deps.maxDailySpendCents ?? 30000)
+        : (deps.maxDailySpendCents ?? 3000);
     const userLimit = user.dailySpendLimitCents ?? 0;
     const maxDailySpend = userLimit > 0 ? userLimit : systemDefaultSpend;
     if (maxDailySpend > 0) {

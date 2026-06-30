@@ -37,6 +37,7 @@ export interface MessagesDeps {
     stripe?: StripeService;
     billingTxStore?: BillingTransactionStore;
     maxDailySpendCents?: number;
+    paidMaxDailySpendCents?: number;
     emailSender?: EmailSender;
 }
 export declare function createMessagesRouter(deps: MessagesDeps): Hono<AuthEnv>;

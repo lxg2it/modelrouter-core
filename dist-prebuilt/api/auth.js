@@ -87,6 +87,20 @@ export function createAuthRouter(deps) {
     // Returns: session token, account details, and (if new account) first API key.
     //
     router.post('/verify-code', async (c) => {
+        // IP-level rate limiting — same limiter as request-code, so both endpoints
+        // share a single bucket per IP. Prevents account creation floods even if
+        // the attacker has a way to get valid codes.
+        if (ipRateLimiter) {
+            const ip = c.req.header('cf-connecting-ip')
+                ?? c.req.header('x-real-ip')
+                ?? 'unknown';
+            const rl = ipRateLimiter.consume(ip);
+            if (!rl.allowed) {
+                return c.json({
+                    error: { message: 'Too many requests. Please try again later.', code: 'rate_limit_exceeded' },
+                }, 429);
+            }
+        }
         let body = {};
         try {
             body = await c.req.json();

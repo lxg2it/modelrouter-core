@@ -64,6 +64,17 @@ export interface Config {
      * Defaults to 10 RPM.
      */
     baseRateLimitPerMinute: number;
+    /**
+     * Rate limit (RPM) for users with a Stripe customer ID (i.e. have made a deposit).
+     * These are paying customers and get significantly higher limits.
+     * Defaults to 600 RPM.
+     */
+    paidRateLimitPerMinute: number;
+    /**
+     * Daily spend cap (cents) for users with a Stripe customer ID.
+     * Defaults to 30,000 cents ($300.00).
+     */
+    paidMaxDailySpendCents: number;
     defaultTier: 'economy' | 'standard' | 'premium';
     defaultOutputRatio: number;
     satbill?: {

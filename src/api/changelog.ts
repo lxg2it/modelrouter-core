@@ -36,6 +36,16 @@ interface ChangelogEntry {
 
 const ENTRIES: ChangelogEntry[] = [
   {
+    date: '2026-06-26',
+    tag: 'feature',
+    title: 'Paid tier — 600 RPM and $300/day for users with Stripe credits',
+    body: `<p>Users who have purchased credits via Stripe now get elevated limits: 600 RPM
+    (vs 10–60) and a $300/day spend cap (vs $30). The upgrade is automatic — no configuration
+    needed. Personal spend caps set on the profile page still override tier defaults.</p>
+    <p>Also added IP-level rate limiting to the verify-code endpoint to prevent account
+    creation floods, sharing the same limiter bucket as request-code.</p>`,
+  },
+  {
     date: '2026-06-24',
     tag: 'feature',
     title: 'Removed free provider routing — economy tier is now fully paid',

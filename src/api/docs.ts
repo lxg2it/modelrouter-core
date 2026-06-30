@@ -1076,13 +1076,14 @@ curl https://api.lxg2it.com/v1/chat/completions \\
     <p>Rate limits are enforced per API key using a <strong>token bucket</strong> — tokens refill
     continuously rather than resetting at a hard window boundary, so bursts are handled smoothly.</p>
 
-    <p>The limit applied depends on your credit balance:</p>
+    <p>The limit applied depends on your account tier:</p>
 
     <table class="param-table">
-      <thead><tr><th>Balance</th><th>Limit</th></tr></thead>
+      <thead><tr><th>Tier</th><th>Criteria</th><th>Limit</th></tr></thead>
       <tbody>
-        <tr><td>≥ $10.00</td><td><strong>60 RPM</strong></td></tr>
-        <tr><td>&lt; $10.00</td><td><strong>10 RPM</strong></td></tr>
+        <tr><td><strong>Paid</strong></td><td>Added credits via Stripe</td><td><strong>600 RPM</strong></td></tr>
+        <tr><td>Elevated</td><td>Balance ≥ $10.00</td><td><strong>60 RPM</strong></td></tr>
+        <tr><td>Base</td><td>Balance &lt; $10.00</td><td><strong>10 RPM</strong></td></tr>
       </tbody>
     </table>
 
@@ -1111,8 +1112,10 @@ curl https://api.lxg2it.com/v1/chat/completions \\
   }
 }</code></pre>
 
-    <p><strong>Daily spend limits</strong> are a separate control. If your account has a daily spend cap
-    configured, requests made after hitting it return HTTP <code class="inline-code">429</code> with
+    <p><strong>Daily spend limits</strong> are a separate control. By default, standard accounts are capped
+    at <strong>$30/day</strong> and paid accounts (with credits purchased via Stripe) at <strong>$300/day</strong>.
+    You can set a personal cap on your profile page — this overrides the tier default.
+    Requests made after hitting the cap return HTTP <code class="inline-code">429</code> with
     <code class="inline-code">code: "daily_spend_limit_exceeded"</code> and reset at UTC midnight.</p>
 
     <!-- Errors -->

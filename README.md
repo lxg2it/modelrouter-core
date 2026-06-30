@@ -42,6 +42,19 @@ Authorization: Bearer YOUR_API_KEY
 
 Set `model` to a tier name and the router picks the cheapest available model for that tier. Providers are transparently failovered if they're slow or unavailable. Pin specific models when you need them.
 
+## Rate Limits & Daily Spend Caps
+
+Rate limits are per-key using a token bucket:
+
+| Tier | Criteria | RPM | Daily Spend |
+|---|---|---|---|
+| **Paid** | Credits via Stripe | 600 | $300/day |
+| Elevated | Balance ≥ $10 | 60 | $30/day |
+| Base | Balance < $10 | 10 | $30/day |
+
+Daily spend caps can be overridden on your profile page. See the [API docs](https://api.lxg2it.com/docs/api#rate-limits) for full details.
+
+
 ## Key Differentiator
 
 | | OpenRouter | Model Router |
