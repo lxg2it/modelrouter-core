@@ -18,6 +18,49 @@ import type { UserStore } from '../auth/users.js';
 import type { EmailSender } from '../auth/email.js';
 import { TIERS, TIER_MAX_RESERVE_CENTS, MIN_THINKING_OUTPUT_TOKENS } from '../config.js';
 import { creditsAfterFee } from '../billing/platform-fee.js';
+import type { ContentViolationStore } from '../auth/violations.js';
+
+/** Sigil used by provider errors to mark content policy rejections (CSAM, etc.) */
+const POLICY_VIOLATION_MARKER = '__policy_violation__';
+
+/**
+ * Check whether a provider error is a content policy (safety-filter) rejection.
+ * These differ from normal 4xx errors — they indicate the *content* is the
+ * problem, not the request format or credentials.
+ */
+export function isPolicyViolation(
+  error: unknown,
+  provider: string,
+): { checkType: string } | null {
+  const status = (error as Record<string, unknown>).status;
+  if (typeof status !== 'number' || (status !== 400 && status !== 403)) return null;
+
+  const msg = error instanceof Error ? error.message : String(error);
+
+  // Grok / xAI — safety filter
+  if (provider === 'grok') {
+    const match = msg.match(/Failed check:\s*(\S+)/);
+    if (match && (msg.includes('Content violates') || msg.includes('usage guidelines'))) {
+      return { checkType: match[1] };
+    }
+  }
+
+  // OpenAI — content policy / moderation
+  if (provider === 'openai') {
+    if (msg.includes('content_policy_violation') || msg.includes('content_filter')) {
+      return { checkType: 'content_policy_violation' };
+    }
+  }
+
+  // Anthropic — safety filter
+  if (provider === 'anthropic') {
+    if (msg.includes('safety') || msg.includes('content filter') || msg.includes('refused to respond')) {
+      return { checkType: 'safety_filter' };
+    }
+  }
+
+  return null;
+}
 
 /**
  * Strip provider-internal details (team IDs, API key IDs, etc.) from error
@@ -163,6 +206,32 @@ export interface ChatDeps {
    * When set, users whose balance hits $0 receive a one-time email (with 7-day cooldown).
    */
   emailSender?: EmailSender;
+  /** Content policy violation store for strike tracking and blocking. */
+  violationStore?: import('../auth/violations.js').ContentViolationStore;
+}
+
+/**
+ * Record a content policy violation if the error is a safety-filter rejection,
+ * and return the updated strike message (empty string if not a policy violation).
+ */
+function maybeRecordViolation(
+  deps: ChatDeps,
+  keyId: string,
+  err: unknown,
+  provider: string,
+): string {
+  if (!deps.violationStore) return '';
+  const violation = isPolicyViolation(err, provider);
+  if (!violation) return '';
+
+  const status = deps.violationStore.record({
+    id: randomUUID(),
+    keyId,
+    provider,
+    checkType: violation.checkType,
+  });
+
+  return deps.violationStore.buildStrikeMessage(status);
 }
 
 export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
@@ -173,6 +242,21 @@ export function createChatRouter(deps: ChatDeps): Hono<AuthEnv> {
     const satbillAccountId = c.get('satbillAccountId');
     const user = c.get('user');
     const routeToFreeTierOnly = c.get('routeToFreeTierOnly') ?? false;
+
+    // ── Content policy block check ─────────────────────────
+    if (deps.violationStore) {
+      const blockStatus = deps.violationStore.getBlockStatus(apiKey.id);
+      if (blockStatus.blocked) {
+        return c.json({
+          error: {
+            message: blockStatus.reason,
+            type: 'content_policy_violation',
+            blocked_until: blockStatus.blockedUntil,
+          },
+        }, 403);
+      }
+    }
+
     const body = await c.req.json<ChatCompletionRequest>();
 
     // Route the request, respecting any provider blocks the user has set.
@@ -420,10 +504,14 @@ async function handleNonStreaming(
       const isClientError = typeof upstreamStatus === 'number' && upstreamStatus >= 400 && upstreamStatus < 500;
       const statusCode = isClientError ? upstreamStatus as number : 502;
       const rawErrMsg = err instanceof Error ? err.message : 'unknown error';
-      const errorMessage = isClientError
+      let errorMessage = isClientError
         ? `Provider rejected request for '${decision.model}': ${sanitizeProviderError(rawErrMsg, decision.provider)}`
         : `Provider call failed for '${decision.model}'. Try again or choose a different model.`;
       const errorType = isClientError ? 'invalid_request_error' : 'server_error';
+
+      // Record content policy violation if applicable
+      const strikeMsg = maybeRecordViolation(deps, apiKey.id, err, decision.provider);
+      if (strikeMsg) errorMessage = `${strikeMsg} ${errorMessage}`;
 
       deps.logger.log({
         keyId,
@@ -647,9 +735,14 @@ async function handleNonStreaming(
       }, 429);
     }
 
+    // Check if the last provider error was a content policy violation
+    let exhaustedMsg = 'All providers failed for this request.';
+    const exhaustedStrike = maybeRecordViolation(deps, apiKey.id, lastProviderError ?? err, decision.provider);
+    if (exhaustedStrike) exhaustedMsg = `${exhaustedStrike} ${exhaustedMsg}`;
+
     return c.json({
       error: {
-        message: 'All providers failed for this request.',
+        message: exhaustedMsg,
         type: 'server_error',
         code: 'provider_error',
       },
@@ -753,10 +846,14 @@ async function handleStreaming(
       const streamIsClientErr = typeof streamUpstreamStatus === 'number' && streamUpstreamStatus >= 400 && streamUpstreamStatus < 500;
       const streamStatusCode = streamIsClientErr ? streamUpstreamStatus as number : 502;
       const streamRawErrMsg = lastStreamError instanceof Error ? lastStreamError.message : 'unknown error';
-      const streamErrMessage = streamIsClientErr
+      let streamErrMessage = streamIsClientErr
         ? `Provider rejected request for '${decision.model}': ${sanitizeProviderError(streamRawErrMsg, decision.provider)}`
         : `Provider call failed for '${decision.model}'. Try again or choose a different model.`;
       const streamErrType = streamIsClientErr ? 'invalid_request_error' : 'server_error';
+
+      // Record content policy violation if applicable
+      const streamStrikeMsg = maybeRecordViolation(deps, apiKey.id, lastStreamError, decision.provider);
+      if (streamStrikeMsg) streamErrMessage = `${streamStrikeMsg} ${streamErrMessage}`;
 
       telemetrySpan?.end({
         statusCode: streamStatusCode,

@@ -18,6 +18,7 @@ import { createCompletionsRouter } from './api/completions.js';
 import { createEmbeddingsRouter } from './api/embeddings.js';
 import { createModelsRouter, createUsageRouter } from './api/models.js';
 import { UsageStore } from './tracking/store.js';
+import { ContentViolationStore } from './auth/violations.js';
 import { UsageLogger } from './tracking/logger.js';
 import { AnthropicAdapter } from './providers/anthropic.js';
 import { OpenAIAdapter } from './providers/openai.js';
@@ -86,6 +87,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   const userStore = new UserStore(db);
   const usageStore = new UsageStore(db);
   const usageLogger = new UsageLogger(usageStore);
+  const violationStore = new ContentViolationStore(db);
 
   // Page view tracking — counter for non-API web page views
   db.exec(`
@@ -299,6 +301,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     maxDailySpendCents: config.maxDailySpendCents,
     paidMaxDailySpendCents: config.paidMaxDailySpendCents,
     emailSender: emailSender ?? undefined,
+    violationStore,
   });
   app.use('/v1/chat/*', apiAuth);
   app.route('/v1/chat', chatRouter);
@@ -315,6 +318,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     maxDailySpendCents: config.maxDailySpendCents,
     paidMaxDailySpendCents: config.paidMaxDailySpendCents,
     emailSender: emailSender ?? undefined,
+    violationStore,
   });
   app.use('/v1/completions', apiAuth);
   app.route('/v1/completions', completionsRouter);
@@ -333,6 +337,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     maxDailySpendCents: config.maxDailySpendCents,
     paidMaxDailySpendCents: config.paidMaxDailySpendCents,
     emailSender: emailSender ?? undefined,
+    violationStore,
   });
   app.use('/v1/messages/*', apiAuth);
   app.use('/v1/messages', apiAuth);

@@ -57,6 +57,7 @@ export interface MessagesDeps {
   maxDailySpendCents?: number;
   paidMaxDailySpendCents?: number;
   emailSender?: EmailSender;
+  violationStore?: import('../auth/violations.js').ContentViolationStore;
 }
 
 export function createMessagesRouter(deps: MessagesDeps): Hono<AuthEnv> {
@@ -67,6 +68,22 @@ export function createMessagesRouter(deps: MessagesDeps): Hono<AuthEnv> {
     const satbillAccountId = c.get('satbillAccountId');
     const user = c.get('user');
     const routeToFreeTierOnly = c.get('routeToFreeTierOnly') ?? false;
+
+    // ── Content policy block check ─────────────────────────
+    if (deps.violationStore) {
+      const blockStatus = deps.violationStore.getBlockStatus(apiKey.id);
+      if (blockStatus.blocked) {
+        return c.json({
+          type: 'error',
+          error: {
+            type: 'content_policy_violation',
+            message: blockStatus.reason,
+            blocked_until: blockStatus.blockedUntil,
+          },
+        }, 403);
+      }
+    }
+
     const body = await c.req.json<AnthropicMessagesRequest>();
 
     // ── Route the request ───────────────────────────────

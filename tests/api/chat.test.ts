@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
-import { createChatRouter, sanitizeProviderError } from '../../src/api/chat.js';
+import { createChatRouter, sanitizeProviderError, isPolicyViolation } from '../../src/api/chat.js';
 import { RoutingEngine } from '../../src/routing/engine.js';
 import type { ProviderAdapter, StreamingCompletion } from '../../src/providers/types.js';
 import type { UsageLogger } from '../../src/tracking/logger.js';
@@ -1913,6 +1913,72 @@ describe('sanitizeProviderError', () => {
     const result = sanitizeProviderError(partial, 'grok');
     expect(result).toContain('Team: [redacted]');
     expect(result).not.toContain('abc-123');
+  });
+});
+
+// ── isPolicyViolation ────────────────────────────────────────────
+
+describe('isPolicyViolation', () => {
+  function makeError(status: number, message: string): Error {
+    const err = new Error(message);
+    (err as Record<string, unknown>).status = status;
+    return err;
+  }
+
+  it('detects Grok SAFETY_CHECK_CSAM violations', () => {
+    const err = makeError(403,
+      'Content violates usage guidelines. Team: xyz, API key ID: abc, Model: grok-4.3, Failed check: SAFETY_CHECK_TYPE_CSAM');
+    const result = isPolicyViolation(err, 'grok');
+    expect(result).toEqual({ checkType: 'SAFETY_CHECK_TYPE_CSAM' });
+  });
+
+  it('detects Grok safety violations with different check types', () => {
+    const err = makeError(403,
+      'Content violates usage guidelines. Failed check: SAFETY_CHECK_TYPE_OTHER');
+    expect(isPolicyViolation(err, 'grok')).toEqual({ checkType: 'SAFETY_CHECK_TYPE_OTHER' });
+  });
+
+  it('does not flag Grok 403 with different message pattern', () => {
+    const err = makeError(403, 'Authentication failed. Invalid API key.');
+    expect(isPolicyViolation(err, 'grok')).toBeNull();
+  });
+
+  it('does not flag non-403/400 Grok errors', () => {
+    const err = makeError(500, 'Content violates usage guidelines.');
+    expect(isPolicyViolation(err, 'grok')).toBeNull();
+  });
+
+  it('detects OpenAI content_policy_violation', () => {
+    const err = makeError(400,
+      'Your request was rejected as a result of our safety system: content_policy_violation');
+    expect(isPolicyViolation(err, 'openai')).toEqual({ checkType: 'content_policy_violation' });
+  });
+
+  it('detects OpenAI content_filter', () => {
+    const err = makeError(400, 'content_filter triggered');
+    expect(isPolicyViolation(err, 'openai')).toEqual({ checkType: 'content_policy_violation' });
+  });
+
+  it('detects Anthropic safety filter', () => {
+    const err = makeError(400, 'Request blocked by safety system');
+    expect(isPolicyViolation(err, 'anthropic')).toEqual({ checkType: 'safety_filter' });
+  });
+
+  it('detects Anthropic refused to respond', () => {
+    const err = makeError(400, 'Model refused to respond due to content filter');
+    expect(isPolicyViolation(err, 'anthropic')).toEqual({ checkType: 'safety_filter' });
+  });
+
+  it('returns null for non-policy 400 errors', () => {
+    const err = makeError(400, 'Unsupported parameter: max_tokens');
+    expect(isPolicyViolation(err, 'grok')).toBeNull();
+    expect(isPolicyViolation(err, 'openai')).toBeNull();
+    expect(isPolicyViolation(err, 'anthropic')).toBeNull();
+  });
+
+  it('returns null for non-Error objects without status', () => {
+    expect(isPolicyViolation('some string', 'grok')).toBeNull();
+    expect(isPolicyViolation({ message: 'test' }, 'grok')).toBeNull();
   });
 });
 

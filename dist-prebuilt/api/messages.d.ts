@@ -39,6 +39,7 @@ export interface MessagesDeps {
     maxDailySpendCents?: number;
     paidMaxDailySpendCents?: number;
     emailSender?: EmailSender;
+    violationStore?: import('../auth/violations.js').ContentViolationStore;
 }
 export declare function createMessagesRouter(deps: MessagesDeps): Hono<AuthEnv>;
 //# sourceMappingURL=messages.d.ts.map

@@ -14,6 +14,14 @@ import type { KeyStore } from '../auth/keys.js';
 import type { UserStore } from '../auth/users.js';
 import type { EmailSender } from '../auth/email.js';
 /**
+ * Check whether a provider error is a content policy (safety-filter) rejection.
+ * These differ from normal 4xx errors — they indicate the *content* is the
+ * problem, not the request format or credentials.
+ */
+export declare function isPolicyViolation(error: unknown, provider: string): {
+    checkType: string;
+} | null;
+/**
  * Strip provider-internal details (team IDs, API key IDs, etc.) from error
  * messages before surfacing them to end users.  Provider error strings often
  * include credentials or internal routing info that should never leave our
@@ -66,6 +74,8 @@ export interface ChatDeps {
      * When set, users whose balance hits $0 receive a one-time email (with 7-day cooldown).
      */
     emailSender?: EmailSender;
+    /** Content policy violation store for strike tracking and blocking. */
+    violationStore?: import('../auth/violations.js').ContentViolationStore;
 }
 export declare function createChatRouter(deps: ChatDeps): Hono<AuthEnv>;
 /**
