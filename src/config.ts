@@ -235,6 +235,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'openai',    model: 'gpt-5.1-codex-mini',  quality: 0.80, inputPer1M: 0.25,  outputPer1M: 2.00,  latencyMs: 600,  maxContextTokens: 100_000, apiType: 'completions', priceSource: 'litellm'  },
       { provider: 'openai',    model: 'o3',                  quality: 0.85, inputPer1M: 2.00,  outputPer1M: 8.00,  latencyMs: 3500, maxContextTokens: 200_000,   isThinkingModel: true,  priceSource: 'litellm' },
       { provider: 'anthropic', model: 'claude-sonnet-4-6',   quality: 0.85, inputPer1M: 3.00,  outputPer1M: 15.00, latencyMs: 650,  maxContextTokens: 1_000_000,                        priceSource: 'litellm' },
+      { provider: 'anthropic', model: 'claude-sonnet-5',     quality: 0.92, inputPer1M: 2.00,  outputPer1M: 10.00, latencyMs: 500,  maxContextTokens: 1_000_000,                        priceSource: 'manual'  },
       { provider: 'grok',      model: 'grok-3-beta',         quality: 0.74, inputPer1M: 3.00,  outputPer1M: 15.00, latencyMs: 580,  maxContextTokens: 131_072,                          priceSource: 'litellm' },
       // Bedrock standard models — manual: verify prices at https://aws.amazon.com/bedrock/pricing/ (US West Oregon)
       { provider: 'bedrock',   model: 'zai.glm-4.7',                quality: 0.90, inputPer1M: 0.60, outputPer1M: 2.20,  latencyMs: 550,  maxContextTokens: 202_752,                         priceSource: 'manual',  dedupKey: 'glm-4.7' },
@@ -344,6 +345,7 @@ export const MODEL_ALIASES: Record<string, string> = {
   'gpt-4-turbo': 'standard',
   'gpt-4.1': 'standard',
   'claude-sonnet': 'standard',
+  'claude-sonnet-5': 'standard',
   'claude-3-sonnet': 'standard',
   'claude-3.5-sonnet': 'standard',
   'claude-3-5-sonnet': 'standard',            // dash variant (API format)
