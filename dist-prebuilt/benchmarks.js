@@ -118,6 +118,15 @@ export const BENCHMARK_DATA = {
         mmluPro: 83.8,
         simpleBench: 56.5,
     },
+    // Claude Sonnet 5: June 30 2026, "nears Opus 4.8" — biggest Sonnet upgrade yet
+    // SWE-bench Verified confirmed from Anthropic system card; others estimated
+    'claude-sonnet-5': {
+        arenaElo: 1420, // estimated (between 4.6's 1370 and Opus 4.8's 1460)
+        gpqaDiamond: 89.0, // estimated (Sonnet 4.6: 81.0, Opus 4.8: 93.6)
+        sweBench: 85.2, // confirmed (Anthropic system card, Jun 2026)
+        mmluPro: 87.0, // estimated (Sonnet 4.6: 83.8, Opus 4.8: 89.5)
+        simpleBench: 63.0, // estimated (Sonnet 4.6: 56.5, Opus 4.8: 70.0)
+    },
     'grok-3-beta': {
         arenaElo: 1355,
         gpqaDiamond: 76.0,

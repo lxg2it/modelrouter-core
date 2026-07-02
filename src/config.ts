@@ -262,6 +262,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'anthropic', model: 'claude-opus-4-7',        quality: 1.00, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 1_000_000, priceSource: 'manual'   },
       { provider: 'anthropic', model: 'claude-opus-4-6',        quality: 0.99, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1200, maxContextTokens: 1_000_000, priceSource: 'litellm'  },
       { provider: 'anthropic', model: 'claude-opus-4-8',        quality: 0.99, inputPer1M: 5.00,  outputPer1M: 25.00, latencyMs: 1100, maxContextTokens: 128_000,  priceSource: 'litellm'  },
+      { provider: 'anthropic', model: 'claude-fable-5',       quality: 1.00, inputPer1M: 10.00, outputPer1M: 50.00, latencyMs: 1500, maxContextTokens: 1_000_000,                        priceSource: 'manual'   },
       { provider: 'openai',    model: 'gpt-5.5',                quality: 0.98, inputPer1M: 5.00,  outputPer1M: 30.00, latencyMs: 1000, maxContextTokens: 128_000,   priceSource: 'litellm'  },
       { provider: 'openai',    model: 'gpt-5.4',                quality: 0.96, inputPer1M: 2.50,  outputPer1M: 15.00, latencyMs: 900,  maxContextTokens: 1_050_000, priceSource: 'manual'   },
       { provider: 'bedrock',   model: 'zai.glm-5',              quality: 0.93, inputPer1M: 1.00,  outputPer1M: 3.20,  latencyMs: 650,  maxContextTokens: 200_000,   priceSource: 'manual'   },
@@ -365,6 +366,9 @@ export const MODEL_ALIASES: Record<string, string> = {
   'claude-opus-4-7': 'premium',
   'claude-opus-4-8': 'premium',
   'claude-3-opus': 'premium',
+  'claude-fable': 'premium',
+  'claude-fable-5': 'premium',
+  'fable': 'premium',
   'o1': 'premium',
   'o1-pro': 'premium',
   'o3': 'standard',                  // o3 is actually standard-priced
