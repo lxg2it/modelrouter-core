@@ -252,7 +252,7 @@ export const TIERS: Record<string, TierConfig> = {
       { provider: 'bedrock',   model: 'mistral.devstral-2-123b',    quality: 0.85, inputPer1M: 0.40, outputPer1M: 2.00, latencyMs: 600, maxContextTokens: 262_144,             priceSource: 'manual'  },
       { provider: 'bedrock',   model: 'qwen.qwen3-coder-480b-a35b-v1:0', quality: 0.85, inputPer1M: 0.22, outputPer1M: 1.80, latencyMs: 600, maxContextTokens: 262_144,        priceSource: 'manual'  },
       // Efficient reasoning — Nemotron Super is a thinking model, very cheap for 120B
-      { provider: 'bedrock',   model: 'nvidia.nemotron-super-3-120b', quality: 0.75, inputPer1M: 0.10, outputPer1M: 0.50, latencyMs: 500, maxContextTokens: 131_072, isThinkingModel: true, priceSource: 'manual' },
+      { provider: 'bedrock',   model: 'nvidia.nemotron-super-3-120b', quality: 0.75, inputPer1M: 0.15, outputPer1M: 0.65, latencyMs: 500, maxContextTokens: 131_072, isThinkingModel: true, priceSource: 'manual' },
     ],
     description: 'Balanced quality and cost. The default for most applications.',
   },
