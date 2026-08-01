@@ -527,8 +527,8 @@ describe('RoutingEngine', () => {
 
         const decision = engine.selectModel(req({ tier: 'standard', prefer: 'quality' }))!;
         // gpt-5.3-codex (quality 0.91) is excluded (responses type).
-        // gpt-5.3-chat-latest (quality 0.88) is the highest quality chat model in standard.
-        expect(decision.model).toBe('gpt-5.3-chat-latest');
+        // claude-sonnet-5 (quality 0.92) is the highest quality chat model in standard.
+        expect(decision.model).toBe('claude-sonnet-5');
         expect(decision.tier).toBe('standard');
         expect(decision.prefer).toBe('quality');
       });
@@ -607,7 +607,7 @@ describe('RoutingEngine', () => {
       // (o4-mini, claude-haiku) should be filtered out; 1M+ context models remain.
       const decision = engine.selectModel(reqWithChars(630_000));
       expect(decision).not.toBeNull();
-      expect(['gemini-2.5-flash', 'gpt-4.1-mini'].includes(decision!.model)).toBe(true);
+      expect(['gemini-2.5-flash', 'gpt-4.1-mini', 'gpt-5.6-luna', 'gemini-3-flash-preview'].includes(decision!.model)).toBe(true);
     });
 
     it('returns null when the input exceeds ALL models in the tier', () => {
@@ -631,12 +631,13 @@ describe('RoutingEngine', () => {
       });
 
       // 210k tokens — 200k models filtered (claude-haiku, o4-mini, grok-3-mini filtered).
-      // Only large-context economy models remain: gemini-2.5-flash (1M) and gpt-4.1-mini (1M).
+      // Large-context economy models remain: gemini-2.5-flash (1M), gpt-4.1-mini (1M),
+      // gpt-5.6-luna (1.05M), gemini-3-flash-preview (1M).
       const cheapDecision = engine.selectModel(
         { ...reqWithChars(630_000), prefer: 'cheap' },
       );
       expect(cheapDecision).not.toBeNull();
-      const largeContextEconomyModels = ['gemini-2.5-flash', 'gpt-4.1-mini'];
+      const largeContextEconomyModels = ['gemini-2.5-flash', 'gpt-4.1-mini', 'gpt-5.6-luna', 'gemini-3-flash-preview'];
       expect(largeContextEconomyModels.includes(cheapDecision!.model)).toBe(true);
     });
 
@@ -648,11 +649,12 @@ describe('RoutingEngine', () => {
       });
 
       // Primary: gpt-4.1-mini (1M context). Fallback with 210k token input —
-      // claude-haiku (200k) and o4-mini (200k) are filtered out, leaving gemini-2.5-flash.
+      // claude-haiku (200k) and o4-mini (200k) are filtered out. gpt-5.6-luna (1.05M)
+      // is the cheapest fitting fallback.
       const messages = [{ role: 'user' as const, content: 'x'.repeat(630_000) }];
       const fallback = engine.selectFallback('openai', 'gpt-4.1-mini', 'economy', messages);
       expect(fallback).not.toBeNull();
-      expect(fallback!.model).toBe('gemini-2.5-flash');
+      expect(fallback!.model).toBe('gpt-5.6-luna');
     });
 
     it('handles messages with array content parts', () => {
@@ -670,7 +672,7 @@ describe('RoutingEngine', () => {
       };
       const decision = engine.selectModel(request);
       expect(decision).not.toBeNull();
-      expect(['gemini-2.5-flash', 'gpt-4.1-mini'].includes(decision!.model)).toBe(true);
+      expect(['gemini-2.5-flash', 'gpt-4.1-mini', 'gpt-5.6-luna', 'gemini-3-flash-preview'].includes(decision!.model)).toBe(true);
     });
   });
 
@@ -774,7 +776,8 @@ describe('RoutingEngine', () => {
       const decision = engine.selectModel(req());
       expect(decision).not.toBeNull();
       expect(decision!.provider).toBe('grok');
-      expect(decision!.model).toBe('grok-3-mini-beta');
+      // grok-4-1-fast ($0.20/$0.50) is now the cheapest grok economy model
+      expect(decision!.model).toBe('grok-4-1-fast');
     });
   });
 });

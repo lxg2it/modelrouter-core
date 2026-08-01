@@ -1508,7 +1508,8 @@ describe('Thinking model token floor', () => {
 
   it('bumps max_tokens to MIN_THINKING_OUTPUT_TOKENS when below floor for a thinking model', async () => {
     // grok-3-mini-beta is a thinking model (economy tier).
-    // Must use an economy API key so the engine routes there, not to grok-3-beta (standard).
+    // Pin it explicitly — grok-4-1-fast is cheaper but not a thinking model,
+    // so auto-routing would otherwise pick it and skip the floor logic.
     const economyKey: ApiKey = { ...fakeApiKey, tier: 'economy' };
     const { adapter, lastRequest } = makeCaptureAdapter('grok');
     const providers = new Map<ProviderName, ProviderAdapter>([['grok', adapter]]);
@@ -1523,7 +1524,7 @@ describe('Thinking model token floor', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // max_tokens way below the 1024 floor
-      body: JSON.stringify({ ...minimalRequest, max_tokens: 50 }),
+      body: JSON.stringify({ ...minimalRequest, model: 'grok-3-mini-beta', max_tokens: 50 }),
     }));
 
     expect(lastRequest()?.max_tokens).toBe(1024);

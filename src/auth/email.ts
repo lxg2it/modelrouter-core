@@ -155,20 +155,22 @@ export class ResendEmailSender implements EmailSender {
       html: `
         <div style="font-family: system-ui, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px; color: #111827;">
           <p>Hi,</p>
-          <p>I just added three new models to the Model Router:</p>
+          <p>I just added the July wave of new models to the Model Router:</p>
           <ul style="line-height: 1.8; padding-left: 20px;">
-            <li><strong>Claude Opus 4-8</strong> (Anthropic) — latest Opus, \$5.00/M input / \$25.00/M output. Premium tier.</li>
-            <li><strong>GPT-5.5</strong> (OpenAI) — new flagship, \$5.00/M input / \$30.00/M output. Premium tier.</li>
-            <li><strong>Gemini 3.1 Flash Lite</strong> (Google) — fastest/cheapest Gemini, \$0.25/M input / \$1.50/M output. Economy tier.</li>
+            <li><strong>GPT-5.6 family</strong> (OpenAI) — Sol flagship \$5.00/\$30.00 (premium), Terra \$2.00/\$12.00 (standard), Luna \$0.20/\$1.20 (economy).</li>
+            <li><strong>Claude Opus 5</strong> (Anthropic) — new flagship, \$5.00/M input / \$25.00/M output. Premium tier.</li>
+            <li><strong>Grok 4.5</strong> (xAI) — big quality jump at \$2.00/M input / \$6.00/M output. Standard tier.</li>
+            <li><strong>Gemini 3 Flash</strong> (Google) — \$0.50/M input / \$3.00/M output, 1M context. Economy tier.</li>
+            <li><strong>Gemma 4</strong> (Google via Bedrock) — open models from just \$0.04/M input. Economy tier.</li>
           </ul>
-          <p>These models are available right now — just use the <code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">premium</code> or <code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">economy</code> tier in your requests. The router picks the best available model automatically.</p>
+          <p>These models are available right now — just use the <code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">premium</code>, <code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">standard</code> or <code style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">economy</code> tier in your requests. The router picks the best available model automatically.</p>
           <p>Nothing else has changed — your existing setup will keep working the same way.</p>
           <p style="margin-top: 24px; font-size: 12px; color: #9ca3af;">
             <a href="${unsubscribeUrl}" style="color: #9ca3af;">Unsubscribe from these notifications</a>
           </p>
         </div>
       `,
-      text: `Hi,\n\nI just added three new models to the Model Router:\n\n1. Claude Opus 4-8 (Anthropic) — latest Opus, $5/M input / $25/M output. Premium tier.\n2. GPT-5.5 (OpenAI) — new flagship, $5/M input / $30/M output. Premium tier.\n3. Gemini 3.1 Flash Lite (Google) — fastest/cheapest Gemini, $0.25/M input / $1.50/M output. Economy tier.\n\nThese are available right now. Use the "premium" or "economy" tier in your requests.\n\nNothing else has changed.\n\nTo unsubscribe from these notifications: ${unsubscribeUrl}`,
+      text: `Hi,\n\nI just added the July wave of new models to the Model Router:\n\n1. GPT-5.6 family (OpenAI) — Sol flagship $5/$30 (premium), Terra $2/$12 (standard), Luna $0.20/$1.20 (economy).\n2. Claude Opus 5 (Anthropic) — new flagship, $5/M input / $25/M output. Premium tier.\n3. Grok 4.5 (xAI) — big quality jump at $2/M input / $6/M output. Standard tier.\n4. Gemini 3 Flash (Google) — $0.50/M input / $3/M output, 1M context. Economy tier.\n5. Gemma 4 (Google via Bedrock) — open models from $0.04/M input. Economy tier.\n\nThese are available right now. Use the "premium", "standard" or "economy" tier in your requests.\n\nNothing else has changed.\n\nTo unsubscribe from these notifications: ${unsubscribeUrl}`,
     });
 
     if (error) {
