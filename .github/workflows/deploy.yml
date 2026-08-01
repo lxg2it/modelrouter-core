@@ -43,13 +43,16 @@ jobs:
       - name: Deploy to server
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
         run: |
           mkdir -p ~/.ssh
           echo "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh -i ~/.ssh/deploy_key \
+          # Explicit GHCR login on the server (no reliance on cached credentials)
+          echo "$GHCR_PAT" | ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             ec2-user@54.245.184.97 \
-            "docker pull ghcr.io/lxg2it/modelrouter:latest && \
+            "docker login ghcr.io -u sje397-automation --password-stdin && \
+             docker pull ghcr.io/lxg2it/modelrouter:latest && \
              cd ~/repo/modelrouter && \
              docker compose up -d"
