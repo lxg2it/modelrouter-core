@@ -239,6 +239,111 @@ describe('RiskScorer — recovery path', () => {
   });
 });
 
+describe('RiskScorer — backfill', () => {
+  it('scores a backfilled farmer identically to live events', () => {
+    const { scorer } = timedScorer();
+    // Historical trail: signup 09:00, probes at 09:01, 3 cheap calls at 09:02.
+    const events: RiskEvent[] = [
+      { t: 'signup', at: '2026-07-01T09:00:00Z', email: 'farmer@example.com', ip: '203.0.113.50', hasName: false },
+      { t: 'probe', at: '2026-07-01T09:01:00Z', path: '/v1/keys' },
+      { t: 'probe', at: '2026-07-01T09:01:05Z', path: '/v1/billing/status' },
+      { t: 'probe', at: '2026-07-01T09:01:10Z', path: '/v1/account/profile' },
+      { t: 'probe', at: '2026-07-01T09:01:15Z', path: '/v1/usage' },
+      { t: 'inference', at: '2026-07-01T09:02:00Z', model: 'gemini-2.5-flash', costCents: 0 },
+      { t: 'inference', at: '2026-07-01T09:02:05Z', model: 'gpt-4.1-mini', costCents: 0 },
+      { t: 'inference', at: '2026-07-01T09:02:10Z', model: 'nemotron-9b', costCents: 0 },
+    ];
+
+    scorer.backfill('bf-1', events);
+    const risk = scorer.getRisk('bf-1')!;
+    expect(risk.level).toBe('probable_farmer');
+    expect(risk.score).toBeGreaterThanOrEqual(70);
+
+    // The event trail preserves the historical timestamps verbatim.
+    const signup = risk.events.find((e) => e.t === 'signup');
+    expect(signup).toBeDefined();
+    if (signup && signup.t === 'signup') {
+      expect(signup.at).toBe('2026-07-01T09:00:00Z');
+      expect(signup.ip).toBe('203.0.113.50');
+      expect(signup.email).toBe('farmer@example.com');
+    }
+  });
+
+  it('backfill is idempotent — replaying the same events never double-counts', () => {
+    const { scorer } = timedScorer();
+    const events: RiskEvent[] = [
+      { t: 'signup', at: '2026-07-02T09:00:00Z', email: 'idem@example.com', ip: '203.0.113.51', hasName: true },
+      { t: 'probe', at: '2026-07-02T09:01:00Z', path: '/v1/keys' },
+      { t: 'probe', at: '2026-07-02T09:01:05Z', path: '/v1/billing' },
+      { t: 'probe', at: '2026-07-02T09:01:10Z', path: '/v1/account' },
+      { t: 'inference', at: '2026-07-02T09:02:00Z', model: 'gemini-2.5-flash', costCents: 0 },
+      { t: 'inference', at: '2026-07-02T09:02:05Z', model: 'gpt-4.1-mini', costCents: 0 },
+      { t: 'inference', at: '2026-07-02T09:02:10Z', model: 'nemotron-9b', costCents: 0 },
+    ];
+
+    scorer.backfill('bf-2', events);
+    const once = scorer.getRisk('bf-2')!;
+    scorer.backfill('bf-2', events); // replay
+    const twice = scorer.getRisk('bf-2')!;
+
+    expect(twice.score).toBe(once.score);
+    expect(twice.level).toBe(once.level);
+    expect(twice.signals).toHaveLength(once.signals.length);
+    // Trail keeps exactly the unique events — no duplicates from replay.
+    expect(twice.events.length).toBe(once.events.length);
+  });
+
+  it('respects the cleared recovery lock — backfill cannot re-score a reviewed user', () => {
+    const { scorer } = timedScorer();
+    const events: RiskEvent[] = [
+      { t: 'signup', at: '2026-07-03T09:00:00Z', email: 'cleared-bf@example.com', ip: '203.0.113.52', hasName: false },
+      { t: 'probe', at: '2026-07-03T09:01:00Z', path: '/v1/keys' },
+      { t: 'probe', at: '2026-07-03T09:01:05Z', path: '/v1/billing' },
+      { t: 'probe', at: '2026-07-03T09:01:10Z', path: '/v1/account' },
+      { t: 'inference', at: '2026-07-03T09:02:00Z', model: 'gemini-2.5-flash', costCents: 0 },
+      { t: 'inference', at: '2026-07-03T09:02:05Z', model: 'gpt-4.1-mini', costCents: 0 },
+      { t: 'inference', at: '2026-07-03T09:02:10Z', model: 'nemotron-9b', costCents: 0 },
+    ];
+    scorer.backfill('bf-3', events);
+    scorer.clearRisk('bf-3', 'Reviewed — legitimate tester');
+
+    const before = scorer.getRisk('bf-3')!;
+    scorer.backfill('bf-3', events); // should be a no-op
+    const after = scorer.getRisk('bf-3')!;
+    expect(after.score).toBe(before.score);
+    expect(after.status).toBe('cleared');
+    // No extra events appended by the locked-out backfill.
+    expect(after.events.length).toBe(before.events.length);
+  });
+
+  it('seeds signup metadata and first_inference_at from the backfilled trail', () => {
+    const { scorer } = timedScorer();
+    const events: RiskEvent[] = [
+      { t: 'signup', at: '2026-07-04T09:00:00Z', email: 'meta@corp.com', ip: '198.51.100.7', hasName: true },
+      { t: 'inference', at: '2026-07-04T09:05:00Z', model: 'claude-sonnet-4-6', costCents: 40 },
+    ];
+    scorer.backfill('bf-4', events);
+
+    const risk = scorer.getRisk('bf-4')!;
+    expect(risk.signupAt).toBe('2026-07-04T09:00:00Z');
+    expect(risk.signupIp).toBe('198.51.100.7');
+    expect(risk.emailDomain).toBe('corp.com');
+    expect(risk.firstInferenceAt).toBe('2026-07-04T09:05:00Z');
+  });
+
+  it('flags signups on confirmed disposable domains with blocked_domain', () => {
+    const { scorer } = timedScorer();
+    scorer.onSignup('bd-1', 'probe@t3to.net', '203.0.113.60', true);
+    scorer.onInference('bd-1', 'gemini-2.5-flash', 0);
+
+    const risk = scorer.getRisk('bd-1')!;
+    expect(risk.signals.map((s) => s.id)).toContain('blocked_domain');
+    // 20 (domain) + 10 (fast first call) = 30 → watch.
+    expect(risk.score).toBe(35);
+    expect(risk.level).toBe('watch');
+  });
+});
+
 describe('RiskScorer — admin listing', () => {
   it('lists users sorted by score and filters by level', () => {
     const { scorer } = timedScorer();

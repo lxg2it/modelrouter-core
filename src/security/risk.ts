@@ -26,6 +26,7 @@
  */
 
 import Database from 'better-sqlite3';
+import { isDisposableEmail } from '../auth/email-filter.js';
 
 // ─── Types ─────────────────────────────────────────────
 
@@ -96,6 +97,10 @@ const CHEAP_MODEL_ONLY_WEIGHT = 10;
 const FAST_FIRST_CALL_WEIGHT = 10;
 /** Weight for disposable-ish free email + no account name. */
 const FRESH_FREE_EMAIL_NO_NAME_WEIGHT = 5;
+/** Weight for an email domain on the confirmed disposable/attacker blocklist.
+ *  Alone this clears the watch threshold (25) — a signup on a confirmed
+ *  attacker domain is itself worth watching. */
+const BLOCKED_DOMAIN_WEIGHT = 25;
 
 /** Free email providers commonly used for throwaway accounts. */
 const FREE_EMAIL_DOMAINS = new Set([
@@ -267,6 +272,48 @@ export class RiskScorer {
     this.appendAndRecompute(userId, { t: 'inference', at, model, costCents }, patch);
   }
 
+  /**
+   * Backfill a user's event trail from historical/forensic data.
+   *
+   * Takes pre-built events with their original timestamps (signup, probes,
+   * inferences) and feeds them through the exact same idempotent recompute
+   * path as live events. Because computeSignals derives everything from the
+   * event trail, a backfilled user gets precisely the score they would have
+   * earned live. Replaying the same events never double-counts.
+   *
+   * The signup event (if present) also seeds signup_at/signup_ip/email_domain;
+   * the earliest inference seeds first_inference_at.
+   */
+  backfill(userId: string, events: RiskEvent[]): void {
+    const existing = this.getRow(userId);
+    if (existing?.status === 'cleared') return; // recovery lock — human reviewed
+
+    // Dedupe against the existing trail so replaying the same manifest never
+    // double-counts. Events are keyed by (type, timestamp) — the historical
+    // trail should never contain two identical events at the same instant.
+    const existingKeys = new Set(
+      (existing ? JSON.parse(existing.events) as RiskEvent[] : []).map(RiskScorer.eventKey),
+    );
+    const fresh = [...events]
+      .filter((e) => !existingKeys.has(RiskScorer.eventKey(e)))
+      .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+
+    // Feed events through appendAndRecompute in chronological order so the
+    // trail stays ordered and each recompute sees the full prefix history.
+    for (const event of fresh) {
+      const patch: Partial<Pick<RiskRow, 'signup_at' | 'signup_ip' | 'email_domain' | 'first_inference_at'>> = {};
+      if (event.t === 'signup' && !existing?.signup_at) {
+        patch.signup_at = event.at;
+        patch.signup_ip = event.ip;
+        patch.email_domain = event.email.split('@')[1]?.toLowerCase() ?? 'unknown';
+      }
+      if (event.t === 'inference' && !existing?.first_inference_at) {
+        patch.first_inference_at = event.at;
+      }
+      this.appendAndRecompute(userId, event, patch);
+    }
+  }
+
   // ─── Read / review ───────────────────────────────────
 
   getRisk(userId: string): RiskRecord | undefined {
@@ -321,6 +368,15 @@ export class RiskScorer {
       clearReason: row.clear_reason,
       updatedAt: row.updated_at,
     };
+  }
+
+  /** Stable identity key for an event — used to dedupe backfill replays. */
+  private static eventKey(e: RiskEvent): string {
+    switch (e.t) {
+      case 'signup': return `signup|${e.at}|${e.email}`;
+      case 'probe': return `probe|${e.at}|${e.path}`;
+      case 'inference': return `inference|${e.at}|${e.model}`;
+    }
   }
 
   private classifyProbe(path: string): { signal: string; weight: number } | undefined {
@@ -466,6 +522,16 @@ export class RiskScorer {
         weight: FRESH_FREE_EMAIL_NO_NAME_WEIGHT,
         at: signup.at,
         detail: `${domain} / no account name`,
+      });
+    }
+
+    // ── Confirmed disposable / attacker domain ──────────
+    if (isDisposableEmail(signup.email)) {
+      signals.push({
+        id: 'blocked_domain',
+        weight: BLOCKED_DOMAIN_WEIGHT,
+        at: signup.at,
+        detail: `${domain} on disposable/attacker domain blocklist`,
       });
     }
 
