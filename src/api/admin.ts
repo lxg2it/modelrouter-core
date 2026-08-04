@@ -1038,7 +1038,7 @@ const RISK_WATCH_HTML = /* html */`<!DOCTYPE html>
       const cleared = u.status === 'cleared';
       const clearBtn = cleared
         ? '<div class="cleared-note">✓ reviewed' + (u.clearReason ? ' — ' + esc(u.clearReason) : '') + '</div>'
-        : '<button class="btn-clear" onclick="clearUser(\'' + esc(u.userId) + '\', \'' + esc(u.email) + '\')">mark reviewed</button>';
+        : '<button class="btn-clear" onclick="clearUser(\\'' + esc(u.userId) + '\\', \\'' + esc(u.email) + '\\')">mark reviewed</button>';
       return \`<div class="risk-row">
         <div class="risk-top">
           <div class="risk-main">
