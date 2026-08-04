@@ -305,8 +305,6 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   // Middleware is applied per-path to avoid intercepting management routes.
   //
   const rateLimitTiers: RateLimitTiers = {
-    thresholdCents: config.elevatedRateLimitThresholdCents,
-    elevatedPerMinute: config.elevatedRateLimitPerMinute,
     basePerMinute: config.baseRateLimitPerMinute,
     paidPerMinute: config.paidRateLimitPerMinute,
   };

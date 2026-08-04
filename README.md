@@ -49,8 +49,7 @@ Rate limits are per-key using a token bucket:
 | Tier | Criteria | RPM | Daily Spend |
 |---|---|---|---|
 | **Paid** | Credits via Stripe | 600 | $300/day |
-| Elevated | Balance ≥ $10 | 60 | $30/day |
-| Base | Balance < $10 | 10 | $30/day |
+| Base | Everyone else | 10 | balance-limited ($30/day system cap) |
 
 Daily spend caps can be overridden on your profile page. See the [API docs](https://api.lxg2it.com/docs/api#rate-limits) for full details.
 

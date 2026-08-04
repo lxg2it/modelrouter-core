@@ -58,21 +58,24 @@ export interface SessionEnv {
 }
 
 /**
- * Two-tier rate limit configuration.
+ * Rate limit configuration for API key authentication.
  *
- * Users with creditBalanceCents >= thresholdCents receive the elevated limit.
- * Everyone else (zero balance, no billing relationship) gets the base limit.
+ * Two tiers, based on billing relationship:
+ *   - Paid tier — user has a Stripe customer ID (has made a deposit)
+ *   - Base tier — everyone else (zero balance, no billing relationship)
+ *
+ * There is intentionally no balance-based middle tier: every credit path either
+ * can't reach a meaningful balance (signup bonus) or requires a Stripe customer
+ * ID (top-ups), which immediately qualifies for the paid tier. A balance-based
+ * tier would be unreachable dead code.
+ *
  * Per-key overrides (apiKey.rateLimitPerMinute) still take priority over both.
  */
 export interface RateLimitTiers {
-  /** Credit balance threshold (cents) for elevated limits. Default: $10.00 = 1000 cents. */
-  thresholdCents: number;
-  /** RPM for users meeting the threshold. Default: 60. */
-  elevatedPerMinute: number;
-  /** RPM for everyone else. Default: 10. */
-  basePerMinute: number;
   /** RPM for paying users (have Stripe customer ID). Default: 600. */
   paidPerMinute: number;
+  /** RPM for everyone else. Default: 10. */
+  basePerMinute: number;
 }
 
 /**
@@ -135,28 +138,29 @@ export function authMiddleware(
     // Checked immediately after authentication, before any billing or
     // provider logic. Priority order for the limit used:
     //   1. Per-key override (apiKey.rateLimitPerMinute) — always respected
-    //   2. Elevated tier — user has ≥ threshold balance (default $10)
+    //   2. Paid tier — user has a Stripe customer ID (has made a deposit)
     //   3. Base tier — everyone else (zero balance, no billing relationship)
     //
     // Headers are added to both allowed and rejected responses so clients can
     // track their consumption.
     if (rateLimiter) {
       // Determine effective RPM: per-key override takes absolute priority.
-      // Otherwise use the best applicable tier:
+      // Otherwise pick the tier by billing relationship:
       //   1. Paid tier — user has a Stripe customer ID (has made a deposit)
-      //   2. Elevated tier — balance >= threshold (default $10)
-      //   3. Base tier — everyone else
+      //   2. Base tier — everyone else
+      //
+      // SECURITY NOTE (per-key override): apiKey.rateLimitPerMinute is honored
+      // here but currently has NO write path in the codebase — no INSERT or
+      // UPDATE ever sets it, so it is NULL for every key created through the
+      // API. If this ever gains a self-serve or admin write path, the value
+      // MUST be capped (at most the paid tier) and gated behind admin or a
+      // paid upgrade — otherwise anyone could mint an unlimited-rate key.
       let effectiveRpm: number | undefined = apiKey.rateLimitPerMinute;
       if (effectiveRpm === undefined && rateLimitTiers) {
         const isPaid = !!(user?.stripeCustomerId || apiKey.stripeCustomerId);
-        if (isPaid) {
-          effectiveRpm = rateLimitTiers.paidPerMinute;
-        } else {
-          const balanceCents = user?.creditBalanceCents ?? apiKey.creditBalanceCents ?? 0;
-          effectiveRpm = balanceCents >= rateLimitTiers.thresholdCents
-            ? rateLimitTiers.elevatedPerMinute
-            : rateLimitTiers.basePerMinute;
-        }
+        effectiveRpm = isPaid
+          ? rateLimitTiers.paidPerMinute
+          : rateLimitTiers.basePerMinute;
       }
 
       const rl = rateLimiter.consume(apiKey.id, effectiveRpm);
