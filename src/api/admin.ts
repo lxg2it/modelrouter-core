@@ -605,7 +605,10 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
   <div class="header">
     <div class="header-top">
       <div class="title"><a href="/">model-router</a></div>
-      <a href="/profile" class="nav-link">profile →</a>
+      <div style="display:flex;gap:14px">
+        <a href="/admin/risk-watch" class="nav-link">risk watch →</a>
+        <a href="/profile" class="nav-link">profile →</a>
+      </div>
     </div>
     <p class="subtitle">Admin dashboard. Platform metrics refreshed on each page load.</p>
   </div>
