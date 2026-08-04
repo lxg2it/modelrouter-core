@@ -17,11 +17,14 @@
  */
 
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { randomBytes } from 'crypto';
 import Database from 'better-sqlite3';
 import type { AuthEnv } from '../auth/middleware.js';
 import type { UserStore } from '../auth/users.js';
+import type { User } from '../types.js';
 import type { UsageStore, AutoRoutingStats } from '../tracking/store.js';
+import type { RiskScorer, RiskLevel } from '../security/risk.js';
 import { SHARED_HEAD, SHARED_CSS, pageFooter } from './shared-styles.js';
 
 // ─── Public interface ──────────────────────────────────
@@ -31,6 +34,8 @@ export interface AdminDeps {
   adminEmails: string[];
   userStore: UserStore;
   usageStore?: UsageStore;
+  /** Risk scorer — enables /admin/risk review endpoints (watch mode). */
+  risk?: RiskScorer;
 }
 
 export interface AdminStats {
@@ -189,7 +194,102 @@ export function createAdminRouter(deps: AdminDeps): Hono<AuthEnv> {
     });
   });
 
+  // ─── Shadow-mode risk review (watch mode) ───────────────
+  //
+  // GET  /admin/risk?minLevel=watch|suspicious|probable_farmer
+  //      List tracked users with their score, signal breakdown, and event
+  //      trail. Admin session required. Returns records sorted by score.
+  //
+  // POST /admin/risk/:userId/clear   { reason?: string }
+  //      Recovery path for false positives: marks the user 'cleared' and
+  //      locks them out of further scoring. Nothing is ever deleted — the
+  //      event trail stays for audit.
+  //
+  const risk = deps.risk;
+  if (risk) {
+    app.get('/risk', (c) => {
+      const auth = requireAdmin(c, deps);
+      if ('response' in auth) return auth.response;
+
+      const minLevel = (c.req.query('minLevel') ?? 'watch') as RiskLevel;
+      if (!['watch', 'suspicious', 'probable_farmer'].includes(minLevel)) {
+        return c.json({ error: { message: 'minLevel must be watch, suspicious, or probable_farmer', type: 'invalid_request_error', code: 'invalid_request' } }, 400);
+      }
+
+      const records = risk.listForAdmin(minLevel).map((r) => {
+        const u = deps.userStore.findById(r.userId);
+        return {
+          userId: r.userId,
+          email: u?.email ?? null,
+          accountName: u?.accountName ?? null,
+          score: r.score,
+          level: r.level,
+          status: r.status,
+          signupAt: r.signupAt,
+          signupIp: r.signupIp,
+          emailDomain: r.emailDomain,
+          firstInferenceAt: r.firstInferenceAt,
+          signals: r.signals,
+          // Event trail is capped for the response — full trail stays in DB.
+          recentEvents: r.events.slice(-20),
+          clearedAt: r.clearedAt,
+          clearReason: r.clearReason,
+        };
+      });
+
+      return c.json({ minLevel, count: records.length, users: records });
+    });
+
+    app.post('/risk/:userId/clear', async (c) => {
+      const auth = requireAdmin(c, deps);
+      if ('response' in auth) return auth.response;
+      const user = auth.user;
+
+      const userId = c.req.param('userId');
+      let reason = '';
+      try {
+        const body = await c.req.json() as { reason?: unknown };
+        reason = typeof body.reason === 'string' ? body.reason.slice(0, 500) : '';
+      } catch {
+        // Empty body is fine — reason optional.
+      }
+
+      const updated = risk.clearRisk(userId, reason);
+      if (!updated) {
+        return c.json({ error: { message: `No risk record for user: ${userId}`, type: 'not_found', code: 'not_found' } }, 404);
+      }
+      console.log(`[Risk] admin ${user.email} cleared ${userId}: "${reason}"`);
+      return c.json({
+        success: true,
+        userId,
+        status: updated.status,
+        clearedAt: updated.clearedAt,
+        clearReason: updated.clearReason,
+      });
+    });
+  }
+
   return app;
+}
+
+/**
+ * Session + admin-email check shared by admin JSON endpoints.
+ * Returns the User on success, or a ready-to-return error Response on failure.
+ */
+function requireAdmin(c: Context, deps: AdminDeps): { user: User } | { response: Response } {
+  const authHeader = c.req.header('Authorization');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) {
+    return { response: c.json({ error: { message: 'Unauthorized', type: 'authentication_error', code: 'missing_session_token' } }, 401) };
+  }
+  const adminUser = deps.userStore.validateSession(token);
+  if (!adminUser) {
+    return { response: c.json({ error: { message: 'Invalid or expired session.', type: 'authentication_error', code: 'invalid_session_token' } }, 401) };
+  }
+  if (!deps.adminEmails.includes(adminUser.email.toLowerCase())) {
+    return { response: c.json({ error: { message: 'Forbidden', type: 'forbidden', code: 'forbidden' } }, 403) };
+  }
+  return { user: adminUser };
 }
 
 // ─── Stats queries ─────────────────────────────────────

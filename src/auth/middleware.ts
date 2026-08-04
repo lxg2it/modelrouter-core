@@ -17,6 +17,7 @@ import type { KeyStore } from './keys.js';
 import type { UserStore } from './users.js';
 import type { SatbillClient } from '../billing/satbill-client.js';
 import type { RateLimiter } from '../ratelimit/token-bucket.js';
+import type { RiskScorer } from '../security/risk.js';
 import type { ApiKey, User } from '../types.js';
 
 /**
@@ -227,8 +228,11 @@ export function authMiddleware(
 /**
  * Create session auth middleware for management routes.
  * Validates mr_st_... session tokens and attaches the User to context.
+ *
+ * @param risk Optional risk scorer — session-authenticated requests to
+ *   management endpoints are fed to it (watch mode, never blocks).
  */
-export function sessionMiddleware(userStore: UserStore) {
+export function sessionMiddleware(userStore: UserStore, risk?: RiskScorer) {
   return async (c: Context<SessionEnv>, next: Next) => {
     const authHeader = c.req.header('Authorization');
 
@@ -265,6 +269,17 @@ export function sessionMiddleware(userStore: UserStore) {
     }
 
     c.set('user', user);
+
+    // Shadow-mode risk feed — session-authenticated management requests are
+    // the farmer's probe surface. Never throws; scoring is observational.
+    if (risk) {
+      try {
+        risk.onSessionRequest(user.id, c.req.path);
+      } catch (err) {
+        console.error('[Risk] onSessionRequest failed:', err);
+      }
+    }
+
     await next();
   };
 }

@@ -12,6 +12,7 @@ import { recordHttpResponse, classifyPathGroup } from './telemetry-instruments.j
 import { KeyStore } from './auth/keys.js';
 import { UserStore } from './auth/users.js';
 import { authMiddleware, sessionMiddleware, type RateLimitTiers } from './auth/middleware.js';
+import { RiskScorer } from './security/risk.js';
 import { RoutingEngine } from './routing/engine.js';
 import { createChatRouter } from './api/chat.js';
 import { createCompletionsRouter } from './api/completions.js';
@@ -86,8 +87,29 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   const keyStore = new KeyStore(db);
   const userStore = new UserStore(db);
   const usageStore = new UsageStore(db);
-  const usageLogger = new UsageLogger(usageStore);
   const violationStore = new ContentViolationStore(db);
+
+  // Shadow-mode farmer risk scorer (watch mode — scores + logs, never blocks).
+  const riskScorer = new RiskScorer(db);
+  if (process.env.RISK_SCORING_DISABLED !== '1') {
+    console.log('[Risk] Shadow-mode farmer scoring enabled (watch mode)');
+  }
+  // key id → owning user id, cached. Used to feed inference events to the
+  // scorer from the usage logger without touching every request handler.
+  const keyUserCache = new Map<string, string>();
+  const resolveUserId = (keyId: string): string | undefined => {
+    const cached = keyUserCache.get(keyId);
+    if (cached !== undefined) return cached || undefined;
+    const key = keyStore.findById(keyId);
+    const uid = key?.userId ?? '';
+    keyUserCache.set(keyId, uid);
+    if (keyUserCache.size > 10_000) keyUserCache.clear();
+    return uid || undefined;
+  };
+  const usageLogger = new UsageLogger(usageStore, {
+    risk: process.env.RISK_SCORING_DISABLED === '1' ? undefined : riskScorer,
+    resolveUserId,
+  });
 
   // Page view tracking — counter for non-API web page views
   db.exec(`
@@ -274,6 +296,7 @@ export function createApp(): { app: Hono; ctx: AppContext } {
     signupBonusCents: config.signupBonusCents,
     signupBonusDailyLimitCents: config.signupBonusDailyLimitCents,
     ipRateLimiter,
+    risk: process.env.RISK_SCORING_DISABLED === '1' ? undefined : riskScorer,
   }));
 
   // ─── API routes (API key auth) ────────────────────────────
@@ -365,7 +388,10 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   // Key management, account profile, and billing — authenticated with
   // session tokens (mr_st_...) returned by /v1/auth/login.
   //
-  const sessionAuth = sessionMiddleware(userStore);
+  const sessionAuth = sessionMiddleware(
+    userStore,
+    process.env.RISK_SCORING_DISABLED === '1' ? undefined : riskScorer,
+  );
 
   // One-click unsubscribe — no auth required (used by email links)
   app.get('/v1/account/unsubscribe', (c) => {
@@ -439,7 +465,13 @@ export function createApp(): { app: Hono; ctx: AppContext } {
   app.route('/', createLegalRouter());
 
   // Admin dashboard — session auth + admin email required
-  app.route('/admin', createAdminRouter({ db, adminEmails: config.adminEmails, userStore, usageStore }));
+  app.route('/admin', createAdminRouter({
+    db,
+    adminEmails: config.adminEmails,
+    userStore,
+    usageStore,
+    risk: process.env.RISK_SCORING_DISABLED === '1' ? undefined : riskScorer,
+  }));
 
   // Global error handler
   app.onError((err, c) => {

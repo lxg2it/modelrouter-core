@@ -25,6 +25,7 @@ import type { EmailSender } from '../auth/email.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
 import { isDisposableEmail } from '../auth/email-filter.js';
 import type { RateLimiter } from '../ratelimit/token-bucket.js';
+import type { RiskScorer } from '../security/risk.js';
 import { recordSignup, recordCodeRequest } from '../telemetry-instruments.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -39,6 +40,8 @@ export interface AuthRouterDeps {
   signupBonusDailyLimitCents: number;
   /** Optional IP-level rate limiter to protect the request-code endpoint. */
   ipRateLimiter?: RateLimiter;
+  /** Optional risk scorer — records signups for the shadow-mode farmer classifier. */
+  risk?: RiskScorer;
 }
 
 export function createAuthRouter(deps: AuthRouterDeps): Hono {
@@ -232,6 +235,19 @@ export function createAuthRouter(deps: AuthRouterDeps): Hono {
       }
 
       recordSignup(emailDomain, bonusGranted, bonusGranted ? signupBonusCents : 0, false);
+
+      // Shadow-mode risk feed — anchor the behavioural score at signup.
+      // IP comes from the same headers the rate limiter uses (Cloudflare first).
+      if (deps.risk) {
+        try {
+          const ip = c.req.header('cf-connecting-ip')
+                 ?? c.req.header('x-real-ip')
+                 ?? 'unknown';
+          deps.risk.onSignup(user.id, emailAddr, ip, !!accountName);
+        } catch (err) {
+          console.error('[Risk] onSignup failed:', err);
+        }
+      }
     }
 
     return c.json(response, isNewAccount ? 201 : 200);

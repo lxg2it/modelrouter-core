@@ -8,6 +8,7 @@
 
 import type { UsageRecord, ProviderName, Tier } from '../types.js';
 import type { UsageStore } from './store.js';
+import type { RiskScorer } from '../security/risk.js';
 
 export interface LogParams {
   keyId: string;
@@ -32,11 +33,26 @@ export interface LogParams {
   errorHeaders?: string;
 }
 
+export interface UsageLoggerOptions {
+  /**
+   * Risk scorer for the shadow-mode farmer classifier. When present, every
+   * logged inference is fed to the scorer (model + cost) so the behavioural
+   * M.O. (signup → probe → cheap models → abandon) can be scored in real time.
+   */
+  risk?: RiskScorer;
+  /** Resolve an API key id to its owning user id. Required when risk is set. */
+  resolveUserId?: (keyId: string) => string | undefined;
+}
+
 export class UsageLogger {
   private store: UsageStore;
+  private risk?: RiskScorer;
+  private resolveUserId?: (keyId: string) => string | undefined;
 
-  constructor(store: UsageStore) {
+  constructor(store: UsageStore, options: UsageLoggerOptions = {}) {
     this.store = store;
+    this.risk = options.risk;
+    this.resolveUserId = options.resolveUserId;
   }
 
   /**
@@ -44,6 +60,15 @@ export class UsageLogger {
    */
   log(params: LogParams): void {
     try {
+      // Shadow-mode risk feed — never allowed to break the request path.
+      // Only successful calls count: a failed request produced no output, so
+      // it is not evidence of model choice.
+      if (this.risk && this.resolveUserId && params.statusCode === 200) {
+        const userId = this.resolveUserId(params.keyId);
+        if (userId) {
+          this.risk.onInference(userId, params.model, params.costCents);
+        }
+      }
       this.store.record({
         keyId: params.keyId,
         provider: params.provider,
