@@ -22,6 +22,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import Database from 'better-sqlite3';
 import { createAdminRouter } from '../../src/api/admin.js';
+import { RiskScorer } from '../../src/security/risk.js';
 import type { AuthEnv } from '../../src/auth/middleware.js';
 import type { UserStore } from '../../src/auth/users.js';
 import type { User } from '../../src/types.js';
@@ -51,11 +52,15 @@ function fakeUser(overrides: Partial<User> = {}): User {
  * Minimal mock UserStore that maps tokens to users.
  * Only implements the methods used by the admin router.
  */
-function fakeUserStore(tokenMap: Record<string, User>, emailMap: Record<string, User> = {}): UserStore {
+function fakeUserStore(
+  tokenMap: Record<string, User>,
+  emailMap: Record<string, User> = {},
+  idMap: Record<string, User> = {},
+): UserStore {
   return {
     validateSession: (token: string) => tokenMap[token] ?? null,
     findByEmail: (email: string) => emailMap[email.toLowerCase()] ?? null,
-    findById: (_id: string) => null,
+    findById: (id: string) => idMap[id] ?? null,
     addCredits: (_userId: string, _amountCents: number) => 0,
   } as unknown as UserStore;
 }
@@ -64,9 +69,10 @@ function buildApp(
   db: Database.Database,
   adminEmails: string[],
   userStore: UserStore,
+  risk?: RiskScorer,
 ): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
-  app.route('/', createAdminRouter({ db, adminEmails, userStore }));
+  app.route('/', createAdminRouter({ db, adminEmails, userStore, risk }));
   return app;
 }
 
@@ -291,5 +297,160 @@ describe('GET /admin/stats', () => {
       headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
     });
     expect(res.status).toBe(200);
+  });
+});
+
+// ─── GET /risk-watch (HTML shell) ─────────────────────────
+
+describe('GET /admin/risk-watch (HTML shell)', () => {
+  it('returns 200 HTML without any auth token', async () => {
+    const db = makeTestDb();
+    const userStore = fakeUserStore({});
+    const app = buildApp(db, ['admin@example.com'], userStore);
+
+    const res = await app.request('/risk-watch');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    const html = await res.text();
+    expect(html).toContain('Risk Watch');
+    expect(html).toContain('/admin/risk'); // fetches this endpoint
+  });
+});
+
+// ─── GET /admin/risk ───────────────────────────────────────
+
+describe('GET /admin/risk', () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeTestDb();
+  });
+
+  it('returns 401 when no Authorization header', async () => {
+    const app = buildApp(db, ['admin@example.com'], fakeUserStore({}), new RiskScorer(db, { quiet: true }));
+    const res = await app.request('/risk');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 when user is not in admin list', async () => {
+    const other = fakeUser({ email: 'other@example.com' });
+    const userStore = fakeUserStore({ [OTHER_TOKEN]: other });
+    const app = buildApp(db, ['admin@example.com'], userStore, new RiskScorer(db, { quiet: true }));
+
+    const res = await app.request('/risk', {
+      headers: { Authorization: `Bearer ${OTHER_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 200 with risk records for an admin user', async () => {
+    const admin = fakeUser({ id: 'admin-user', email: 'admin@example.com' });
+    const userStore = fakeUserStore({ [ADMIN_TOKEN]: admin }, {}, {
+      'admin-user': admin,
+      'farmer-1': fakeUser({ id: 'farmer-1', email: 'farmer@example.com' }),
+    });
+
+    const risk = new RiskScorer(db, { quiet: true, now: () => Date.parse('2026-08-04T00:00:00Z') });
+    // Simulate the observed farming M.O.
+    risk.onSignup('farmer-1', 'farmer@example.com', '212.107.30.199', false);
+    risk.onSessionRequest('farmer-1', '/v1/billing');
+    risk.onSessionRequest('farmer-1', '/v1/keys');
+    risk.onSessionRequest('farmer-1', '/v1/account');
+    risk.onSessionRequest('farmer-1', '/v1/usage');
+    risk.onInference('farmer-1', 'gemini-2.5-flash', 0);
+
+    const app = buildApp(db, ['admin@example.com'], userStore, risk);
+    const res = await app.request('/risk', {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.count).toBe(1);
+    expect(body.users[0].email).toBe('farmer@example.com');
+    expect(body.users[0].level).toBe('probable_farmer');
+    expect(body.users[0].score).toBeGreaterThanOrEqual(70);
+    // Signal breakdown is explainable.
+    const signalIds = body.users[0].signals.map((s: { id: string }) => s.id);
+    expect(signalIds).toContain('billing_probe');
+    expect(signalIds).toContain('keys_probe');
+    expect(signalIds).toContain('probe_burst');
+    // Event trail is present and capped in the response.
+    expect(Array.isArray(body.users[0].recentEvents)).toBe(true);
+    expect(body.users[0].recentEvents.length).toBeGreaterThan(0);
+  });
+
+  it('validates the minLevel query parameter', async () => {
+    const admin = fakeUser({ id: 'admin-user', email: 'admin@example.com' });
+    const userStore = fakeUserStore({ [ADMIN_TOKEN]: admin });
+    const app = buildApp(db, ['admin@example.com'], userStore, new RiskScorer(db, { quiet: true }));
+
+    const res = await app.request('/risk?minLevel=bogus', {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ─── POST /admin/risk/:userId/clear ────────────────────────
+
+describe('POST /admin/risk/:userId/clear', () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = makeTestDb();
+  });
+
+  it('clears a user and locks them out of further scoring', async () => {
+    const admin = fakeUser({ id: 'admin-user', email: 'admin@example.com' });
+    const userStore = fakeUserStore({ [ADMIN_TOKEN]: admin }, {}, { 'admin-user': admin });
+
+    const risk = new RiskScorer(db, { quiet: true, now: () => Date.parse('2026-08-04T00:00:00Z') });
+    risk.onSignup('farmer-1', 'farmer@example.com', '1.2.3.4', false);
+
+    const app = buildApp(db, ['admin@example.com'], userStore, risk);
+
+    const res = await app.request('/risk/farmer-1/clear', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      body: JSON.stringify({ reason: 'false positive — legit tester' }),
+    });
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.status).toBe('cleared');
+
+    // Cleared user is locked: further events do not change the record.
+    risk.onInference('farmer-1', 'gpt-4o', 500);
+    const record = risk.getRisk('farmer-1')!;
+    expect(record.status).toBe('cleared');
+    expect(record.clearReason).toBe('false positive — legit tester');
+  });
+
+  it('requires admin', async () => {
+    const db2 = makeTestDb();
+    const other = fakeUser({ email: 'other@example.com' });
+    const userStore = fakeUserStore({ [OTHER_TOKEN]: other });
+    const app = buildApp(db2, ['admin@example.com'], userStore, new RiskScorer(db2, { quiet: true }));
+
+    const res = await app.request('/risk/farmer-1/clear', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${OTHER_TOKEN}` },
+      body: JSON.stringify({ reason: 'x' }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 for an untracked user', async () => {
+    const admin = fakeUser({ email: 'admin@example.com' });
+    const userStore = fakeUserStore({ [ADMIN_TOKEN]: admin });
+    const app = buildApp(db, ['admin@example.com'], userStore, new RiskScorer(db, { quiet: true }));
+
+    const res = await app.request('/risk/nobody/clear', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(404);
   });
 });

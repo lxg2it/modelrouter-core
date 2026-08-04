@@ -107,6 +107,19 @@ export function createAdminRouter(deps: AdminDeps): Hono<AuthEnv> {
   });
 
   /**
+   * GET /admin/risk-watch
+   * Public HTML shell for the farmer risk watch page. Same pattern as the
+   * main dashboard: the page reads mr_session from localStorage and fetches
+   * /admin/risk (JSON) client-side, so no auth is required to serve the shell.
+   * Renders risk scores, signal breakdowns, event trails, and the clear
+   * (reviewed) action — auto-refreshing so it can be left open as a watch.
+   */
+  app.get('/risk-watch', (c) => {
+    c.header('Content-Type', 'text/html; charset=utf-8');
+    return c.body(RISK_WATCH_HTML);
+  });
+
+  /**
    * GET /admin/stats
    * Returns AdminStats JSON. Session token + admin email required.
    * Reads the Authorization header directly so it works from both browser
@@ -859,6 +872,264 @@ const ADMIN_SHELL_HTML = /* html */`<!DOCTYPE html>
     }
 
     load();
+  </script>
+</body>
+</html>`;
+
+// ─── Risk watch HTML (client-side rendered) ────────────────────────────────
+//
+// Served publicly at GET /admin/risk-watch. Same auth pattern as the main
+// dashboard: reads mr_session from localStorage, fetches /admin/risk JSON,
+// renders risk scores + signal breakdowns + event trails, auto-refreshes.
+// Admin-only data (the JSON endpoints enforce session + admin email).
+
+const RISK_WATCH_HTML = /* html */`<!DOCTYPE html>
+<html lang="en">
+<head>
+  ${SHARED_HEAD}
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzFhMWExYSIvPjxwYXRoIGQ9Ik04IDE2IEwxNiAxNiIgc3Ryb2tlPSIjZmY2YjM1IiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTE2IDE2IEwyNCA4IiBzdHJva2U9IiNmZjZiMzUiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMTYgMTYgTDI0IDE2IiBzdHJva2U9IiNmZjZiMzUiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMTYgMTYgTDI0IDI0IiBzdHJva2U9IiNmZjZiMzUiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48Y2lyY2xlIGN4PSI4IiBjeT0iMTYiIHI9IjIuNSIgZmlsbD0iI2ZmNmIzNSIvPjxjaXJjbGUgY3g9IjI0IiBjeT0iOCIgcj0iMi41IiBmaWxsPSIjNGE5Ii8+PGNpcmNsZSBjeD0iMjQiIGN5PSIxNiIgcj0iMi41IiBmaWxsPSIjNGE5Ii8+PGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMi41IiBmaWxsPSIjNGE5Ii8+PC9zdmc+">
+  <title>Risk Watch — model-router</title>
+  <style>
+    ${SHARED_CSS}
+    .controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; font-size: 13px; }
+    .controls select, .controls button {
+      font-family: var(--mono); font-size: 12px; padding: 4px 10px;
+      background: var(--code-bg); border: 1px solid var(--border); color: var(--text); cursor: pointer;
+    }
+    .controls select:hover, .controls button:hover { border-color: var(--accent); }
+    .controls .muted { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+    .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 6px; }
+    .live-dot.paused { background: var(--warn); }
+    .level-summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 24px; }
+    .level-box { flex: 1; min-width: 130px; padding: 12px 16px; border: 1px solid var(--border); background: var(--surface); }
+    .level-box .n { font-size: 24px; font-weight: 700; font-family: var(--mono); line-height: 1.2; }
+    .level-box .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-family: var(--mono); }
+    .level-probable_farmer .n { color: var(--red); }
+    .level-suspicious .n { color: var(--warn); }
+    .level-watch .n { color: var(--accent); }
+    .level-clear .n { color: var(--green); }
+    .risk-row { padding: 14px 0; border-bottom: 1px solid var(--border); }
+    .risk-row:last-child { border-bottom: none; }
+    .risk-top { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+    .risk-main { flex: 1; min-width: 260px; }
+    .risk-email { font-family: var(--mono); font-size: 13px; word-break: break-all; }
+    .risk-email a { color: var(--accent); }
+    .risk-meta { font-size: 12px; color: var(--muted); margin-top: 2px; font-family: var(--mono); }
+    .risk-side { text-align: right; font-family: var(--mono); }
+    .score { font-size: 22px; font-weight: 700; line-height: 1.1; }
+    .badge { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; padding: 2px 8px; border-radius: 3px; font-family: var(--mono); font-weight: 700; }
+    .badge.benign { color: var(--green); border: 1px solid var(--green); }
+    .badge.watch { color: var(--accent); border: 1px solid var(--accent); }
+    .badge.suspicious { color: var(--warn); border: 1px solid var(--warn); }
+    .badge.probable_farmer { color: var(--red); border: 1px solid var(--red); }
+    .badge.cleared { color: var(--muted); border: 1px solid var(--muted); }
+    .signals { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .signal-chip {
+      font-family: var(--mono); font-size: 11px; padding: 2px 8px;
+      background: var(--code-bg); border: 1px solid var(--border); color: var(--text);
+      cursor: default; position: relative;
+    }
+    .signal-chip .w { color: var(--accent); font-weight: 700; }
+    .signal-chip:hover .signal-tip {
+      display: block; position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 10;
+      background: #000; border: 1px solid var(--border); padding: 6px 10px;
+      font-size: 11px; color: var(--text); white-space: normal; width: 260px; font-family: var(--mono);
+    }
+    .signal-tip { display: none; }
+    .trail-toggle { font-size: 11px; color: var(--muted); cursor: pointer; font-family: var(--mono); margin-top: 8px; display: inline-block; }
+    .trail-toggle:hover { color: var(--accent); }
+    .trail { margin-top: 10px; border-left: 2px solid var(--border); padding-left: 14px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+    .trail-event { padding: 2px 0; }
+    .trail-event .t { color: var(--text); }
+    .trail-event .ip { color: var(--accent); }
+    .trail-event .model { color: var(--green); }
+    .cleared-note { font-size: 12px; color: var(--green); margin-top: 4px; font-family: var(--mono); }
+    .btn-clear { font-size: 11px; padding: 2px 8px; background: var(--code-bg); border: 1px solid var(--border); color: var(--red); cursor: pointer; font-family: var(--mono); margin-top: 8px; }
+    .btn-clear:hover { border-color: var(--red); }
+    .empty { color: var(--muted); padding: 32px 0; text-align: center; font-size: 14px; }
+    #loading { color: var(--muted); font-size: 14px; padding: 40px 0; }
+  </style>
+</head>
+<body>
+<div class="page-wide">
+
+  <div class="header">
+    <div class="header-top">
+      <div class="title"><a href="/">model-router</a></div>
+      <div style="display:flex;gap:14px">
+        <a href="/admin" class="nav-link">admin →</a>
+        <a href="/profile" class="nav-link">profile →</a>
+      </div>
+    </div>
+    <p class="subtitle">Farmer risk watch. Scores the signup-bonus-farming M.O. — shadow mode, no enforcement.</p>
+  </div>
+
+  <div class="controls">
+    <span id="live-indicator" class="muted"><span class="live-dot"></span><span id="live-text">live</span></span>
+    <span class="muted" id="last-updated">—</span>
+    <select id="min-level" aria-label="Minimum level">
+      <option value="watch">watch +</option>
+      <option value="suspicious">suspicious +</option>
+      <option value="probable_farmer">probable_farmer</option>
+    </select>
+    <button id="pause-btn">pause</button>
+  </div>
+
+  <div id="root"><div id="loading">Loading…</div></div>
+
+  ${pageFooter()}
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const root = $('root');
+    const REFRESH_MS = 15000;
+    let paused = false;
+    let timer = null;
+
+    // ── helpers ──
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    function fmtTime(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      const ago = Date.now() - d.getTime();
+      if (ago < 60000) return Math.round(ago / 1000) + 's ago';
+      if (ago < 3600000) return Math.round(ago / 60000) + 'm ago';
+      return d.toLocaleString();
+    }
+
+    function scoreColor(level) {
+      return { benign: 'var(--green)', watch: 'var(--accent)', suspicious: 'var(--warn)', probable_farmer: 'var(--red)' }[level] || 'var(--text)';
+    }
+
+    function badgeHtml(level, status) {
+      if (status === 'cleared') return '<span class="badge cleared">cleared</span>';
+      return '<span class="badge ' + esc(level) + '">' + esc(level) + '</span>';
+    }
+
+    function signalChips(signals) {
+      if (!signals || signals.length === 0) return '';
+      return signals.map(s => \`<span class="signal-chip">\${esc(s.id)} <span class="w">+\${s.weight}</span>
+        <span class="signal-tip">\${esc(s.detail || s.id)}</span>
+      </span>\`).join('');
+    }
+
+    function trailHtml(events) {
+      if (!events || events.length === 0) return '';
+      const rows = events.map(e => {
+        switch (e.t) {
+          case 'signup':
+            return \`<div class="trail-event"><span class="t">signup</span> \${esc(e.email)} <span class="ip">\${esc(e.ip || '')}</span>\${e.hasName ? '' : ' (no name)'}</div>\`;
+          case 'probe':
+            return \`<div class="trail-event"><span class="t">probe</span> \${esc(e.path)}</div>\`;
+          case 'inference':
+            return \`<div class="trail-event"><span class="t">inference</span> <span class="model">\${esc(e.model)}</span> \${(e.costCents / 100).toFixed(2)}$</div>\`;
+          default:
+            return '<div class="trail-event">' + esc(e.t) + '</div>';
+        }
+      }).join('');
+      return '<div class="trail">' + rows + '</div>';
+    }
+
+    function userCard(u) {
+      const cleared = u.status === 'cleared';
+      const clearBtn = cleared
+        ? '<div class="cleared-note">✓ reviewed' + (u.clearReason ? ' — ' + esc(u.clearReason) : '') + '</div>'
+        : '<button class="btn-clear" onclick="clearUser(\'' + esc(u.userId) + '\', \'' + esc(u.email) + '\')">mark reviewed</button>';
+      return \`<div class="risk-row">
+        <div class="risk-top">
+          <div class="risk-main">
+            <div class="risk-email"><a href="/admin/risk-watch?user=\${encodeURIComponent(u.userId)}">\${esc(u.email)}</a></div>
+            <div class="risk-meta">ip \${esc(u.signupIp || '?')} · domain \${esc(u.emailDomain || '?')} · first call \${fmtTime(u.firstInferenceAt)}</div>
+            <div class="signals">\${signalChips(u.signals)}</div>
+            <span class="trail-toggle" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'block' ? 'none' : 'block'">▸ event trail</span>
+            \${trailHtml(u.recentEvents)}
+            \${clearBtn}
+          </div>
+          <div class="risk-side">
+            <div class="score" style="color:\${scoreColor(u.level)}">\${u.score}</div>
+            \${badgeHtml(u.level, u.status)}
+          </div>
+        </div>
+      </div>\`;
+    }
+
+    function renderSummary(users) {
+      const count = (lv) => users.filter(u => u.level === lv && u.status === 'active').length;
+      const cleared = users.filter(u => u.status === 'cleared').length;
+      return \`<div class="level-summary">
+        <div class="level-box level-probable_farmer"><div class="n">\${count('probable_farmer')}</div><div class="l">probable farmers</div></div>
+        <div class="level-box level-suspicious"><div class="n">\${count('suspicious')}</div><div class="l">suspicious</div></div>
+        <div class="level-box level-watch"><div class="n">\${count('watch')}</div><div class="l">watch</div></div>
+        <div class="level-box level-clear"><div class="n">\${cleared}</div><div class="l">reviewed</div></div>
+      </div>\`;
+    }
+
+    function render(data, token) {
+      const users = data.users || [];
+      root.innerHTML = renderSummary(users) + '<div>' + (users.map(userCard).join('') || '<div class="empty">No users at this level yet.</div>') + '</div>';
+      $('last-updated').textContent = 'updated ' + new Date().toLocaleTimeString();
+    }
+
+    // ── actions ──
+    window.clearUser = async function(userId, email) {
+      const reason = prompt('Mark reviewed — reason? (optional)', '');
+      if (reason === null) return;
+      const token = localStorage.getItem('mr_session');
+      if (!token) { alert('Not logged in.'); return; }
+      try {
+        const res = await fetch('/admin/risk/' + encodeURIComponent(userId) + '/clear', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ reason }),
+        });
+        if (!res.ok) { const j = await res.json().catch(() => ({})); alert('Failed: ' + (j.error?.message || res.status)); return; }
+        load();
+      } catch (e) { alert('Network error.'); }
+    };
+
+    // ── load loop ──
+    async function load() {
+      const token = localStorage.getItem('mr_session');
+      if (!token) {
+        root.innerHTML = '<div class="status-msg error">Not logged in. <a href="/profile">Log in</a>.</div>';
+        return;
+      }
+      const minLevel = $('min-level').value;
+      try {
+        const res = await fetch('/admin/risk?minLevel=' + encodeURIComponent(minLevel), {
+          headers: { 'Authorization': 'Bearer ' + token },
+        });
+        if (res.status === 401) {
+          root.innerHTML = '<div class="status-msg error">Session expired. <a href="/profile">Log in again</a>.</div>';
+          return;
+        }
+        if (res.status === 403) {
+          root.innerHTML = '<div class="status-msg error">Access denied. Your account does not have admin privileges.</div>';
+          return;
+        }
+        if (!res.ok) {
+          root.innerHTML = '<div class="status-msg error">Failed to load risk data (HTTP ' + res.status + ').</div>';
+          return;
+        }
+        const data = await res.json();
+        render(data, token);
+      } catch (e) {
+        root.innerHTML = '<div class="status-msg error">Network error loading risk data.</div>';
+      }
+    }
+
+    $('min-level').addEventListener('change', () => { load(); });
+    $('pause-btn').addEventListener('click', () => {
+      paused = !paused;
+      $('pause-btn').textContent = paused ? 'resume' : 'pause';
+      $('live-indicator').classList.toggle('paused', paused);
+      $('live-text').textContent = paused ? 'paused' : 'live';
+      if (paused) { clearInterval(timer); timer = null; } else { timer = setInterval(load, REFRESH_MS); load(); }
+    });
+
+    load();
+    timer = setInterval(load, REFRESH_MS);
   </script>
 </body>
 </html>`;
