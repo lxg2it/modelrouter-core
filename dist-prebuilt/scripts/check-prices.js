@@ -24,28 +24,43 @@ const MODEL_LOOKUP = {
     // Anthropic direct
     'anthropic/claude-haiku-4-5-20251001': ['claude-haiku-4-5'],
     'anthropic/claude-sonnet-4-6': ['claude-sonnet-4-6'],
+    'anthropic/claude-sonnet-5': ['claude-sonnet-5'],
     'anthropic/claude-opus-4-6': ['claude-opus-4-6'],
+    'anthropic/claude-opus-4-7': ['claude-opus-4-7'],
     'anthropic/claude-opus-4-8': ['claude-opus-4-8'],
+    'anthropic/claude-opus-5': ['claude-opus-5'],
+    'anthropic/claude-fable-5': ['claude-fable-5'],
     'openai/gpt-5.5': ['gpt-5.5'],
     // OpenAI direct
     'openai/gpt-4.1': ['gpt-4.1'],
     'openai/gpt-4.1-mini': ['gpt-4.1-mini'],
     'openai/gpt-5.4-nano': ['gpt-5.4-nano'],
     'openai/gpt-5.4-mini': ['gpt-5.4-mini'],
+    'openai/gpt-5.4': ['gpt-5.4'],
+    'openai/gpt-5.3-chat-latest': ['gpt-5.3-chat-latest'],
+    'openai/gpt-5.3-codex': ['gpt-5.3-codex'],
+    'openai/gpt-5.6-luna': ['gpt-5.6-luna'],
+    'openai/gpt-5.6-terra': ['gpt-5.6-terra'],
+    'openai/gpt-5.6-sol': ['gpt-5.6-sol'],
     'openai/gpt-5.1-codex-mini': ['gpt-5.1-codex-mini'],
     'openai/o3': ['o3'],
     'openai/o4-mini': ['o4-mini'],
     // Google direct (gemini/ prefix in LiteLLM)
     'google/gemini-2.5-flash': ['gemini/gemini-2.5-flash', 'gemini-2.5-flash'],
     'google/gemini-3.1-flash-lite': ['gemini/gemini-3.1-flash-lite', 'gemini-3.1-flash-lite'],
+    'google/gemini-3-flash-preview': ['gemini-3-flash-preview', 'gemini/gemini-3-flash-preview'],
+    'google/gemini-3.1-pro-preview': ['gemini-3.1-pro-preview', 'gemini/gemini-3.1-pro-preview'],
     'google/gemini-2.5-pro': ['gemini/gemini-2.5-pro', 'gemini-2.5-pro'],
     'google/gemini-3.5-flash': ['gemini/gemini-3.5-flash', 'gemini-3.5-flash'],
     // Grok direct
     'grok/grok-3-beta': ['xai/grok-3-beta'],
     'grok/grok-3-mini-beta': ['xai/grok-3-mini-beta'],
+    'grok/grok-4.3': ['xai/grok-4.3'],
+    'grok/grok-4.5': ['xai/grok-4.5'],
+    'grok/grok-4-1-fast': ['xai/grok-4-1-fast'],
     // Bedrock (us-west-2 is our region)
-    'bedrock/zai.glm-4.7-flash': ['bedrock/us-west-2/zai.glm-4.7-flash'],
-    'bedrock/zai.glm-4.7': ['bedrock/us-west-2/zai.glm-4.7'],
+    'bedrock/zai.glm-4.7-flash': ['zai.glm-4.7-flash', 'bedrock/us-west-2/zai.glm-4.7-flash'],
+    'bedrock/zai.glm-4.7': ['zai.glm-4.7', 'bedrock/us-west-2/zai.glm-4.7'],
     'bedrock/deepseek.v3.2': ['bedrock/us-west-2/deepseek.v3.2'],
     'bedrock/minimax.minimax-m2.1': ['bedrock/us-west-2/minimax.minimax-m2.1'],
     'bedrock/moonshotai.kimi-k2.5': ['bedrock/us-west-2/moonshotai.kimi-k2.5'],
@@ -54,6 +69,11 @@ const MODEL_LOOKUP = {
     'bedrock/openai.gpt-oss-safeguard-120b': ['bedrock_mantle/openai.gpt-oss-safeguard-120b'],
     'bedrock/qwen.qwen3-235b-a22b-2507': ['bedrock/us-west-2/qwen.qwen3-235b-a22b'],
     'bedrock/mistral.mistral-large-3-675b-instruct': ['azure_ai/mistral-large-3'], // best proxy until LiteLLM adds Bedrock entry
+    'bedrock/mistral.devstral-2-123b': ['mistral.devstral-2-123b'],
+    'bedrock/zai.glm-5': ['bedrock/us-west-2/zai.glm-5'],
+    'bedrock/nvidia.nemotron-super-3-120b': ['nvidia.nemotron-super-3-120b'],
+    'bedrock/google.gemma-4-e2b': ['bedrock_mantle/google.gemma-4-e2b'],
+    'bedrock/google.gemma-4-26b-a4b': ['bedrock_mantle/google.gemma-4-26b-a4b'],
 };
 async function fetchLiteLLMPrices() {
     const res = await fetch(LITELLM_PRICES_URL);

@@ -50,17 +50,7 @@ export interface Config {
         };
     };
     /**
-     * Credit balance threshold (in cents) above which users get elevated rate limits.
-     * Defaults to $10.00 (1000 cents). Set to 0 to disable tiered rate limiting.
-     */
-    elevatedRateLimitThresholdCents: number;
-    /**
-     * Rate limit (RPM) for users with credit balance >= elevatedRateLimitThresholdCents.
-     * Defaults to 60 RPM.
-     */
-    elevatedRateLimitPerMinute: number;
-    /**
-     * Rate limit (RPM) for users with balance below the threshold (or no Stripe account).
+     * Rate limit (RPM) for users without a Stripe account.
      * Defaults to 10 RPM.
      */
     baseRateLimitPerMinute: number;

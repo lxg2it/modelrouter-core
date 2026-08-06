@@ -60,29 +60,29 @@ export function authMiddleware(keyStore, userStore, satbill, rateLimiter, rateLi
         // Checked immediately after authentication, before any billing or
         // provider logic. Priority order for the limit used:
         //   1. Per-key override (apiKey.rateLimitPerMinute) — always respected
-        //   2. Elevated tier — user has ≥ threshold balance (default $10)
+        //   2. Paid tier — user has a Stripe customer ID (has made a deposit)
         //   3. Base tier — everyone else (zero balance, no billing relationship)
         //
         // Headers are added to both allowed and rejected responses so clients can
         // track their consumption.
         if (rateLimiter) {
             // Determine effective RPM: per-key override takes absolute priority.
-            // Otherwise use the best applicable tier:
+            // Otherwise pick the tier by billing relationship:
             //   1. Paid tier — user has a Stripe customer ID (has made a deposit)
-            //   2. Elevated tier — balance >= threshold (default $10)
-            //   3. Base tier — everyone else
+            //   2. Base tier — everyone else
+            //
+            // SECURITY NOTE (per-key override): apiKey.rateLimitPerMinute is honored
+            // here but currently has NO write path in the codebase — no INSERT or
+            // UPDATE ever sets it, so it is NULL for every key created through the
+            // API. If this ever gains a self-serve or admin write path, the value
+            // MUST be capped (at most the paid tier) and gated behind admin or a
+            // paid upgrade — otherwise anyone could mint an unlimited-rate key.
             let effectiveRpm = apiKey.rateLimitPerMinute;
             if (effectiveRpm === undefined && rateLimitTiers) {
                 const isPaid = !!(user?.stripeCustomerId || apiKey.stripeCustomerId);
-                if (isPaid) {
-                    effectiveRpm = rateLimitTiers.paidPerMinute;
-                }
-                else {
-                    const balanceCents = user?.creditBalanceCents ?? apiKey.creditBalanceCents ?? 0;
-                    effectiveRpm = balanceCents >= rateLimitTiers.thresholdCents
-                        ? rateLimitTiers.elevatedPerMinute
-                        : rateLimitTiers.basePerMinute;
-                }
+                effectiveRpm = isPaid
+                    ? rateLimitTiers.paidPerMinute
+                    : rateLimitTiers.basePerMinute;
             }
             const rl = rateLimiter.consume(apiKey.id, effectiveRpm);
             // Always attach rate limit headers, regardless of outcome.
@@ -148,8 +148,11 @@ export function authMiddleware(keyStore, userStore, satbill, rateLimiter, rateLi
 /**
  * Create session auth middleware for management routes.
  * Validates mr_st_... session tokens and attaches the User to context.
+ *
+ * @param risk Optional risk scorer — session-authenticated requests to
+ *   management endpoints are fed to it (watch mode, never blocks).
  */
-export function sessionMiddleware(userStore) {
+export function sessionMiddleware(userStore, risk) {
     return async (c, next) => {
         const authHeader = c.req.header('Authorization');
         if (!authHeader) {
@@ -182,6 +185,16 @@ export function sessionMiddleware(userStore) {
             }, 401);
         }
         c.set('user', user);
+        // Shadow-mode risk feed — session-authenticated management requests are
+        // the farmer's probe surface. Never throws; scoring is observational.
+        if (risk) {
+            try {
+                risk.onSessionRequest(user.id, c.req.path);
+            }
+            catch (err) {
+                console.error('[Risk] onSessionRequest failed:', err);
+            }
+        }
         await next();
     };
 }

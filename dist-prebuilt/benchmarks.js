@@ -29,7 +29,7 @@
  * composite score which is then rescaled so the best model = 1.00 and the
  * worst = 0.50 (we don't route to bad models, so the floor is meaningful).
  *
- * Last updated: 2026-03-05
+ * Last updated: 2026-08-01
  */
 export const BENCHMARK_DATA = {
     // ── Economy ───────────────────────────────────────────
@@ -89,6 +89,46 @@ export const BENCHMARK_DATA = {
         mmluPro: 78.0,
         simpleBench: 45.0,
     },
+    // GPT-5.6 Luna: July 9 2026, OpenAI's cost-efficient tier ($0.20/$1.20)
+    'gpt-5.6-luna': {
+        arenaElo: 1360, // not independently published (estimate)
+        gpqaDiamond: 92.3, // confirmed (Requesty/OpenAI launch data)
+        sweBench: 93.0, // confirmed (Vals AI via mini-swe-agent harness, Jul 2026)
+        mmluPro: 81.0, // not published (estimate)
+        simpleBench: 50.0, // not published (estimate)
+    },
+    // Gemini 3 Flash: July 2026 preview, new mainline flash (1M context)
+    'gemini-3-flash-preview': {
+        arenaElo: 1473, // confirmed (serenitiesai.com)
+        gpqaDiamond: 81.2, // confirmed (GPQA, pricepertoken.com)
+        sweBench: 55.0, // not published (estimate)
+        mmluPro: 88.2, // confirmed (pricepertoken.com)
+        simpleBench: 55.0, // not published (estimate)
+    },
+    // Grok 4.1 Fast: low-latency non-reasoning tier (2M context)
+    'grok-4-1-fast': {
+        arenaElo: 1320, // estimated
+        gpqaDiamond: 68.0, // estimated
+        sweBench: 0, // not published (fast non-reasoning)
+        mmluPro: 78.0, // estimated
+        simpleBench: 45.0, // estimated
+    },
+    // Gemma 4 e2b: tiny open model (Bedrock Mantle) — $0.04/$0.08
+    'google.gemma-4-e2b': {
+        arenaElo: 1220, // not published (estimate)
+        gpqaDiamond: 45.0, // not published (estimate)
+        sweBench: 0, // not published
+        mmluPro: 60.0, // confirmed (gemma4.online)
+        simpleBench: 40.0, // not published (estimate)
+    },
+    // Gemma 4 26B-A4B: open MoE (Bedrock Mantle) — $0.13/$0.40
+    'google.gemma-4-26b-a4b': {
+        arenaElo: 1441, // confirmed (gemma4all.com / layer3labs.io)
+        gpqaDiamond: 82.3, // confirmed (gemma4all.com)
+        sweBench: 30.0, // not published (estimate)
+        mmluPro: 82.6, // confirmed (gemma4all.com)
+        simpleBench: 43.0, // not published (estimate)
+    },
     // ── Standard ──────────────────────────────────────────
     'gemini-2.5-pro': {
         arenaElo: 1380,
@@ -133,6 +173,30 @@ export const BENCHMARK_DATA = {
         sweBench: 48.5,
         mmluPro: 81.0,
         simpleBench: 52.0,
+    },
+    // Grok 4.3: mid-tier reasoning (1M context, $1.25/$2.50)
+    'grok-4.3': {
+        arenaElo: 1400, // not published (estimate)
+        gpqaDiamond: 90.1, // confirmed (Requesty)
+        sweBench: 65.0, // not published (estimate)
+        mmluPro: 84.0, // not published (estimate)
+        simpleBench: 58.0, // not published (estimate)
+    },
+    // Grok 4.5: July 8 2026, xAI flagship (500K context, $2/$6)
+    'grok-4.5': {
+        arenaElo: 1440, // Text not published (Code Arena 1549); estimate for text
+        gpqaDiamond: 90.0, // not published (estimate)
+        sweBench: 86.6, // confirmed (Vals AI)
+        mmluPro: 87.0, // not published (estimate)
+        simpleBench: 63.0, // not published (estimate)
+    },
+    // GPT-5.6 Terra: July 9 2026, balanced tier ($2/$12)
+    'gpt-5.6-terra': {
+        arenaElo: 1470, // confirmed (artificialanalysis.ai, medium effort)
+        gpqaDiamond: 92.9, // confirmed (AnyCap/OpenAI launch data)
+        sweBench: 78.0, // not published (estimate)
+        mmluPro: 89.0, // not published (estimate)
+        simpleBench: 66.0, // not published (estimate)
     },
     'gemini-3.5-flash': {
         arenaElo: 1350, // estimated — flash variant, slightly above 2.5-flash
@@ -428,6 +492,30 @@ export const BENCHMARK_DATA = {
         sweBench: 88.7, // confirmed (OpenAI, Apr 2026)
         mmluPro: 91.0, // estimated (bump from gpt-5.4's 88.5)
         simpleBench: 68.0, // estimated (bump from gpt-5.4's 66.0)
+    },
+    // GPT-5.6 Sol: July 9 2026, OpenAI flagship ($5/$30, 1.05M context)
+    'gpt-5.6-sol': {
+        arenaElo: 1505, // confirmed (artificialanalysis.ai, max effort)
+        gpqaDiamond: 94.6, // confirmed (OpenAI system card)
+        sweBench: 96.2, // confirmed (Vals AI, Jul 31 2026)
+        mmluPro: 91.5, // not published (estimate)
+        simpleBench: 69.0, // not published (estimate)
+    },
+    // Claude Opus 5: July 24 2026, Anthropic flagship ($5/$25, 1M context)
+    'claude-opus-5': {
+        arenaElo: 1512, // confirmed (Text Arena, factuality enabled)
+        gpqaDiamond: 94.8, // not explicitly published (estimate)
+        sweBench: 96.0, // confirmed (Anthropic system card)
+        mmluPro: 91.6, // confirmed (Vals AI, Jul 31 2026)
+        simpleBench: 71.0, // not published (estimate)
+    },
+    // Claude Fable 5: June 9 2026, Anthropic's ultra-premium research model ($10/$50)
+    'claude-fable-5': {
+        arenaElo: 1495, // estimated (top of Anthropic lineup)
+        gpqaDiamond: 95.0, // estimated
+        sweBench: 89.0, // estimated
+        mmluPro: 91.0, // estimated
+        simpleBench: 72.0, // estimated
     },
 };
 // ─── Scoring Weights ────────────────────────────────────

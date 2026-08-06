@@ -179,6 +179,19 @@ export function createAuthRouter(deps) {
                 }
             }
             recordSignup(emailDomain, bonusGranted, bonusGranted ? signupBonusCents : 0, false);
+            // Shadow-mode risk feed — anchor the behavioural score at signup.
+            // IP comes from the same headers the rate limiter uses (Cloudflare first).
+            if (deps.risk) {
+                try {
+                    const ip = c.req.header('cf-connecting-ip')
+                        ?? c.req.header('x-real-ip')
+                        ?? 'unknown';
+                    deps.risk.onSignup(user.id, emailAddr, ip, !!accountName);
+                }
+                catch (err) {
+                    console.error('[Risk] onSignup failed:', err);
+                }
+            }
         }
         return c.json(response, isNewAccount ? 201 : 200);
     });

@@ -29,7 +29,7 @@
  * composite score which is then rescaled so the best model = 1.00 and the
  * worst = 0.50 (we don't route to bad models, so the floor is meaningful).
  *
- * Last updated: 2026-03-05
+ * Last updated: 2026-08-01
  */
 export interface BenchmarkScores {
     /** Chatbot Arena Elo rating */

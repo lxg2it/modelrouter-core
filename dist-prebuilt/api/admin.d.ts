@@ -20,11 +20,14 @@ import Database from 'better-sqlite3';
 import type { AuthEnv } from '../auth/middleware.js';
 import type { UserStore } from '../auth/users.js';
 import type { UsageStore, AutoRoutingStats } from '../tracking/store.js';
+import type { RiskScorer } from '../security/risk.js';
 export interface AdminDeps {
     db: Database.Database;
     adminEmails: string[];
     userStore: UserStore;
     usageStore?: UsageStore;
+    /** Risk scorer — enables /admin/risk review endpoints (watch mode). */
+    risk?: RiskScorer;
 }
 export interface AdminStats {
     users: {

@@ -16,6 +16,7 @@ import type { KeyStore } from './keys.js';
 import type { UserStore } from './users.js';
 import type { SatbillClient } from '../billing/satbill-client.js';
 import type { RateLimiter } from '../ratelimit/token-bucket.js';
+import type { RiskScorer } from '../security/risk.js';
 import type { ApiKey, User } from '../types.js';
 /**
  * Environment type for routes authenticated with an API key.
@@ -53,21 +54,24 @@ export interface SessionEnv {
     };
 }
 /**
- * Two-tier rate limit configuration.
+ * Rate limit configuration for API key authentication.
  *
- * Users with creditBalanceCents >= thresholdCents receive the elevated limit.
- * Everyone else (zero balance, no billing relationship) gets the base limit.
+ * Two tiers, based on billing relationship:
+ *   - Paid tier — user has a Stripe customer ID (has made a deposit)
+ *   - Base tier — everyone else (zero balance, no billing relationship)
+ *
+ * There is intentionally no balance-based middle tier: every credit path either
+ * can't reach a meaningful balance (signup bonus) or requires a Stripe customer
+ * ID (top-ups), which immediately qualifies for the paid tier. A balance-based
+ * tier would be unreachable dead code.
+ *
  * Per-key overrides (apiKey.rateLimitPerMinute) still take priority over both.
  */
 export interface RateLimitTiers {
-    /** Credit balance threshold (cents) for elevated limits. Default: $10.00 = 1000 cents. */
-    thresholdCents: number;
-    /** RPM for users meeting the threshold. Default: 60. */
-    elevatedPerMinute: number;
-    /** RPM for everyone else. Default: 10. */
-    basePerMinute: number;
     /** RPM for paying users (have Stripe customer ID). Default: 600. */
     paidPerMinute: number;
+    /** RPM for everyone else. Default: 10. */
+    basePerMinute: number;
 }
 /**
  * Create API key auth middleware.
@@ -102,8 +106,11 @@ export declare function authMiddleware(keyStore: KeyStore, userStore: UserStore,
 /**
  * Create session auth middleware for management routes.
  * Validates mr_st_... session tokens and attaches the User to context.
+ *
+ * @param risk Optional risk scorer — session-authenticated requests to
+ *   management endpoints are fed to it (watch mode, never blocks).
  */
-export declare function sessionMiddleware(userStore: UserStore): (c: Context<SessionEnv>, next: Next) => Promise<(Response & import("hono").TypedResponse<{
+export declare function sessionMiddleware(userStore: UserStore, risk?: RiskScorer): (c: Context<SessionEnv>, next: Next) => Promise<(Response & import("hono").TypedResponse<{
     error: {
         message: string;
         type: string;

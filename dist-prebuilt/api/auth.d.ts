@@ -23,6 +23,7 @@ import type { KeyStore } from '../auth/keys.js';
 import type { EmailSender } from '../auth/email.js';
 import type { BillingTransactionStore } from '../billing/transactions.js';
 import type { RateLimiter } from '../ratelimit/token-bucket.js';
+import type { RiskScorer } from '../security/risk.js';
 export interface AuthRouterDeps {
     userStore: UserStore;
     keyStore: KeyStore;
@@ -33,6 +34,8 @@ export interface AuthRouterDeps {
     signupBonusDailyLimitCents: number;
     /** Optional IP-level rate limiter to protect the request-code endpoint. */
     ipRateLimiter?: RateLimiter;
+    /** Optional risk scorer — records signups for the shadow-mode farmer classifier. */
+    risk?: RiskScorer;
 }
 export declare function createAuthRouter(deps: AuthRouterDeps): Hono;
 //# sourceMappingURL=auth.d.ts.map

@@ -7,14 +7,27 @@
  */
 export class UsageLogger {
     store;
-    constructor(store) {
+    risk;
+    resolveUserId;
+    constructor(store, options = {}) {
         this.store = store;
+        this.risk = options.risk;
+        this.resolveUserId = options.resolveUserId;
     }
     /**
      * Log a completed request. Non-blocking in intent (sync in V1).
      */
     log(params) {
         try {
+            // Shadow-mode risk feed — never allowed to break the request path.
+            // Only successful calls count: a failed request produced no output, so
+            // it is not evidence of model choice.
+            if (this.risk && this.resolveUserId && params.statusCode === 200) {
+                const userId = this.resolveUserId(params.keyId);
+                if (userId) {
+                    this.risk.onInference(userId, params.model, params.costCents);
+                }
+            }
             this.store.record({
                 keyId: params.keyId,
                 provider: params.provider,

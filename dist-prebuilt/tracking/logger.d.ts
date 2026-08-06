@@ -7,6 +7,7 @@
  */
 import type { ProviderName, Tier } from '../types.js';
 import type { UsageStore } from './store.js';
+import type { RiskScorer } from '../security/risk.js';
 export interface LogParams {
     keyId: string;
     provider: ProviderName;
@@ -29,9 +30,21 @@ export interface LogParams {
     /** Upstream response headers when the request failed. JSON-serialised. */
     errorHeaders?: string;
 }
+export interface UsageLoggerOptions {
+    /**
+     * Risk scorer for the shadow-mode farmer classifier. When present, every
+     * logged inference is fed to the scorer (model + cost) so the behavioural
+     * M.O. (signup → probe → cheap models → abandon) can be scored in real time.
+     */
+    risk?: RiskScorer;
+    /** Resolve an API key id to its owning user id. Required when risk is set. */
+    resolveUserId?: (keyId: string) => string | undefined;
+}
 export declare class UsageLogger {
     private store;
-    constructor(store: UsageStore);
+    private risk?;
+    private resolveUserId?;
+    constructor(store: UsageStore, options?: UsageLoggerOptions);
     /**
      * Log a completed request. Non-blocking in intent (sync in V1).
      */

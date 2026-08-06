@@ -1072,8 +1072,7 @@ curl https://api.lxg2it.com/v1/chat/completions \\
       <thead><tr><th>Tier</th><th>Criteria</th><th>Limit</th></tr></thead>
       <tbody>
         <tr><td><strong>Paid</strong></td><td>Added credits via Stripe</td><td><strong>600 RPM</strong></td></tr>
-        <tr><td>Elevated</td><td>Balance ≥ $10.00</td><td><strong>60 RPM</strong></td></tr>
-        <tr><td>Base</td><td>Balance &lt; $10.00</td><td><strong>10 RPM</strong></td></tr>
+        <tr><td>Base</td><td>Everyone else</td><td><strong>10 RPM</strong></td></tr>
       </tbody>
     </table>
 
@@ -1102,8 +1101,10 @@ curl https://api.lxg2it.com/v1/chat/completions \\
   }
 }</code></pre>
 
-    <p><strong>Daily spend limits</strong> are a separate control. By default, standard accounts are capped
-    at <strong>$30/day</strong> and paid accounts (with credits purchased via Stripe) at <strong>$300/day</strong>.
+    <p><strong>Daily spend limits</strong> are a separate control. Paid accounts (credits purchased via
+    Stripe) are capped at <strong>$300/day</strong>. Standard accounts are capped at <strong>$30/day</strong>,
+    though in practice the credit balance is the binding limit — new accounts hold $1 in signup credits,
+    and paid-model requests stop once balance is exhausted.
     You can set a personal cap on your profile page — this overrides the tier default.
     Requests made after hitting the cap return HTTP <code class="inline-code">429</code> with
     <code class="inline-code">code: "daily_spend_limit_exceeded"</code> and reset at UTC midnight.</p>

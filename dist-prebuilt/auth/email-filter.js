@@ -117,6 +117,20 @@ const DISPOSABLE_DOMAINS = new Set([
     'yopmail.pp.ua',
     // Test email services (inbox-based, commonly abused)
     'testmail.app',
+    // Confirmed attacker domains — accounts on these domains probed the
+    // management API surface and claimed signup bonuses (forensics Aug 2026).
+    // These were committed to the server branch but never merged to master,
+    // so they are NOT live until this deploy.
+    't3to.net',
+    'dzpw.uno',
+    'xiakdi.com',
+    'mx.unsnow.online',
+    'nix.build',
+    'balastechnologies.com',
+    '0m0.abrdns.com',
+    '07210d00.dpdns.org',
+    '007.hzeg.eu.org',
+    'passfwd.com',
 ]);
 /**
  * Returns true if the email address uses a known disposable / throwaway domain.
